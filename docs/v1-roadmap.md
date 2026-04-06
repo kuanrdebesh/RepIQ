@@ -26,15 +26,26 @@
   - PR / record moments
   - consistency and milestone signals
   - groundwork for shareable reward summaries later
+  - support multiple rewards at set, exercise, and session level
+  - keep logger-time rewards as small text with light icon support, not intrusive banners
+  - allow top-strip reward counts by type only if the strip stays uncluttered
+  - show a fuller reward section on the completion flow
 - Live workout timer in logger header
 - Expanded set-type support including `rest-pause`
 - Workout-level between-exercises timer behavior
 - Manual collapse / expand for exercise sections in long workouts
+- Collapse-all / expand-all control for long workouts
 - V1 `Muscles Worked` page with:
   - overall workout spread
   - selected exercise focus
   - simple front/back vector intensity map
   - navigation into exercise details
+- Logger reward V1:
+  - set-level rewards shown inline as medal + short text
+  - exercise-level rewards shown in exercise header
+  - top strip limited to set/exercise reward counts
+  - reward recompute logic based on workout history plus already-completed same-session work
+  - session-level rewards reserved for post-finish surfaces
 
 ## Phase 4
 
@@ -54,6 +65,10 @@ These are intentionally captured so they do not get lost while we finish the cor
 - Optional app notification for inactivity check-ins when permission is granted
 - Refine non-logger pages toward white-surface + separator layouts instead of stacked-card treatment
 - Test whether subtle in-logger micro rewards add motivation without becoming distracting
+- Design reward-aware share cards:
+  - reward counts/types in the main summary
+  - separate reward-only card
+- Keep colored highlight treatments gradient-based / slightly shiny rather than flat
 - Full muscle-map expansion:
   - richer anatomical vector
   - more detailed region mapping

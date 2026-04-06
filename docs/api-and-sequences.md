@@ -34,11 +34,20 @@ These are important current behaviors in the web app even when they do not yet m
   - `restpause`
   - `failure`
 - Exercise reordering is handled through a dedicated reorder sheet rather than separate move-up/move-down actions
+- Exercise sections support:
+  - per-card collapse / expand
+  - collapse-all / expand-all
+  - collapsed summaries with logged volume, reward summary, and superset visibility
 - The `Muscles Worked` page is currently a web-only surface with:
   - overall workout mode
   - exercise-focused mode
   - V1 body-map intensity view
   - explicit navigation into exercise details
+- Logger reward behavior is currently client-side:
+  - set-level rewards are recomputed against historical exercise data plus already-completed same-session sets
+  - later same-session sets can replace earlier rewarded sets
+  - exercise-level rewards appear only once the exercise result is meaningful
+  - session-level reward presentation is intentionally deferred to completion / summary flows
 
 ## Shared Contracts
 

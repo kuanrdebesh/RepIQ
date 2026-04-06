@@ -58,9 +58,23 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
   - `rest-pause` set type
   - add set / remove set behavior
   - manual collapse / expand per exercise
+  - collapse-all / expand-all control
 - Workout-level actions are grouped under `Alter`
 - A top in-workout guidance strip now exists with a first-pass shutter interaction
 - Guidance still remains available in the bottom section as the stable fallback
+- Logger rewards now exist in V1:
+  - set-level rewards are recomputed against history plus already-completed same-session sets
+  - later same-session sets can replace earlier rewarded sets if they become the true best
+  - set-level reward presentation is small medal + text inline
+  - exercise-level reward sits in the exercise header
+  - top strip shows only set and exercise reward counts
+  - session-level rewards are reserved for completion / summary surfaces, not the logger top strip
+- Collapsed exercise cards now summarize:
+  - logged set count
+  - logged volume
+  - reward summary
+  - superset state
+  - completed-state highlighting
 
 ## Exercise Flows
 
@@ -107,6 +121,12 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
 - A simple workout resume/selector shell exists to support leaving and returning to an active workout
 - A dedicated post-finish workout screen is planned for workout naming, notes, attachments, and save/share summary flow
 - Reward UX is intentionally planned around the post-finish workout screen first, with only subtle in-logger reward signals later if they prove helpful
+- Reward UX direction is now clearer:
+  - one set, one exercise, or one session can earn multiple rewards
+  - logger rewards should stay as small, non-intrusive text with light icon support
+  - top-strip summary should stay limited to in-logger reward levels that matter during the workout
+  - finish flow should include a full reward section for the completed exercise/workout
+  - shareable summaries should include reward counts in the main summary plus a reward-only card later
 
 ## UX Direction Locked In
 
@@ -120,6 +140,9 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
 - Non-logger pages should prefer white page surfaces with separators over heavy stacked card treatment
 - Rewards should feel motivating and earned, not noisy or childish
 - The main reward moment should happen after workout completion, not interrupt set-by-set logging
+- Inline rewards can still appear during logging, but only as quiet progress confirmations
+- Session-level rewards should not crowd the logger top strip
+- Any colored reward or highlight treatment should lean toward gradient / slightly shiny emphasis rather than flat loud color blocks
 
 ## Captured Follow-On Features
 
@@ -129,9 +152,11 @@ These are documented and should not be forgotten:
 - Deduplicated inactivity notifications/prompts
 - Curated user-selectable theme packs in settings
 - Reward design and testing:
-  - post-finish reward section as the first real reward surface
+  - post-finish reward section as the first full reward surface
   - record / PR / consistency / milestone treatment
+  - support multiple rewards at set, exercise, and session level
   - later, only subtle in-logger micro rewards if they improve motivation without becoming a nuisance
+  - top-strip reward counts should be expandable into details if they stay visually clean
 - Full anatomical muscle-map upgrade:
   - richer vector illustration
   - more precise front/back muscle regions

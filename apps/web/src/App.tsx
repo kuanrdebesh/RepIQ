@@ -61,14 +61,40 @@ type WorkoutMeta = {
   sessionName: string;
 };
 
+type RewardCategory = "pr" | "volume" | "progress";
+type RewardLevel = "set" | "exercise" | "session";
+
+type LoggerReward = {
+  id: string;
+  exerciseId: string | null;
+  setId: string | null;
+  category: RewardCategory;
+  level: RewardLevel;
+  shortLabel: string;
+  detail: string;
+};
+
 type ExerciseRestDefaults = Record<string, string>;
 
 type SwipeState = {
   rowId: string | null;
   startX: number;
+  startY: number;
   deltaX: number;
+  axis: "undecided" | "horizontal" | "vertical";
   dragging: boolean;
 };
+
+function createInitialSwipeState(): SwipeState {
+  return {
+    rowId: null,
+    startX: 0,
+    startY: 0,
+    deltaX: 0,
+    axis: "undecided",
+    dragging: false
+  };
+}
 
 type ActiveRestTimer = {
   exerciseId: string;
@@ -135,6 +161,12 @@ const certaintyTone: Record<CoachingSuggestion["certainty"], string> = {
   low: "tone-low",
   medium: "tone-medium",
   high: "tone-high"
+};
+
+const rewardLevelIcon: Record<RewardLevel, string> = {
+  set: "🏅",
+  exercise: "🎖",
+  session: "🏆"
 };
 
 const exerciseLibrary: ExerciseDraft[] = [
@@ -995,6 +1027,194 @@ function estimateOneRm(set?: WorkoutSet) {
   return Math.round(set.weight * (1 + set.reps / 30));
 }
 
+function resolveDraftSet(
+  draftSets: DraftSet[],
+  index: number,
+  lastSession: ExerciseHistorySession,
+  carryForwardDefaults: boolean
+) {
+  const draftSet = draftSets[index];
+  const previousSet = getPreviousReferenceSet(draftSets, index, lastSession);
+  const weight = parseNumberInput(
+    draftSet.weightInput,
+    carryForwardDefaults ? previousSet?.weight : null
+  );
+  const reps = parseNumberInput(
+    draftSet.repsInput,
+    carryForwardDefaults ? previousSet?.reps : null
+  );
+  const rpe = parseNumberInput(
+    draftSet.rpeInput,
+    carryForwardDefaults ? previousSet?.rpe ?? null : null
+  );
+
+  if (weight === null || reps === null) {
+    return null;
+  }
+
+  return {
+    weight,
+    reps: Math.round(reps),
+    set_type: draftSet.setType,
+    rpe,
+    failed: draftSet.failed
+  } satisfies WorkoutSet;
+}
+
+function sumSessionVolume(sets: WorkoutSet[]) {
+  return sets.reduce((total, set) => total + set.weight * set.reps, 0);
+}
+
+function buildSetRewards(
+  exercise: ExerciseDraft,
+  draftSet: DraftSet,
+  resolvedSet: WorkoutSet,
+  benchmarkSets: WorkoutSet[]
+): LoggerReward[] {
+  if (benchmarkSets.length === 0) {
+    return [];
+  }
+
+  const rewards: LoggerReward[] = [];
+  const maxHistoricalWeight = Math.max(...benchmarkSets.map((set) => set.weight), 0);
+  const maxHistoricalOneRm = Math.max(...benchmarkSets.map((set) => estimateOneRm(set)), 0);
+  const maxSameWeightReps = Math.max(
+    0,
+    ...benchmarkSets
+      .filter((set) => set.weight === resolvedSet.weight)
+      .map((set) => set.reps)
+  );
+
+  if (resolvedSet.weight > maxHistoricalWeight) {
+    rewards.push({
+      id: `${exercise.id}:${draftSet.id}:max-weight:${resolvedSet.weight}`,
+      exerciseId: exercise.id,
+      setId: draftSet.id,
+      category: "pr",
+      level: "set",
+      shortLabel: "Max Wt",
+      detail: `${exercise.name}: ${resolvedSet.weight} kg is your new heaviest completed set.`
+    });
+  }
+
+  if (resolvedSet.reps > maxSameWeightReps && maxSameWeightReps > 0) {
+    rewards.push({
+      id: `${exercise.id}:${draftSet.id}:rep-pr:${resolvedSet.weight}:${resolvedSet.reps}`,
+      exerciseId: exercise.id,
+      setId: draftSet.id,
+      category: "pr",
+      level: "set",
+      shortLabel: "Rep PR",
+      detail: `${exercise.name}: ${resolvedSet.weight} kg x ${resolvedSet.reps} beats your best rep count at this load.`
+    });
+  }
+
+  const estimatedOneRm = estimateOneRm(resolvedSet);
+  if (estimatedOneRm > maxHistoricalOneRm) {
+    rewards.push({
+      id: `${exercise.id}:${draftSet.id}:one-rm:${estimatedOneRm}`,
+      exerciseId: exercise.id,
+      setId: draftSet.id,
+      category: "pr",
+      level: "set",
+      shortLabel: "1RM PR",
+      detail: `${exercise.name}: estimated 1RM is now ${estimatedOneRm} kg.`
+    });
+  }
+
+  return rewards;
+}
+
+function buildExerciseRewards(
+  exercise: ExerciseDraft,
+  completedSets: WorkoutSet[]
+): LoggerReward[] {
+  if (completedSets.length === 0) {
+    return [];
+  }
+
+  const currentVolume = sumSessionVolume(completedSets);
+  const maxHistoricalVolume = Math.max(
+    ...exercise.history.map((session) => sumSessionVolume(session.sets)),
+    0
+  );
+
+  if (currentVolume > maxHistoricalVolume) {
+    return [
+      {
+        id: `${exercise.id}:best-volume:${currentVolume}`,
+        exerciseId: exercise.id,
+        setId: null,
+        category: "volume",
+        level: "exercise",
+        shortLabel: "Best Vol",
+        detail: `${exercise.name}: ${currentVolume.toFixed(0)} kg is your best logged volume for this exercise.`
+      }
+    ];
+  }
+
+  return [];
+}
+
+function recomputeLoggerRewards(
+  exercises: ExerciseDraft[],
+  carryForwardDefaults: boolean
+): LoggerReward[] {
+  const latestRewards = new Map<string, LoggerReward>();
+
+  exercises.forEach((exercise) => {
+    const lastSession = exercise.history[exercise.history.length - 1];
+    const historicalSets = exercise.history.flatMap((session) => session.sets);
+    const completedSetsInWorkout: WorkoutSet[] = [];
+
+    exercise.draftSets.forEach((draftSet, index) => {
+      if (!draftSet.done) {
+        return;
+      }
+
+      const resolvedSet = resolveDraftSet(
+        exercise.draftSets,
+        index,
+        lastSession,
+        carryForwardDefaults
+      );
+
+      if (!resolvedSet) {
+        return;
+      }
+
+      const setRewards = buildSetRewards(
+        exercise,
+        draftSet,
+        resolvedSet,
+        [...historicalSets, ...completedSetsInWorkout]
+      );
+
+      setRewards.forEach((reward) => {
+        latestRewards.set(
+          `${exercise.id}:${reward.level}:${reward.shortLabel}`,
+          reward
+        );
+      });
+
+      completedSetsInWorkout.push(resolvedSet);
+    });
+
+    const isExerciseComplete =
+      exercise.draftSets.length > 0 && exercise.draftSets.every((draftSet) => draftSet.done);
+
+    if (!isExerciseComplete || completedSetsInWorkout.length === 0) {
+      return;
+    }
+
+    buildExerciseRewards(exercise, completedSetsInWorkout).forEach((reward) => {
+      latestRewards.set(`${exercise.id}:${reward.level}:${reward.shortLabel}`, reward);
+    });
+  });
+
+  return Array.from(latestRewards.values());
+}
+
 function buildSparkline(values: number[], width = 260, height = 92) {
   if (values.length === 0) {
     return "";
@@ -1615,12 +1835,8 @@ export function App() {
   const [settings, setSettings] = useState<WorkoutSettings>(defaultWorkoutSettings);
   const [workoutMeta, setWorkoutMeta] = useState<WorkoutMeta>(defaultWorkoutMeta);
   const [setTypePickerRowId, setSetTypePickerRowId] = useState<string | null>(null);
-  const [swipeState, setSwipeState] = useState<SwipeState>({
-    rowId: null,
-    startX: 0,
-    deltaX: 0,
-    dragging: false
-  });
+  const [swipeState, setSwipeState] = useState<SwipeState>(createInitialSwipeState);
+  const swipeStateRef = useRef<SwipeState>(createInitialSwipeState());
   const [revealedDeleteRowId, setRevealedDeleteRowId] = useState<string | null>(null);
   const [state, setState] = useState<FlowState>(defaultState);
   const [topGuidanceEnabled, setTopGuidanceEnabled] = useState(true);
@@ -1628,6 +1844,8 @@ export function App() {
   const [topGuidanceExpanded, setTopGuidanceExpanded] = useState(false);
   const [topGuidancePullDistance, setTopGuidancePullDistance] = useState(0);
   const [activeRestTimer, setActiveRestTimer] = useState<ActiveRestTimer>(null);
+  const [loggerRewards, setLoggerRewards] = useState<LoggerReward[]>([]);
+  const [rewardSheetOpen, setRewardSheetOpen] = useState(false);
   const titleHoldTimer = useRef<number | null>(null);
   const titleHoldTriggered = useRef(false);
   const pullStartY = useRef<number | null>(null);
@@ -1637,6 +1855,13 @@ export function App() {
   const guidancePullActive = useRef(false);
   const [pullDownDistance, setPullDownDistance] = useState(0);
   const topSectionRef = useRef<HTMLDivElement | null>(null);
+
+  function updateSwipeState(nextState: SwipeState | ((current: SwipeState) => SwipeState)) {
+    const resolvedState =
+      typeof nextState === "function" ? nextState(swipeStateRef.current) : nextState;
+    swipeStateRef.current = resolvedState;
+    setSwipeState(resolvedState);
+  }
 
   const activeExercise =
     exercises.find((exercise) => exercise.id === activeExerciseId) ?? exercises[0];
@@ -1687,6 +1912,17 @@ export function App() {
     );
   }, [exercises, settings.carryForwardDefaults]);
 
+  const rewardSummary = useMemo(() => {
+    return loggerRewards.reduce(
+      (summary, reward) => {
+        summary.total += 1;
+        summary[reward.level] += 1;
+        return summary;
+      },
+      { total: 0, set: 0, exercise: 0, session: 0 }
+    );
+  }, [loggerRewards]);
+
   const derivedDuration = useMemo(
     () => formatElapsedDuration(workoutMeta.date, workoutMeta.startTime),
     [clockTick, workoutMeta.date, workoutMeta.startTime, workoutMeta.startedMinutesAgo]
@@ -1707,6 +1943,10 @@ export function App() {
 
     return () => mediaQuery.removeEventListener("change", updateTheme);
   }, []);
+
+  useEffect(() => {
+    setLoggerRewards(recomputeLoggerRewards(exercises, settings.carryForwardDefaults));
+  }, [exercises, settings.carryForwardDefaults]);
 
   useEffect(() => {
     if (!hasActiveWorkout) {
@@ -1821,15 +2061,20 @@ export function App() {
           (exercise) => exercise.id !== exerciseId && !current.includes(exercise.id)
         );
 
-        if (!nextActiveExercise) {
-          return current;
+        if (nextActiveExercise) {
+          setActiveExerciseId(nextActiveExercise.id);
         }
-
-        setActiveExerciseId(nextActiveExercise.id);
       }
 
       return [...current, exerciseId];
     });
+    setMenuExerciseId(null);
+  }
+
+  function toggleCollapseAllExercises() {
+    setCollapsedExerciseIds((current) =>
+      current.length === exercises.length ? [] : exercises.map((exercise) => exercise.id)
+    );
     setMenuExerciseId(null);
   }
 
@@ -1905,9 +2150,9 @@ export function App() {
   function markSetDone(exerciseId: string, setIndex: number) {
     updateDraftSet(exerciseId, setIndex, "done", true);
     const exerciseIndex = exercises.findIndex((entry) => entry.id === exerciseId);
-    const exercise = exerciseIndex >= 0 ? exercises[exerciseIndex] : null;
+    const timerExercise = exerciseIndex >= 0 ? exercises[exerciseIndex] : null;
     const isLastSetInExercise =
-      exercise !== null && setIndex >= exercise.draftSets.length - 1;
+      timerExercise !== null && setIndex >= timerExercise.draftSets.length - 1;
     const nextExerciseId =
       exerciseIndex >= 0 && exerciseIndex < exercises.length - 1
         ? exercises[exerciseIndex + 1]?.id
@@ -2334,18 +2579,15 @@ export function App() {
     setSetTypePickerRowId(null);
     setRevealedDeleteRowId(null);
     setPullDownDistance(0);
-    setSwipeState({
-      rowId: null,
-      startX: 0,
-      deltaX: 0,
-      dragging: false
-    });
+    updateSwipeState(createInitialSwipeState());
     setSettings(defaultWorkoutSettings);
     setWorkoutMeta(defaultWorkoutMeta);
     setState(defaultState);
     setTopGuidanceEnabled(true);
     setShowTopGuidance(false);
     setActiveRestTimer(null);
+    setLoggerRewards([]);
+    setRewardSheetOpen(false);
   }
 
   function beginPullToAdd(event: React.PointerEvent<HTMLElement>) {
@@ -2437,60 +2679,109 @@ export function App() {
       return;
     }
 
-    setSwipeState({
+    updateSwipeState({
       rowId,
       startX: event.clientX,
+      startY: event.clientY,
       deltaX: 0,
+      axis: "undecided",
       dragging: false
     });
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function resetSwipeState() {
+    updateSwipeState(createInitialSwipeState());
   }
 
   function moveSwipe(rowId: string, event: React.PointerEvent<HTMLDivElement>) {
-    if (swipeState.rowId !== rowId) {
+    const currentSwipeState = swipeStateRef.current;
+
+    if (currentSwipeState.rowId !== rowId) {
       return;
     }
 
-    const nextDelta = event.clientX - swipeState.startX;
-    const clamped = Math.max(-84, Math.min(112, nextDelta));
+    const deltaX = event.clientX - currentSwipeState.startX;
+    const deltaY = event.clientY - currentSwipeState.startY;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
 
-    setSwipeState((current) => ({
+    if (currentSwipeState.axis === "undecided") {
+      if (absX < 10 && absY < 10) {
+        return;
+      }
+
+      if (absY > absX * 1.1) {
+        updateSwipeState((current) => ({
+          ...current,
+          axis: "vertical",
+          deltaX: 0,
+          dragging: false
+        }));
+        return;
+      }
+
+      if (absX > absY * 1.2 && absX > 14) {
+        const clamped = Math.max(-84, Math.min(112, deltaX));
+        if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+        }
+        updateSwipeState((current) => ({
+          ...current,
+          axis: "horizontal",
+          deltaX: clamped,
+          dragging: true
+        }));
+      }
+      return;
+    }
+
+    if (currentSwipeState.axis !== "horizontal") {
+      return;
+    }
+
+    const clamped = Math.max(-84, Math.min(112, deltaX));
+    if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
+
+    updateSwipeState((current) => ({
       ...current,
       deltaX: clamped,
-      dragging: Math.abs(clamped) > 8
+      dragging: Math.abs(clamped) > 14
     }));
   }
 
-  function endSwipe(exerciseId: string, setIndex: number, rowId: string) {
-    if (swipeState.rowId !== rowId) {
+  function endSwipe(
+    exerciseId: string,
+    setIndex: number,
+    rowId: string,
+    event: React.PointerEvent<HTMLDivElement>
+  ) {
+    const currentSwipeState = swipeStateRef.current;
+
+    if (currentSwipeState.rowId !== rowId) {
       return;
     }
 
-    if (!swipeState.dragging) {
-      setSwipeState({
-        rowId: null,
-        startX: 0,
-        deltaX: 0,
-        dragging: false
-      });
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (!currentSwipeState.dragging) {
+      resetSwipeState();
       return;
     }
 
-    if (swipeState.deltaX < -56) {
+    if (currentSwipeState.deltaX < -56) {
       markSetDone(exerciseId, setIndex);
       setRevealedDeleteRowId(null);
-    } else if (swipeState.deltaX > 64) {
+    } else if (currentSwipeState.deltaX > 64) {
       setRevealedDeleteRowId(rowId);
     } else {
       setRevealedDeleteRowId(null);
     }
 
-    setSwipeState({
-      rowId: null,
-      startX: 0,
-      deltaX: 0,
-      dragging: false
-    });
+    resetSwipeState();
   }
 
   async function finishWorkout() {
@@ -2759,6 +3050,34 @@ export function App() {
             </div>
             <div className="topbar-actions">
               <button
+                className="icon-button topbar-collapse-toggle"
+                type="button"
+                aria-label={
+                  collapsedExerciseIds.length === exercises.length
+                    ? "Expand all exercises"
+                    : "Collapse all exercises"
+                }
+                title={
+                  collapsedExerciseIds.length === exercises.length
+                    ? "Expand all exercises"
+                    : "Collapse all exercises"
+                }
+                onClick={toggleCollapseAllExercises}
+              >
+                <span className="stack-toggle-icon" aria-hidden="true">
+                  <span className="stack-toggle-corner" />
+                  <span
+                    className={`stack-toggle-card ${
+                      collapsedExerciseIds.length === exercises.length
+                        ? "is-expand"
+                        : "is-collapse"
+                    }`}
+                  >
+                    <span className="stack-toggle-card-line" />
+                  </span>
+                </span>
+              </button>
+              <button
                 className="secondary-button"
                 type="button"
                 onClick={() => setWorkoutMenuOpen((current) => !current)}
@@ -2791,6 +3110,28 @@ export function App() {
               <span className="stat-value">{workoutSummary.sets}</span>
             </div>
             <button
+              className={`stat-rewards-button ${rewardSummary.total > 0 ? "has-rewards" : ""}`}
+              type="button"
+              aria-label="View workout rewards"
+              disabled={rewardSummary.set + rewardSummary.exercise === 0}
+              onClick={() => setRewardSheetOpen(true)}
+            >
+              <div className="stat-reward-podium" aria-hidden="true">
+                {rewardSummary.exercise > 0 && (
+                  <span className="stat-reward-token stat-reward-token-exercise">
+                    <span>{rewardLevelIcon.exercise}</span>
+                    <strong>{rewardSummary.exercise}</strong>
+                  </span>
+                )}
+                {rewardSummary.set > 0 && (
+                  <span className="stat-reward-token stat-reward-token-set">
+                    <span>{rewardLevelIcon.set}</span>
+                    <strong>{rewardSummary.set}</strong>
+                  </span>
+                )}
+              </div>
+            </button>
+            <button
               className="stat-muscles-button"
               type="button"
               aria-label="View muscles worked"
@@ -2819,13 +3160,28 @@ export function App() {
           {exercises.map((exercise) => {
             const lastSession = exercise.history[exercise.history.length - 1];
             const isCollapsed = collapsedExerciseIds.includes(exercise.id);
-            const loggedSetCount = exercise.draftSets.filter((set) => set.done).length;
+            const completedExerciseSets = buildCompletedSets(
+              exercise.draftSets,
+              lastSession,
+              settings.carryForwardDefaults
+            ).resolvedSets;
+            const isComplete = exercise.draftSets.length > 0 && exercise.draftSets.every((set) => set.done);
+            const loggedSetCount = completedExerciseSets.length;
+            const loggedVolume = sumSessionVolume(completedExerciseSets);
+            const setRewardCount = loggerRewards.filter(
+              (reward) => reward.exerciseId === exercise.id && reward.level === "set"
+            ).length;
+            const exerciseRewards = loggerRewards.filter(
+              (reward) => reward.exerciseId === exercise.id && reward.level === "exercise"
+            );
 
             return (
               <article
                 key={exercise.id}
                 className={`exercise-card ${
                   exercise.id === activeExerciseId ? "is-active" : ""
+                } ${isComplete ? "is-complete" : ""} ${
+                  isComplete && isCollapsed ? "is-complete-collapsed" : ""
                 } ${exercise.supersetGroupId ? "has-superset" : ""} ${
                   isCollapsed ? "is-collapsed" : ""
                 }`}
@@ -2868,6 +3224,70 @@ export function App() {
                   >
                     {exercise.name}
                   </button>
+                  {(exerciseRewards.length > 0 || (isCollapsed && setRewardCount > 0)) && (
+                    <button
+                      className="exercise-reward-trigger"
+                      type="button"
+                      aria-label="View exercise reward summary"
+                      title={
+                        isCollapsed
+                          ? [
+                              setRewardCount > 0 ? `${setRewardCount} set rewards` : null,
+                              exerciseRewards.length > 0
+                                ? exerciseRewards.map((reward) => reward.shortLabel).join(", ")
+                                : null
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")
+                          : exerciseRewards.map((reward) => reward.shortLabel).join(", ")
+                      }
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setRewardSheetOpen(true);
+                      }}
+                    >
+                      {isCollapsed ? (
+                        <>
+                          {exerciseRewards.length > 0 && (
+                            <span className="reward-inline reward-inline-exercise">
+                              <span className="reward-inline-icon" aria-hidden="true">
+                                {rewardLevelIcon.exercise}
+                              </span>
+                              <span>{exerciseRewards.length}</span>
+                            </span>
+                          )}
+                          {setRewardCount > 0 && (
+                            <span className="reward-inline reward-inline-set">
+                              <span className="reward-inline-icon" aria-hidden="true">
+                                {rewardLevelIcon.set}
+                              </span>
+                              <span>{setRewardCount}</span>
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="reward-inline reward-inline-exercise">
+                          <span className="reward-inline-icon" aria-hidden="true">
+                            {rewardLevelIcon.exercise}
+                          </span>
+                          <span>{exerciseRewards.length}</span>
+                        </span>
+                      )}
+                    </button>
+                  )}
+                  {isCollapsed && exercise.supersetGroupId && (
+                    <span
+                      className="superset-badge superset-badge-inline"
+                      style={
+                        {
+                          "--superset-accent":
+                            getSupersetAccent(exercise.supersetGroupId) ?? undefined
+                        } as CSSProperties
+                      }
+                    >
+                      Superset
+                    </span>
+                  )}
                   <div className="exercise-title-actions">
                     <button
                       className="icon-button exercise-collapse-button"
@@ -2899,7 +3319,14 @@ export function App() {
 
                 {isCollapsed && (
                   <p className="exercise-collapsed-meta">
-                    {loggedSetCount} set{loggedSetCount === 1 ? "" : "s"} logged · Rest {exercise.restTimer}
+                    {loggedSetCount} set{loggedSetCount === 1 ? "" : "s"} logged ·{" "}
+                    {loggedVolume > 0 ? (
+                      <strong className="exercise-collapsed-volume">
+                        {loggedVolume.toFixed(0)} kg volume
+                      </strong>
+                    ) : (
+                      <span>{loggedVolume.toFixed(0)} kg volume</span>
+                    )}
                   </p>
                 )}
 
@@ -3003,6 +3430,12 @@ export function App() {
                         : isDeleteRevealed
                           ? 92
                           : 0;
+                    const setRewards = loggerRewards.filter(
+                      (reward) =>
+                        reward.exerciseId === exercise.id &&
+                        reward.setId === draftSet.id &&
+                        reward.level === "set"
+                    );
 
                     return (
                       <div
@@ -3038,15 +3471,14 @@ export function App() {
                           style={{ transform: `translateX(${translateX}px)` }}
                           onPointerDown={(event) => beginSwipe(rowId, event)}
                           onPointerMove={(event) => moveSwipe(rowId, event)}
-                          onPointerUp={() => endSwipe(exercise.id, index, rowId)}
-                          onPointerCancel={() =>
-                            setSwipeState({
-                              rowId: null,
-                              startX: 0,
-                              deltaX: 0,
-                              dragging: false
-                            })
-                          }
+                          onPointerUp={(event) => endSwipe(exercise.id, index, rowId, event)}
+                          onPointerCancel={(event) => {
+                            if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+                              event.currentTarget.releasePointerCapture(event.pointerId);
+                            }
+                            resetSwipeState();
+                          }}
+                          onLostPointerCapture={() => resetSwipeState()}
                         >
                           <button
                             type="button"
@@ -3165,6 +3597,29 @@ export function App() {
                             </button>
                           </div>
                         )}
+
+                        {setRewards.length > 0 && (
+                          <button
+                            className="reward-inline-row reward-inline-row-set reward-inline-trigger"
+                            type="button"
+                            aria-label={`${setRewards.length} set rewards`}
+                            title={setRewards.map((reward) => reward.shortLabel).join(", ")}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setRewardSheetOpen(true);
+                            }}
+                          >
+                            {setRewards.map((reward) => (
+                              <span key={reward.id} className="reward-inline reward-inline-set">
+                                <span className="reward-inline-icon" aria-hidden="true">
+                                  {rewardLevelIcon.set}
+                                </span>
+                                <span className="reward-inline-text">{reward.shortLabel}</span>
+                              </span>
+                            ))}
+                          </button>
+                        )}
+
                       </div>
                     );
                   })}
@@ -3181,7 +3636,7 @@ export function App() {
                   + Add Set
                 </button>
 
-                <details className="history-details" onClick={(event) => event.stopPropagation()}>
+                    <details className="history-details" onClick={(event) => event.stopPropagation()}>
                   <summary>History</summary>
                   <div className="history-list">
                     {[...exercise.history]
@@ -3490,6 +3945,65 @@ export function App() {
                 >
                   Remove exercise
                 </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {rewardSheetOpen && (
+          <section
+            className="sheet-overlay bottom-sheet-overlay"
+            onClick={() => setRewardSheetOpen(false)}
+          >
+            <div
+              className="sheet-card action-sheet"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="sheet-handle" />
+              <div className="sheet-head">
+                <div>
+                  <p className="label">Workout Rewards</p>
+                  <h3>{rewardSummary.total} progress wins</h3>
+                </div>
+                <button className="icon-button" type="button" onClick={() => setRewardSheetOpen(false)}>
+                  ×
+                </button>
+              </div>
+
+              <div className="reward-sheet-summary">
+                {rewardSummary.session > 0 && (
+                  <span className="reward-summary-chip reward-summary-chip-session">
+                    {rewardLevelIcon.session} {rewardSummary.session}
+                  </span>
+                )}
+                {rewardSummary.exercise > 0 && (
+                  <span className="reward-summary-chip reward-summary-chip-exercise">
+                    {rewardLevelIcon.exercise} {rewardSummary.exercise}
+                  </span>
+                )}
+                {rewardSummary.set > 0 && (
+                  <span className="reward-summary-chip reward-summary-chip-set">
+                    {rewardLevelIcon.set} {rewardSummary.set}
+                  </span>
+                )}
+              </div>
+
+              <div className="reward-sheet-list">
+                {loggerRewards.length === 0 ? (
+                  <p className="settings-note">Complete meaningful sets to start earning progress rewards.</p>
+                ) : (
+                  loggerRewards.map((reward) => (
+                    <article key={reward.id} className="reward-sheet-item">
+                      <div className={`reward-sheet-icon reward-sheet-icon-${reward.level}`} aria-hidden="true">
+                        {rewardLevelIcon[reward.level]}
+                      </div>
+                      <div>
+                        <strong>{reward.shortLabel}</strong>
+                        <p>{reward.detail}</p>
+                      </div>
+                    </article>
+                  ))
+                )}
               </div>
             </div>
           </section>

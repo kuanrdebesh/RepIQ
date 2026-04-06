@@ -104,6 +104,19 @@
   box-shadow: inset 0 0 0 1px rgba(187, 247, 208, 0.08);
 }
 
+:root[data-theme="dark"] .exercise-card.is-collapsed.is-complete-collapsed {
+  background: color-mix(in srgb, var(--done-surface) 42%, var(--paper));
+  border-color: color-mix(in srgb, #bbf7d0 36%, var(--done-line));
+}
+
+:root[data-theme="dark"] .exercise-card.is-collapsed.is-complete-collapsed .exercise-collapsed-meta,
+:root[data-theme="dark"] .exercise-card.is-collapsed.is-complete-collapsed .exercise-link,
+:root[data-theme="dark"] .exercise-card.is-collapsed.is-complete-collapsed .reward-inline-exercise,
+:root[data-theme="dark"] .exercise-card.is-collapsed.is-complete-collapsed .reward-inline-set,
+:root[data-theme="dark"] .exercise-card.is-collapsed.is-complete-collapsed .exercise-collapsed-volume {
+  color: #c7f9d8;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -295,6 +308,83 @@ ol {
   min-width: 0;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topbar-collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper));
+  color: var(--accent);
+  padding: 0;
+  box-shadow: 0 6px 14px var(--shadow);
+}
+
+.stack-toggle-icon {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  display: inline-block;
+}
+
+.stack-toggle-corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 11px;
+  height: 11px;
+  border-top: 3px solid var(--accent);
+  border-left: 3px solid var(--accent);
+  border-top-left-radius: 8px;
+}
+
+.stack-toggle-card {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--button-gradient-start), var(--button-gradient-end));
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--button-gradient-start) 24%, transparent);
+}
+
+.stack-toggle-card-line {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 2px;
+  border-radius: 999px;
+  background: white;
+  transform: translate(-50%, -50%);
+}
+
+.stack-toggle-card.is-expand .stack-toggle-card-line::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 8px;
+  border-radius: 999px;
+  background: white;
+  transform: translate(-50%, -50%);
+}
+
+:root[data-theme="dark"] .topbar-collapse-toggle {
+  background: color-mix(in srgb, var(--accent) 12%, var(--paper));
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+}
+
 .topbar-left {
   display: grid;
   gap: 3px;
@@ -331,7 +421,7 @@ ol {
 .stats-strip {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 10px;
   padding: 10px 14px 12px;
   margin: 10px 12px 0;
   border: 1px solid var(--line);
@@ -379,6 +469,62 @@ ol {
   font-size: 0.76rem;
   font-weight: 600;
   white-space: nowrap;
+  margin-left: 2px;
+}
+
+.stat-rewards-button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 54px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 0;
+  text-align: left;
+}
+
+.stat-rewards-button.has-rewards {
+  cursor: pointer;
+}
+
+.stat-rewards-button:disabled {
+  cursor: default;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.stat-reward-podium {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 18px;
+}
+
+.stat-reward-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--subtle-text);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.stat-reward-token strong {
+  font-size: 0.78rem;
+}
+
+.stat-reward-token-session {
+  color: #b38a00;
+}
+
+.stat-reward-token-exercise {
+  color: #8a96a7;
+}
+
+.stat-reward-token-set {
+  color: #b6784d;
 }
 
 .topbar-session-row {
@@ -541,11 +687,11 @@ ol {
 }
 
 .exercise-link {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   position: relative;
   z-index: 2;
   min-width: 0;
-  max-width: calc(100% - 132px);
+  max-width: none;
   border: 0;
   background: transparent;
   color: var(--accent);
@@ -564,9 +710,19 @@ ol {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-left: auto;
   position: relative;
   z-index: 2;
+}
+
+.exercise-reward-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin-left: auto;
+  color: inherit;
 }
 
 .exercise-menu-button {
@@ -593,8 +749,99 @@ ol {
   font-size: 0.82rem;
 }
 
+.exercise-collapsed-volume {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.reward-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  margin: 0;
+  color: var(--subtle-text);
+  font-size: 0.72rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.reward-inline-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.reward-inline-row::-webkit-scrollbar {
+  display: none;
+}
+
+.reward-inline-row-set {
+  margin: 6px 0 2px 34px;
+}
+
+.reward-inline-trigger {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.reward-inline-text {
+  color: var(--subtle-text);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.reward-inline-icon,
+.reward-sheet-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.reward-inline-set,
+.reward-sheet-icon-set,
+.reward-summary-chip-set {
+  color: #b6784d;
+}
+
+.reward-inline-exercise,
+.reward-sheet-icon-exercise,
+.reward-summary-chip-exercise {
+  color: #8a96a7;
+}
+
+.reward-sheet-icon-session,
+.reward-summary-chip-session {
+  color: #b38a00;
+}
+
 .exercise-card.is-collapsed {
   padding-bottom: 14px;
+}
+
+.exercise-card.is-collapsed.is-complete-collapsed {
+  border-color: var(--done-line);
+  background: color-mix(in srgb, var(--done-surface) 62%, var(--paper));
+  box-shadow: 0 10px 22px var(--shadow);
+}
+
+.exercise-card.is-collapsed.is-complete-collapsed .exercise-collapsed-meta,
+.exercise-card.is-collapsed.is-complete-collapsed .exercise-link,
+.exercise-card.is-collapsed.is-complete-collapsed .reward-inline-exercise,
+.exercise-card.is-collapsed.is-complete-collapsed .reward-inline-set {
+  color: #0b6f40;
 }
 
 .exercise-card.is-collapsed .exercise-note-input,
@@ -653,6 +900,15 @@ ol {
   font-weight: 700;
   letter-spacing: 0.02em;
   margin-bottom: 8px;
+}
+
+.rest-timer-row .superset-badge {
+  margin-left: auto;
+}
+
+.superset-badge-inline {
+  margin-bottom: 0;
+  margin-left: 8px;
 }
 
 .exercise-note-input::placeholder,
@@ -897,6 +1153,12 @@ ol {
 .previous-cell {
   color: var(--muted);
   font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previous-cell-value {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1425,6 +1687,59 @@ ol {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 14px;
+}
+
+.reward-sheet-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+
+.reward-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  border-radius: 999px;
+  color: var(--ink);
+  padding: 4px 8px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.reward-sheet-list {
+  display: grid;
+  gap: 10px;
+}
+
+.reward-sheet-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.reward-sheet-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.reward-sheet-item strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 0.92rem;
+}
+
+.reward-sheet-item p {
+  margin-bottom: 0;
+  color: var(--subtle-text);
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .superset-list {
