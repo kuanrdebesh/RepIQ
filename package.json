@@ -1,0 +1,22 @@
+{
+  "name": "repiq",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.11.1",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev:web": "npm --workspace @repiq/web run dev",
+    "dev:api": "npm --workspace @repiq/api run dev",
+    "dev:engine": "cd apps/engine && python3 -m uvicorn app.main:app --reload --port ${ENGINE_PORT:-8000}",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  }
+}
+

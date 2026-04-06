@@ -1,0 +1,1182 @@
+{
+  "45 degree leg press": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "ab rollout": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "ab wheel": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "ab wheel rollout": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "alternating dumbbell curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "arnold dumbbell press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "arnold press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "assisted pull up": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "back extension": {
+    "group": "Back",
+    "type": "isolation_back"
+  },
+  "back squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "band pull apart": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_rear"
+  },
+  "band pull-apart": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_rear"
+  },
+  "barbell back squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "barbell bench press": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "barbell bent over row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "barbell bicep curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "barbell curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "barbell deadlift": {
+    "group": "Back",
+    "type": "compound_hinge"
+  },
+  "barbell front raise": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "barbell front squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "barbell glute bridge": {
+    "group": "Glutes",
+    "type": "compound_glute"
+  },
+  "barbell good morning": {
+    "group": "Hamstrings",
+    "type": "compound_hinge"
+  },
+  "barbell hip thrust": {
+    "group": "Glutes",
+    "type": "compound_glute"
+  },
+  "barbell lunge": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "barbell ohp": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "barbell overhead press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "barbell preacher curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "barbell rdl": {
+    "group": "Hamstrings",
+    "type": "compound_hinge"
+  },
+  "barbell row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "barbell shrug": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "barbell skull crusher": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "barbell squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "barbell step up": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "barbell upright row": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "bench dip": {
+    "group": "Triceps",
+    "type": "compound_push"
+  },
+  "bench press": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "bent over barbell row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "bent over row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "bicycle crunch": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "bulgarian split squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "cable crossover": {
+    "group": "Chest",
+    "type": "isolation_chest"
+  },
+  "cable crunch": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "cable curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "cable donkey kick": {
+    "group": "Glutes",
+    "type": "isolation_glute"
+  },
+  "cable face pull": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_rear"
+  },
+  "cable fly": {
+    "group": "Chest",
+    "type": "isolation_chest"
+  },
+  "cable flye": {
+    "group": "Chest",
+    "type": "isolation_chest"
+  },
+  "cable front raise": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "cable glute kickback": {
+    "group": "Glutes",
+    "type": "isolation_glute"
+  },
+  "cable good morning": {
+    "group": "Hamstrings",
+    "type": "compound_hinge"
+  },
+  "cable hip abduction": {
+    "group": "Glutes",
+    "type": "isolation_glute"
+  },
+  "cable kickback": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "cable lateral raise": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "cable pulldown": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "cable row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "cable shrug": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "cable tricep pushdown": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "cable upright row": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "cable wood chop": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "calf raise": {
+    "group": "Calves",
+    "type": "isolation_calf"
+  },
+  "chest dip": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "chest dips": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "chest press machine": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "chest supported dumbbell row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "chest supported incline row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "chest supported row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "chin up": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "chin-up": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "chinup": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "close grip bench press": {
+    "group": "Triceps",
+    "type": "compound_push"
+  },
+  "close grip cable row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "close grip lat pulldown": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "concentration curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "conventional deadlift": {
+    "group": "Back",
+    "type": "compound_hinge"
+  },
+  "cross body hammer curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "crunch": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "dead bug": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "deadlift": {
+    "group": "Back",
+    "type": "compound_hinge"
+  },
+  "decline barbell bench press": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "decline bench press": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "decline dumbbell press": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "diamond push up": {
+    "group": "Triceps",
+    "type": "compound_push"
+  },
+  "donkey calf raise": {
+    "group": "Calves",
+    "type": "isolation_calf"
+  },
+  "donkey kick": {
+    "group": "Glutes",
+    "type": "isolation_glute"
+  },
+  "drag curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "dumbbell bench press": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "dumbbell bicep curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "dumbbell curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "dumbbell fly": {
+    "group": "Chest",
+    "type": "isolation_chest"
+  },
+  "dumbbell flye": {
+    "group": "Chest",
+    "type": "isolation_chest"
+  },
+  "dumbbell front raise": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "dumbbell goblet squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "dumbbell hammer curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "dumbbell hip thrust": {
+    "group": "Glutes",
+    "type": "compound_glute"
+  },
+  "dumbbell kickback": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "dumbbell lateral raise": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "dumbbell lunge": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "dumbbell overhead press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "dumbbell overhead tricep extension": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "dumbbell preacher curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "dumbbell rdl": {
+    "group": "Hamstrings",
+    "type": "compound_hinge"
+  },
+  "dumbbell rear delt fly": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_rear"
+  },
+  "dumbbell row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "dumbbell shoulder press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "dumbbell shrug": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "dumbbell skull crusher": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "dumbbell step up": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "dumbbell upright row": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "ez bar curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "ez bar preacher curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "ez bar skull crusher": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "ez-bar curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "face pull": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_rear"
+  },
+  "fire hydrant": {
+    "group": "Glutes",
+    "type": "isolation_glute"
+  },
+  "flat barbell bench press": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "flat dumbbell bench press": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "flat dumbbell fly": {
+    "group": "Chest",
+    "type": "isolation_chest"
+  },
+  "flutter kick": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "frog pump": {
+    "group": "Glutes",
+    "type": "isolation_glute"
+  },
+  "front raise": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "front squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "ghr": {
+    "group": "Hamstrings",
+    "type": "isolation_hamstring"
+  },
+  "glute bridge": {
+    "group": "Glutes",
+    "type": "compound_glute"
+  },
+  "glute ham raise": {
+    "group": "Hamstrings",
+    "type": "isolation_hamstring"
+  },
+  "glute kickback": {
+    "group": "Glutes",
+    "type": "isolation_glute"
+  },
+  "glute-ham raise": {
+    "group": "Hamstrings",
+    "type": "isolation_hamstring"
+  },
+  "goblet squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "good morning": {
+    "group": "Hamstrings",
+    "type": "compound_hinge"
+  },
+  "hack squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "hammer curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "hammer strength chest press": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "hammer strength row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "hamstring curl": {
+    "group": "Hamstrings",
+    "type": "isolation_hamstring"
+  },
+  "hanging knee raise": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "hanging leg raise": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "hex bar deadlift": {
+    "group": "Back",
+    "type": "compound_hinge"
+  },
+  "high bar squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "high to low cable fly": {
+    "group": "Chest",
+    "type": "isolation_chest"
+  },
+  "hip abduction": {
+    "group": "Glutes",
+    "type": "isolation_glute"
+  },
+  "hip thrust": {
+    "group": "Glutes",
+    "type": "compound_glute"
+  },
+  "hollow body hold": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "horizontal leg press": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "hyperextension": {
+    "group": "Back",
+    "type": "isolation_back"
+  },
+  "incline barbell bench press": {
+    "group": "Chest",
+    "type": "compound_push_incline"
+  },
+  "incline bench press": {
+    "group": "Chest",
+    "type": "compound_push_incline"
+  },
+  "incline dumbbell bench press": {
+    "group": "Chest",
+    "type": "compound_push_incline"
+  },
+  "incline dumbbell curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "incline dumbbell fly": {
+    "group": "Chest",
+    "type": "isolation_chest"
+  },
+  "incline dumbbell flye": {
+    "group": "Chest",
+    "type": "isolation_chest"
+  },
+  "incline dumbbell press": {
+    "group": "Chest",
+    "type": "compound_push_incline"
+  },
+  "incline smith machine press": {
+    "group": "Chest",
+    "type": "compound_push_incline"
+  },
+  "jm press": {
+    "group": "Triceps",
+    "type": "compound_push"
+  },
+  "kickback": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "l-sit": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "lat pulldown": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "lateral raise": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "leg curl": {
+    "group": "Hamstrings",
+    "type": "isolation_hamstring"
+  },
+  "leg extension": {
+    "group": "Quads",
+    "type": "isolation_quad"
+  },
+  "leg press": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "leg press calf raise": {
+    "group": "Calves",
+    "type": "isolation_calf"
+  },
+  "leg raise": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "low bar squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "low cable row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "low to high cable fly": {
+    "group": "Chest",
+    "type": "isolation_chest"
+  },
+  "lunge": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "lying leg curl": {
+    "group": "Hamstrings",
+    "type": "isolation_hamstring"
+  },
+  "lying tricep extension": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "machine calf raise": {
+    "group": "Calves",
+    "type": "isolation_calf"
+  },
+  "machine chest fly": {
+    "group": "Chest",
+    "type": "isolation_chest"
+  },
+  "machine chest press": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "machine crunch": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "machine curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "machine hack squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "machine hip abduction": {
+    "group": "Glutes",
+    "type": "isolation_glute"
+  },
+  "machine hip thrust": {
+    "group": "Glutes",
+    "type": "compound_glute"
+  },
+  "machine lateral raise": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "machine leg curl": {
+    "group": "Hamstrings",
+    "type": "isolation_hamstring"
+  },
+  "machine leg extension": {
+    "group": "Quads",
+    "type": "isolation_quad"
+  },
+  "machine leg press": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "machine row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "machine shoulder press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "machine shrug": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "meadows row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "military press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "mountain climber": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "neutral grip pull up": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "nordic curl": {
+    "group": "Hamstrings",
+    "type": "isolation_hamstring"
+  },
+  "nordic hamstring curl": {
+    "group": "Hamstrings",
+    "type": "isolation_hamstring"
+  },
+  "oblique crunch": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "one arm dumbbell row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "overhead cable tricep extension": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "overhead press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "overhead tricep extension": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "pallof press": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "pec deck": {
+    "group": "Chest",
+    "type": "isolation_chest"
+  },
+  "pec deck fly": {
+    "group": "Chest",
+    "type": "isolation_chest"
+  },
+  "pendlay row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "pendulum squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "plank": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "preacher curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "pull up": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "pull-up": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "pullup": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "push up": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "push-up": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "pushup": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "rdl": {
+    "group": "Hamstrings",
+    "type": "compound_hinge"
+  },
+  "rear delt fly": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_rear"
+  },
+  "rear delt flye": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_rear"
+  },
+  "reverse barbell curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "reverse curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "reverse dumbbell fly": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_rear"
+  },
+  "reverse dumbbell flye": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_rear"
+  },
+  "reverse fly": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_rear"
+  },
+  "reverse grip lat pulldown": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "reverse lunge": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "reverse pec deck": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_rear"
+  },
+  "romanian deadlift": {
+    "group": "Hamstrings",
+    "type": "compound_hinge"
+  },
+  "rope face pull": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_rear"
+  },
+  "rope hammer curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "rope overhead extension": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "rope tricep pushdown": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "russian twist": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "safety bar squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "seal row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "seated barbell press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "seated cable row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "seated calf raise": {
+    "group": "Calves",
+    "type": "isolation_calf"
+  },
+  "seated dumbbell press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "seated dumbbell shoulder press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "seated lateral raise": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "seated leg curl": {
+    "group": "Hamstrings",
+    "type": "isolation_hamstring"
+  },
+  "seated overhead press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "seated shoulder press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "shoulder press machine": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "shrug": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "side lateral raise": {
+    "group": "Shoulders",
+    "type": "isolation_shoulder_lateral"
+  },
+  "side plank": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "single arm dumbbell row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "single arm lat pulldown": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "single leg calf raise": {
+    "group": "Calves",
+    "type": "isolation_calf"
+  },
+  "single leg glute bridge": {
+    "group": "Glutes",
+    "type": "compound_glute"
+  },
+  "single leg rdl": {
+    "group": "Hamstrings",
+    "type": "compound_hinge"
+  },
+  "single leg romanian deadlift": {
+    "group": "Hamstrings",
+    "type": "compound_hinge"
+  },
+  "sissy squat": {
+    "group": "Quads",
+    "type": "isolation_quad"
+  },
+  "sit up": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "situp": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "skull crusher": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "smith machine bench press": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "smith machine calf raise": {
+    "group": "Calves",
+    "type": "isolation_calf"
+  },
+  "smith machine hip thrust": {
+    "group": "Glutes",
+    "type": "compound_glute"
+  },
+  "smith machine shoulder press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "smith machine squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "spider curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  },
+  "split squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "standing barbell press": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "standing calf raise": {
+    "group": "Calves",
+    "type": "isolation_calf"
+  },
+  "standing leg curl": {
+    "group": "Hamstrings",
+    "type": "isolation_hamstring"
+  },
+  "step up": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "stiff leg deadlift": {
+    "group": "Hamstrings",
+    "type": "compound_hinge"
+  },
+  "stiff-leg deadlift": {
+    "group": "Hamstrings",
+    "type": "compound_hinge"
+  },
+  "straight arm cable pulldown": {
+    "group": "Back",
+    "type": "isolation_back"
+  },
+  "straight arm pulldown": {
+    "group": "Back",
+    "type": "isolation_back"
+  },
+  "straight bar tricep pushdown": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "straight leg deadlift": {
+    "group": "Hamstrings",
+    "type": "compound_hinge"
+  },
+  "sumo deadlift": {
+    "group": "Hamstrings",
+    "type": "compound_hinge"
+  },
+  "sumo squat": {
+    "group": "Glutes",
+    "type": "compound_quad"
+  },
+  "t bar row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "t-bar row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "tate press": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "tibialis raise": {
+    "group": "Calves",
+    "type": "isolation_calf"
+  },
+  "toe touch": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "trap bar deadlift": {
+    "group": "Back",
+    "type": "compound_hinge"
+  },
+  "tricep dip": {
+    "group": "Triceps",
+    "type": "compound_push"
+  },
+  "tricep dips": {
+    "group": "Triceps",
+    "type": "compound_push"
+  },
+  "tricep kickback": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "tricep push down": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "tricep pushdown": {
+    "group": "Triceps",
+    "type": "isolation_tricep"
+  },
+  "upright row": {
+    "group": "Shoulders",
+    "type": "compound_press"
+  },
+  "v squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "walking lunge": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "weighted chest dip": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "weighted chin up": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "weighted pull up": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "weighted tricep dip": {
+    "group": "Triceps",
+    "type": "compound_push"
+  },
+  "wide grip bench press": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "wide grip cable row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "wide grip lat pulldown": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "wide grip pull up": {
+    "group": "Back",
+    "type": "compound_pull_vertical"
+  },
+  "wide push up": {
+    "group": "Chest",
+    "type": "compound_push"
+  },
+  "wide stance squat": {
+    "group": "Glutes",
+    "type": "compound_quad"
+  },
+  "wood chop": {
+    "group": "Core",
+    "type": "isolation_core"
+  },
+  "yates row": {
+    "group": "Back",
+    "type": "compound_pull_horizontal"
+  },
+  "zercher squat": {
+    "group": "Quads",
+    "type": "compound_quad"
+  },
+  "zottman curl": {
+    "group": "Biceps",
+    "type": "isolation_bicep"
+  }
+}

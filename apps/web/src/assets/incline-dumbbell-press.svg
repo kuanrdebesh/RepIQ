@@ -1,0 +1,18 @@
+<svg width="320" height="240" viewBox="0 0 320 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="320" height="240" rx="28" fill="#F7F9FC"/>
+  <path d="M78 162L132 110" stroke="#94A3B8" stroke-width="14" stroke-linecap="round"/>
+  <path d="M132 110L186 162" stroke="#CBD5E1" stroke-width="14" stroke-linecap="round"/>
+  <rect x="120" y="102" width="70" height="16" rx="8" transform="rotate(18 120 102)" fill="#E2E8F0"/>
+  <rect x="64" y="164" width="132" height="14" rx="7" fill="#CBD5E1"/>
+  <circle cx="160" cy="94" r="14" fill="#94A3B8"/>
+  <path d="M156 108L138 132L126 150" stroke="#2563EB" stroke-width="10" stroke-linecap="round"/>
+  <path d="M164 108L184 132L202 152" stroke="#2563EB" stroke-width="10" stroke-linecap="round"/>
+  <path d="M140 132L182 132" stroke="#0F172A" stroke-width="10" stroke-linecap="round"/>
+  <path d="M126 150L112 188" stroke="#64748B" stroke-width="10" stroke-linecap="round"/>
+  <path d="M202 152L214 188" stroke="#64748B" stroke-width="10" stroke-linecap="round"/>
+  <path d="M130 122L110 110" stroke="#475569" stroke-width="10" stroke-linecap="round"/>
+  <path d="M190 122L210 110" stroke="#475569" stroke-width="10" stroke-linecap="round"/>
+  <rect x="96" y="102" width="18" height="8" rx="4" transform="rotate(-26 96 102)" fill="#1E293B"/>
+  <rect x="210" y="102" width="18" height="8" rx="4" transform="rotate(26 210 102)" fill="#1E293B"/>
+  <path d="M160 118L160 146" stroke="#F97316" stroke-width="10" stroke-linecap="round"/>
+</svg>
