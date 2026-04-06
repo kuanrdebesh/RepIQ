@@ -22,6 +22,10 @@
 - In-workout top guidance strip / expandable coaching tray
 - Post-finish workout save screen for workout title, notes, attachments, and summary
 - Reward detection and records table
+- Reward UX design on the post-finish workout screen:
+  - PR / record moments
+  - consistency and milestone signals
+  - groundwork for shareable reward summaries later
 - Live workout timer in logger header
 - Expanded set-type support including `rest-pause`
 - Workout-level between-exercises timer behavior
@@ -49,6 +53,7 @@ These are intentionally captured so they do not get lost while we finish the cor
 - Single-alert behavior for inactivity so duplicate prompts or notifications do not stack
 - Optional app notification for inactivity check-ins when permission is granted
 - Refine non-logger pages toward white-surface + separator layouts instead of stacked-card treatment
+- Test whether subtle in-logger micro rewards add motivation without becoming distracting
 - Full muscle-map expansion:
   - richer anatomical vector
   - more detailed region mapping

@@ -106,6 +106,7 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
 - `Add Exercise` is now a separate page with a back button
 - A simple workout resume/selector shell exists to support leaving and returning to an active workout
 - A dedicated post-finish workout screen is planned for workout naming, notes, attachments, and save/share summary flow
+- Reward UX is intentionally planned around the post-finish workout screen first, with only subtle in-logger reward signals later if they prove helpful
 
 ## UX Direction Locked In
 
@@ -117,6 +118,8 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
 - Deeper exercise intelligence belongs outside the main logging surface
 - In-workout guidance should be accessible near the top, dismissible, and restorable later without conflicting with the pull-down `Alter` interaction
 - Non-logger pages should prefer white page surfaces with separators over heavy stacked card treatment
+- Rewards should feel motivating and earned, not noisy or childish
+- The main reward moment should happen after workout completion, not interrupt set-by-set logging
 
 ## Captured Follow-On Features
 
@@ -125,6 +128,10 @@ These are documented and should not be forgotten:
 - Inactivity check-in for active workouts after long no-input periods
 - Deduplicated inactivity notifications/prompts
 - Curated user-selectable theme packs in settings
+- Reward design and testing:
+  - post-finish reward section as the first real reward surface
+  - record / PR / consistency / milestone treatment
+  - later, only subtle in-logger micro rewards if they improve motivation without becoming a nuisance
 - Full anatomical muscle-map upgrade:
   - richer vector illustration
   - more precise front/back muscle regions
