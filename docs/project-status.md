@@ -42,12 +42,16 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
 - Workout header includes:
   - back button
   - session name
-  - elapsed timer
-  - `Alter`
-  - `Finish`
+  - settings icon
+  - collapse / expand control
 - The active workout timer now ticks live while the logger stays open
+- Logger top stats strip currently emphasizes:
+  - duration
+  - total logged volume
+  - set count
+  - muscles entry
 - Exercise logging includes:
-  - editable notes
+  - optional sticky note per exercise
   - editable rest timer
   - workout-level between-exercises timer
   - compact set rows
@@ -59,9 +63,22 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
   - add set / remove set behavior
   - manual collapse / expand per exercise
   - collapse-all / expand-all control
-- Workout-level actions are grouped under `Alter`
+- logger footer actions:
+  - `+ Exercise`
+  - `Discard`
+  - `Finish Workout`
+- workout-level actions are grouped under the top settings flow
 - A top in-workout guidance strip now exists with a first-pass shutter interaction
 - Guidance still remains available in the bottom section as the stable fallback
+- Guidance display is now user-configurable by workout preference:
+  - top strip
+  - inline
+  - both
+  - neither
+- Inline guidance now behaves as a subtle inset section in the active exercise only and opens a centered modal when tapped
+- Collapsed guidance now shows context plus preview:
+  - current exercise name during the workout
+  - workout label after completion
 - Logger rewards now exist in V1:
   - set-level rewards are recomputed against history plus already-completed same-session sets
   - later same-session sets can replace earlier rewarded sets if they become the true best
@@ -69,12 +86,17 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
   - exercise-level reward sits in the exercise header
   - top strip shows only set and exercise reward counts
   - session-level rewards are reserved for completion / summary surfaces, not the logger top strip
+- Reward summary now opens as a centered modal rather than a bottom sheet
 - Collapsed exercise cards now summarize:
   - logged set count
   - logged volume
   - reward summary
   - superset state
   - completed-state highlighting
+- Collapsed exercise rows now follow a flatter list pattern rather than a full card treatment
+- Active workout indication is now title-led:
+  - blue exercise name
+  - green status dot after the name
 
 ## Exercise Flows
 
@@ -118,6 +140,15 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
 ## Additional Screens
 
 - `Add Exercise` is now a separate page with a back button
+- `Add Exercise` now supports:
+  - alphabetical browsing by default
+  - tabs for `All Exercises`, `By Muscle`, and `Types`
+  - always-visible search
+  - thin quick filters for `In workout` and `Selected`
+  - numbered multi-select badges in order of selection
+  - fixed bottom add-action bar when one or more exercises are selected
+  - floating custom-exercise creation entry
+  - `Types` groups with collapse / expand behavior
 - A simple workout resume/selector shell exists to support leaving and returning to an active workout
 - A dedicated post-finish workout screen is planned for workout naming, notes, attachments, and save/share summary flow
 - Reward UX is intentionally planned around the post-finish workout screen first, with only subtle in-logger reward signals later if they prove helpful
@@ -135,6 +166,7 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
 - Dark mode should feel calm and legible, not neon
 - Contextual exercise actions are better as bottom sheets than small popovers
 - Logger should stay dense and fast
+- Collapsed logger rows should feel like a readable list, not a second layer of mini cards
 - Deeper exercise intelligence belongs outside the main logging surface
 - In-workout guidance should be accessible near the top, dismissible, and restorable later without conflicting with the pull-down `Alter` interaction
 - Non-logger pages should prefer white page surfaces with separators over heavy stacked card treatment
@@ -165,12 +197,11 @@ These are documented and should not be forgotten:
 
 ## Most Likely Next Screens
 
-1. Exercise selector
-2. Custom exercise addition
-3. Post-finish workout screen
-4. Workout plans screen
-5. Exercise details / history expansion
-6. App-level shell with clearer navigation between `Today`, `Workouts`, `Analyze`, and `Profile`
+1. Custom workout creation
+2. Post-finish workout screen
+3. Workout plans screen
+4. Exercise details / history expansion
+5. App-level shell with clearer navigation between `Today`, `Workouts`, `Analyze`, and `Profile`
 
 ## Planned Logger Enhancement
 

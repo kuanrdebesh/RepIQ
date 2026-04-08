@@ -35,6 +35,10 @@
 - Workout-level between-exercises timer behavior
 - Manual collapse / expand for exercise sections in long workouts
 - Collapse-all / expand-all control for long workouts
+- Active-exercise logic and visual state:
+  - active workout follows meaningful in-progress interaction rather than casual card browsing
+  - active exercise title carries the primary emphasis
+  - collapsed logger rows now use a flatter list pattern
 - V1 `Muscles Worked` page with:
   - overall workout spread
   - selected exercise focus
@@ -46,6 +50,12 @@
   - top strip limited to set/exercise reward counts
   - reward recompute logic based on workout history plus already-completed same-session work
   - session-level rewards reserved for post-finish surfaces
+- `Add Exercise` optimization:
+  - browse tabs for `All Exercises`, `By Muscle`, and `Types`
+  - quick filters for `In workout` and `Selected`
+  - ordered multi-select
+  - fixed bottom add-action bar
+  - direct custom-exercise creation entry
 
 ## Phase 4
 
@@ -78,12 +88,11 @@ These are intentionally captured so they do not get lost while we finish the cor
 
 ### Next Screen Sequence
 
-1. Exercise selector
-2. Custom exercise addition
-3. Post-finish workout screen
-4. Workout plans screen
-5. Exercise details / history expansion
-6. App shell and navigation polish
+1. Custom workout creation
+2. Post-finish workout screen
+3. Workout plans screen
+4. Exercise details / history expansion
+5. App shell and navigation polish
 
 ### After Theme System Matures
 

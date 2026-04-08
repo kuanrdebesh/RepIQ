@@ -30,6 +30,7 @@ type ExerciseDraft = {
   id: string;
   name: string;
   note: string;
+  stickyNoteEnabled?: boolean;
   restTimer: string;
   supersetGroupId?: string | null;
   goal: ExerciseEvaluationRequest["goal"];
@@ -52,6 +53,8 @@ type WorkoutSettings = {
   transitionRestSeconds: string;
   carryForwardDefaults: boolean;
   showRpe: boolean;
+  guidanceTopStrip: boolean;
+  guidanceInline: boolean;
 };
 
 type WorkoutMeta = {
@@ -63,6 +66,7 @@ type WorkoutMeta = {
 
 type RewardCategory = "pr" | "volume" | "progress";
 type RewardLevel = "set" | "exercise" | "session";
+type AddExerciseMode = "browse" | "create";
 
 type LoggerReward = {
   id: string;
@@ -122,6 +126,8 @@ const apiBaseUrl =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://127.0.0.1:4000";
 
 const themeStorageKey = "repiq-theme-preference";
+const workoutSettingsStorageKey = "repiq-workout-settings";
+const customExercisesStorageKey = "repiq-custom-exercises";
 
 const setTypeOptions: Array<{
   value: DraftSetType;
@@ -168,6 +174,415 @@ const rewardLevelIcon: Record<RewardLevel, string> = {
   exercise: "🎖",
   session: "🏆"
 };
+
+const genericExerciseImage = `data:image/svg+xml;utf8,${encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 88" fill="none">
+    <rect x="3" y="3" width="82" height="82" rx="20" fill="#F7FAFC"/>
+    <circle cx="44" cy="23" r="7" fill="#8A9BB2"/>
+    <path d="M30 66L39 44L33 31" stroke="#61728B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M58 66L49 44L55 31" stroke="#61728B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M36 35H52" stroke="#24324A" stroke-width="8" stroke-linecap="round"/>
+    <path d="M25 28H63" stroke="#4A97CF" stroke-width="6" stroke-linecap="round"/>
+    <path d="M44 30V50" stroke="#F48C3A" stroke-width="7" stroke-linecap="round"/>
+  </svg>
+`)}`;
+
+const commonPrimaryMuscles = [
+  "Chest",
+  "Upper Chest",
+  "Lats",
+  "Upper Back",
+  "Quads",
+  "Hamstrings",
+  "Glutes",
+  "Front Delts",
+  "Side Delts",
+  "Rear Delts",
+  "Triceps",
+  "Biceps",
+  "Lower Back",
+  "Calves"
+];
+
+function createTemplateExercise({
+  id,
+  name,
+  restTimer,
+  goal = "hypertrophy",
+  imageSrc = genericExerciseImage,
+  primaryMuscle,
+  secondaryMuscles,
+  howTo,
+  videoLabel,
+  historySets
+}: {
+  id: string;
+  name: string;
+  restTimer: string;
+  goal?: ExerciseEvaluationRequest["goal"];
+  imageSrc?: string;
+  primaryMuscle: string;
+  secondaryMuscles: string[];
+  howTo: string[];
+  videoLabel?: string;
+  historySets: WorkoutSet[][];
+}): ExerciseDraft {
+  const normalizedHistorySets =
+    historySets.length >= 3
+      ? historySets
+      : [
+          historySets[0],
+          historySets[0].map((set) => ({
+            ...set,
+            weight: Number((set.weight * 0.9).toFixed(1)),
+            reps: Math.max(1, set.reps - 1),
+            rpe: typeof set.rpe === "number" ? Math.max(5, set.rpe - 0.5) : set.rpe
+          })),
+          ...historySets.slice(1)
+        ];
+
+  return {
+    id,
+    name,
+    note: "",
+    stickyNoteEnabled: false,
+    restTimer,
+    goal,
+    imageSrc,
+    primaryMuscle,
+    secondaryMuscles,
+    howTo,
+    videoLabel,
+    history: normalizedHistorySets.map((sets, index) => ({
+      date: `2026-01-${["05", "12", "19"][index] ?? "19"}`,
+      exercise: name,
+      session_key: `${id}-${index + 1}`,
+      sets
+    })),
+    draftSets: [
+      { id: `${id}-w`, setType: "warmup", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false },
+      { id: `${id}-1`, setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false },
+      { id: `${id}-2`, setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false },
+      { id: `${id}-3`, setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false }
+    ]
+  };
+}
+
+const selectorCategorySamples: ExerciseDraft[] = [
+  createTemplateExercise({
+    id: "barbell-squat",
+    name: "Barbell Squat",
+    restTimer: "01:45",
+    imageSrc: benchPressImage,
+    primaryMuscle: "Quads",
+    secondaryMuscles: ["Glutes", "Lower Back"],
+    howTo: [
+      "Set the bar across the upper back and brace before unracking.",
+      "Sit down between the hips while keeping the mid-foot pressure even.",
+      "Drive up through the floor and keep the chest stacked over the hips."
+    ],
+    videoLabel: "Barbell Squat Guide",
+    historySets: [
+      [
+        { weight: 20, reps: 8, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 70, reps: 10, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 70, reps: 10, set_type: "normal", rpe: 8, failed: false },
+        { weight: 70, reps: 9, set_type: "normal", rpe: 8.5, failed: false }
+      ],
+      [
+        { weight: 20, reps: 8, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 75, reps: 8, set_type: "normal", rpe: 8, failed: false },
+        { weight: 75, reps: 8, set_type: "normal", rpe: 8.5, failed: false },
+        { weight: 75, reps: 7, set_type: "normal", rpe: 9, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "ez-bar-curl",
+    name: "EZ Bar Curl",
+    restTimer: "00:45",
+    imageSrc: genericExerciseImage,
+    primaryMuscle: "Biceps",
+    secondaryMuscles: ["Front Delts"],
+    howTo: [
+      "Start tall with elbows slightly in front of the torso.",
+      "Curl the bar without swinging the shoulders forward.",
+      "Lower under control until the elbows are nearly straight."
+    ],
+    videoLabel: "EZ Bar Curl Guide",
+    historySets: [
+      [
+        { weight: 10, reps: 10, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 25, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 25, reps: 11, set_type: "normal", rpe: 8, failed: false },
+        { weight: 25, reps: 10, set_type: "normal", rpe: 8.5, failed: false }
+      ],
+      [
+        { weight: 10, reps: 10, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 27.5, reps: 10, set_type: "normal", rpe: 8, failed: false },
+        { weight: 27.5, reps: 10, set_type: "normal", rpe: 8.5, failed: false },
+        { weight: 27.5, reps: 9, set_type: "normal", rpe: 9, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "rope-pushdown",
+    name: "Rope Pushdown",
+    restTimer: "00:45",
+    imageSrc: genericExerciseImage,
+    primaryMuscle: "Triceps",
+    secondaryMuscles: ["Front Delts"],
+    howTo: [
+      "Lock the elbows near the ribs before starting the pushdown.",
+      "Spread the rope slightly at the bottom without shrugging.",
+      "Control the return until the triceps are fully stretched."
+    ],
+    videoLabel: "Rope Pushdown Guide",
+    historySets: [
+      [
+        { weight: 10, reps: 12, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 20, reps: 15, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 20, reps: 14, set_type: "normal", rpe: 8, failed: false },
+        { weight: 20, reps: 13, set_type: "normal", rpe: 8.5, failed: false }
+      ],
+      [
+        { weight: 10, reps: 12, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 22.5, reps: 12, set_type: "normal", rpe: 8, failed: false },
+        { weight: 22.5, reps: 12, set_type: "normal", rpe: 8.5, failed: false },
+        { weight: 22.5, reps: 11, set_type: "normal", rpe: 9, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "push-up",
+    name: "Push-Up",
+    restTimer: "00:45",
+    imageSrc: genericExerciseImage,
+    primaryMuscle: "Chest",
+    secondaryMuscles: ["Front Delts", "Triceps"],
+    howTo: [
+      "Set a long straight plank before the first rep.",
+      "Lower as one unit until the chest nearly touches the floor.",
+      "Press away while keeping the ribs and hips locked together."
+    ],
+    videoLabel: "Push-Up Guide",
+    historySets: [
+      [
+        { weight: 0, reps: 8, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 0, reps: 15, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 0, reps: 13, set_type: "normal", rpe: 8, failed: false },
+        { weight: 0, reps: 12, set_type: "normal", rpe: 8.5, failed: false }
+      ],
+      [
+        { weight: 0, reps: 8, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 0, reps: 18, set_type: "normal", rpe: 8, failed: false },
+        { weight: 0, reps: 16, set_type: "normal", rpe: 8.5, failed: false },
+        { weight: 0, reps: 14, set_type: "normal", rpe: 9, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "pull-up",
+    name: "Pull-Up",
+    restTimer: "01:15",
+    imageSrc: genericExerciseImage,
+    primaryMuscle: "Lats",
+    secondaryMuscles: ["Upper Back", "Biceps"],
+    howTo: [
+      "Start from a dead hang with the ribs down.",
+      "Drive elbows toward the hips instead of pulling with the neck.",
+      "Lower all the way to full extension under control."
+    ],
+    videoLabel: "Pull-Up Guide",
+    historySets: [
+      [
+        { weight: 0, reps: 5, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 0, reps: 8, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 0, reps: 7, set_type: "normal", rpe: 8, failed: false },
+        { weight: 0, reps: 6, set_type: "normal", rpe: 8.5, failed: false }
+      ],
+      [
+        { weight: 0, reps: 5, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 0, reps: 9, set_type: "normal", rpe: 8, failed: false },
+        { weight: 0, reps: 8, set_type: "normal", rpe: 8.5, failed: false },
+        { weight: 0, reps: 7, set_type: "normal", rpe: 9, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "treadmill-run",
+    name: "Treadmill Run",
+    restTimer: "00:30",
+    goal: "strength",
+    imageSrc: genericExerciseImage,
+    primaryMuscle: "Quads",
+    secondaryMuscles: ["Calves", "Glutes"],
+    howTo: [
+      "Set the pace before stepping fully into the run.",
+      "Keep the torso stacked and let the arms swing naturally.",
+      "Ease the pace down gradually before stepping off."
+    ],
+    videoLabel: "Treadmill Run Tips",
+    historySets: [
+      [
+        { weight: 0, reps: 10, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 0, reps: 20, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 0, reps: 20, set_type: "normal", rpe: 8, failed: false },
+        { weight: 0, reps: 15, set_type: "normal", rpe: 8.5, failed: false }
+      ],
+      [
+        { weight: 0, reps: 10, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 0, reps: 25, set_type: "normal", rpe: 8, failed: false },
+        { weight: 0, reps: 20, set_type: "normal", rpe: 8.5, failed: false },
+        { weight: 0, reps: 15, set_type: "normal", rpe: 9, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "stationary-bike",
+    name: "Stationary Bike",
+    restTimer: "00:30",
+    goal: "strength",
+    imageSrc: genericExerciseImage,
+    primaryMuscle: "Quads",
+    secondaryMuscles: ["Glutes", "Calves"],
+    howTo: [
+      "Set the saddle height so the knee stays slightly bent at the bottom.",
+      "Keep the cadence smooth and avoid rocking the hips.",
+      "Let the resistance challenge the legs without losing posture."
+    ],
+    videoLabel: "Stationary Bike Setup",
+    historySets: [
+      [
+        { weight: 0, reps: 8, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 0, reps: 15, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 0, reps: 15, set_type: "normal", rpe: 8, failed: false },
+        { weight: 0, reps: 12, set_type: "normal", rpe: 8.5, failed: false }
+      ],
+      [
+        { weight: 0, reps: 8, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 0, reps: 18, set_type: "normal", rpe: 8, failed: false },
+        { weight: 0, reps: 15, set_type: "normal", rpe: 8.5, failed: false },
+        { weight: 0, reps: 12, set_type: "normal", rpe: 9, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "hip-flexor-stretch",
+    name: "Hip Flexor Stretch",
+    restTimer: "00:30",
+    imageSrc: genericExerciseImage,
+    primaryMuscle: "Quads",
+    secondaryMuscles: ["Glutes"],
+    howTo: [
+      "Set a half-kneeling stance and tuck the pelvis under slightly.",
+      "Shift forward until the front of the hip opens up.",
+      "Breathe slowly and keep the ribcage stacked over the hips."
+    ],
+    videoLabel: "Hip Flexor Stretch Guide",
+    historySets: [
+      [
+        { weight: 0, reps: 1, set_type: "warmup", rpe: 3, failed: false },
+        { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false },
+        { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false },
+        { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false }
+      ],
+      [
+        { weight: 0, reps: 1, set_type: "warmup", rpe: 3, failed: false },
+        { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false },
+        { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false },
+        { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "chest-stretch",
+    name: "Chest Stretch",
+    restTimer: "00:30",
+    imageSrc: genericExerciseImage,
+    primaryMuscle: "Chest",
+    secondaryMuscles: ["Front Delts"],
+    howTo: [
+      "Place the forearm on the wall slightly below shoulder height.",
+      "Turn the torso away gently until the chest opens.",
+      "Keep the shoulder relaxed instead of forcing the stretch."
+    ],
+    videoLabel: "Chest Stretch Guide",
+    historySets: [
+      [
+        { weight: 0, reps: 1, set_type: "warmup", rpe: 3, failed: false },
+        { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false },
+        { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false },
+        { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false }
+      ],
+      [
+        { weight: 0, reps: 1, set_type: "warmup", rpe: 3, failed: false },
+        { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false },
+        { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false },
+        { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false }
+      ]
+    ]
+  })
+];
+
+const seededCustomExercises: ExerciseDraft[] = [
+  createTemplateExercise({
+    id: "custom-landmine-press",
+    name: "Landmine Press",
+    restTimer: "01:00",
+    imageSrc: genericExerciseImage,
+    primaryMuscle: "Shoulders",
+    secondaryMuscles: ["Upper Chest", "Triceps"],
+    howTo: [
+      "Set the bar in the landmine and start with the elbow slightly in front.",
+      "Press up and forward without over-arching the lower back.",
+      "Lower under control to the shoulder line."
+    ],
+    videoLabel: "Landmine Press Guide",
+    historySets: [
+      [
+        { weight: 10, reps: 10, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 20, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 20, reps: 11, set_type: "normal", rpe: 8, failed: false },
+        { weight: 20, reps: 10, set_type: "normal", rpe: 8.5, failed: false }
+      ],
+      [
+        { weight: 10, reps: 10, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 22.5, reps: 10, set_type: "normal", rpe: 8, failed: false },
+        { weight: 22.5, reps: 10, set_type: "normal", rpe: 8.5, failed: false },
+        { weight: 22.5, reps: 9, set_type: "normal", rpe: 9, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "custom-cossack-squat",
+    name: "Cossack Squat",
+    restTimer: "00:45",
+    imageSrc: genericExerciseImage,
+    primaryMuscle: "Adductors",
+    secondaryMuscles: ["Glutes", "Quads"],
+    howTo: [
+      "Shift into one hip while keeping the other leg long.",
+      "Sit as deep as mobility allows without rounding the trunk.",
+      "Push through the bent leg to return to center."
+    ],
+    videoLabel: "Cossack Squat Guide",
+    historySets: [
+      [
+        { weight: 0, reps: 6, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 0, reps: 10, set_type: "normal", rpe: 7, failed: false },
+        { weight: 0, reps: 10, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 0, reps: 8, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 0, reps: 6, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 0, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 0, reps: 10, set_type: "normal", rpe: 8, failed: false },
+        { weight: 0, reps: 10, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  })
+];
 
 const exerciseLibrary: ExerciseDraft[] = [
   {
@@ -609,7 +1024,8 @@ const exerciseTemplates: ExerciseDraft[] = [
       { id: "hc-2", setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false },
       { id: "hc-3", setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false }
     ]
-  }
+  },
+  ...selectorCategorySamples
 ];
 
 const replacementTemplates: Array<
@@ -661,7 +1077,9 @@ const defaultWorkoutSettings: WorkoutSettings = {
   defaultRestSeconds: "90",
   transitionRestSeconds: "60",
   carryForwardDefaults: true,
-  showRpe: true
+  showRpe: true,
+  guidanceTopStrip: true,
+  guidanceInline: false
 };
 const initialWorkoutExercises: ExerciseDraft[] = [
   exerciseLibrary[0],
@@ -720,6 +1138,93 @@ function getStoredThemePreference(): ThemePreference {
   return stored === "light" || stored === "dark" || stored === "system"
     ? stored
     : "system";
+}
+
+function getStoredWorkoutSettings(): WorkoutSettings {
+  if (typeof window === "undefined") {
+    return defaultWorkoutSettings;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(workoutSettingsStorageKey);
+    if (!raw) {
+      return defaultWorkoutSettings;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<WorkoutSettings>;
+    return {
+      defaultRestSeconds:
+        typeof parsed.defaultRestSeconds === "string"
+          ? sanitizeIntegerInput(parsed.defaultRestSeconds)
+          : defaultWorkoutSettings.defaultRestSeconds,
+      transitionRestSeconds:
+        typeof parsed.transitionRestSeconds === "string"
+          ? sanitizeIntegerInput(parsed.transitionRestSeconds)
+          : defaultWorkoutSettings.transitionRestSeconds,
+      carryForwardDefaults:
+        typeof parsed.carryForwardDefaults === "boolean"
+          ? parsed.carryForwardDefaults
+          : defaultWorkoutSettings.carryForwardDefaults,
+      showRpe:
+        typeof parsed.showRpe === "boolean" ? parsed.showRpe : defaultWorkoutSettings.showRpe,
+      guidanceTopStrip:
+        typeof parsed.guidanceTopStrip === "boolean"
+          ? parsed.guidanceTopStrip
+          : defaultWorkoutSettings.guidanceTopStrip,
+      guidanceInline:
+        typeof parsed.guidanceInline === "boolean"
+          ? parsed.guidanceInline
+          : defaultWorkoutSettings.guidanceInline
+    };
+  } catch {
+    return defaultWorkoutSettings;
+  }
+}
+
+function getStoredCustomExercises(): ExerciseDraft[] {
+  if (typeof window === "undefined") {
+    return seededCustomExercises.map((exercise) => cloneExerciseDraft(exercise));
+  }
+
+  try {
+    const raw = window.localStorage.getItem(customExercisesStorageKey);
+    if (!raw) {
+      return seededCustomExercises.map((exercise) => cloneExerciseDraft(exercise));
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return seededCustomExercises.map((exercise) => cloneExerciseDraft(exercise));
+    }
+
+    if (parsed.length === 0) {
+      return seededCustomExercises.map((exercise) => cloneExerciseDraft(exercise));
+    }
+
+    return parsed
+      .filter(
+        (exercise): exercise is ExerciseDraft =>
+          Boolean(exercise) &&
+          typeof exercise.id === "string" &&
+          typeof exercise.name === "string" &&
+          typeof exercise.restTimer === "string" &&
+          typeof exercise.primaryMuscle === "string" &&
+          Array.isArray(exercise.secondaryMuscles) &&
+          Array.isArray(exercise.howTo) &&
+          Array.isArray(exercise.history) &&
+          Array.isArray(exercise.draftSets)
+      )
+      .map((exercise) =>
+        cloneExerciseDraft(exercise, {
+          imageSrc:
+            typeof exercise.imageSrc === "string" && exercise.imageSrc.length > 0
+              ? exercise.imageSrc
+              : genericExerciseImage
+        })
+      );
+  } catch {
+    return seededCustomExercises.map((exercise) => cloneExerciseDraft(exercise));
+  }
 }
 
 function getSystemTheme(): Exclude<ThemePreference, "system"> {
@@ -854,6 +1359,7 @@ function cloneExerciseTemplate(template: ExerciseDraft, restSeconds: string, suf
     ...template,
     id: `${template.id}-${suffix}`,
     note: "",
+    stickyNoteEnabled: template.stickyNoteEnabled ?? false,
     restTimer: formatRestTimer(restSeconds),
     supersetGroupId: null,
     secondaryMuscles: [...template.secondaryMuscles],
@@ -881,6 +1387,7 @@ function cloneExerciseDraft(
   return {
     ...exercise,
     ...overrides,
+    stickyNoteEnabled: overrides?.stickyNoteEnabled ?? exercise.stickyNoteEnabled ?? false,
     secondaryMuscles: [...exercise.secondaryMuscles],
     howTo: [...exercise.howTo],
     history: exercise.history.map((session) => ({
@@ -1014,6 +1521,18 @@ function buildCompletedSets(
   });
 
   return { resolvedSets, issues };
+}
+
+function isExerciseComplete(exercise: ExerciseDraft) {
+  return exercise.draftSets.length > 0 && exercise.draftSets.every((set) => set.done);
+}
+
+function isExerciseStarted(exercise: ExerciseDraft) {
+  return exercise.draftSets.some((set) => set.done);
+}
+
+function isExerciseInProgress(exercise: ExerciseDraft) {
+  return isExerciseStarted(exercise) && !isExerciseComplete(exercise);
 }
 
 function isInteractiveSwipeTarget(target: EventTarget | null) {
@@ -1567,46 +2086,553 @@ function ExerciseDetailPage({
 
 function AddExercisePage({
   templates,
+  existingExerciseNames,
   onBack,
-  onSelect
+  onAddSelected,
+  onCreateCustom
 }: {
   templates: ExerciseDraft[];
+  existingExerciseNames: string[];
   onBack: () => void;
-  onSelect: (templateId: string) => void;
+  onAddSelected: (templateIds: string[]) => void;
+  onCreateCustom: (draft: {
+    name: string;
+    primaryMuscle: string;
+    secondaryMuscles: string[];
+    restTimer: string;
+    howTo: string[];
+  }) => void;
 }) {
+  const [mode, setMode] = useState<AddExerciseMode>("browse");
+  const [browseTab, setBrowseTab] = useState<"all" | "muscle" | "type">("all");
+  const [expandedTypeKeys, setExpandedTypeKeys] = useState<string[]>([]);
+  const [sortMode, setSortMode] = useState<"alphabetical" | "frequency">("alphabetical");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
+  const [showInWorkoutOnly, setShowInWorkoutOnly] = useState(false);
+  const [showSelectedOnly, setShowSelectedOnly] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [customPrimaryMuscle, setCustomPrimaryMuscle] = useState("");
+  const [customSecondaryMuscles, setCustomSecondaryMuscles] = useState("");
+  const [customRestTimer, setCustomRestTimer] = useState("01:00");
+  const [customHowTo, setCustomHowTo] = useState("");
+  const resultsRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+    window.requestAnimationFrame(() => {
+      resultsRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    });
+  }, [mode]);
+
+  const getExerciseType = (exercise: ExerciseDraft) => {
+    if (exercise.id.startsWith("custom-")) {
+      return "Added by me";
+    }
+
+    const name = exercise.name.toLowerCase();
+    if (/(run|bike|cycle|walk|elliptical|rower|stair)/.test(name)) {
+      return "Cardio";
+    }
+    if (/(stretch|mobility|yoga)/.test(name)) {
+      return "Stretching";
+    }
+    if (/(push-up|pull-up|chin-up|dip|plank|crunch|sit-up|bodyweight)/.test(name)) {
+      return "Bodyweight";
+    }
+    return "Weighted";
+  };
+
+  const filteredTemplates = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    const searched = templates.filter((template) => {
+      if (!normalized) {
+        return true;
+      }
+
+      const haystack = [
+        template.name,
+        template.primaryMuscle,
+        template.secondaryMuscles.join(" "),
+        template.goal,
+        getExerciseType(template)
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(normalized);
+    });
+
+    const narrowed = searched.filter((template) => {
+      const alreadyInWorkout = existingExerciseNames.includes(template.name);
+      const isSelected = selectedTemplateIds.includes(template.id);
+
+      if (showInWorkoutOnly && !alreadyInWorkout) {
+        return false;
+      }
+
+      if (showSelectedOnly && !isSelected) {
+        return false;
+      }
+
+      return true;
+    });
+
+    const sorted = [...narrowed].sort((left, right) => {
+      if (sortMode === "frequency") {
+        const frequencyDelta = right.history.length - left.history.length;
+        if (frequencyDelta !== 0) {
+          return frequencyDelta;
+        }
+      }
+
+      return left.name.localeCompare(right.name);
+    });
+
+    return sorted;
+  }, [existingExerciseNames, query, selectedTemplateIds, showInWorkoutOnly, showSelectedOnly, sortMode, templates]);
+
+  const groupedByMuscle = useMemo(() => {
+    return filteredTemplates.reduce<Record<string, ExerciseDraft[]>>((groups, template) => {
+      const key = template.primaryMuscle;
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+      groups[key].push(template);
+      return groups;
+    }, {});
+  }, [filteredTemplates]);
+
+  const groupedByType = useMemo(() => {
+    return filteredTemplates.reduce<Record<string, ExerciseDraft[]>>((groups, template) => {
+      const key = getExerciseType(template);
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+      groups[key].push(template);
+      return groups;
+    }, {});
+  }, [filteredTemplates]);
+
+  const typeGroupKeys = useMemo(
+    () => Object.keys(groupedByType).sort((left, right) => left.localeCompare(right)),
+    [groupedByType]
+  );
+
+  function toggleTypeGroup(type: string) {
+    setExpandedTypeKeys((current) =>
+      current.includes(type) ? current.filter((entry) => entry !== type) : [...current, type]
+    );
+  }
+
+  function toggleAllTypeGroups() {
+    setExpandedTypeKeys((current) =>
+      current.length === typeGroupKeys.length ? [] : [...typeGroupKeys]
+    );
+  }
+
+  const canCreateCustom =
+    customName.trim().length > 1 && customPrimaryMuscle.trim().length > 1;
+
+  const toggleTemplateSelection = (templateId: string) => {
+    setSelectedTemplateIds((current) =>
+      current.includes(templateId)
+        ? current.filter((id) => id !== templateId)
+        : [...current, templateId]
+    );
+  };
+
+  const clearSearch = () => {
+    setQuery("");
+    window.requestAnimationFrame(() => {
+      resultsRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  };
+
+  const renderTemplateCard = (template: ExerciseDraft) => {
+    const alreadyInWorkout = existingExerciseNames.includes(template.name);
+    const selectionIndex = selectedTemplateIds.indexOf(template.id);
+
+    return (
+      <button
+        key={template.id}
+        type="button"
+        className={`template-card ${selectionIndex >= 0 ? "is-selected" : ""}`}
+        title={template.name}
+        onClick={() => toggleTemplateSelection(template.id)}
+      >
+        <img src={template.imageSrc} alt={template.name} className="template-thumb" />
+        <div className="template-card-copy">
+          <div className="template-card-top">
+            <strong>{template.name}</strong>
+            <div className="template-card-statuses">
+              {alreadyInWorkout && <span className="session-status-pill">In workout</span>}
+              {selectionIndex >= 0 && (
+                <span className="template-select-badge" aria-label={`Selected ${selectionIndex + 1}`}>
+                  ✓ {selectionIndex + 1}
+                </span>
+              )}
+            </div>
+          </div>
+          <p className="template-card-meta">
+            <strong>{template.primaryMuscle}</strong>
+            {template.secondaryMuscles.length > 0 ? (
+              <>
+                {" · "}
+                <span>{template.secondaryMuscles.join(", ")}</span>
+              </>
+            ) : null}
+          </p>
+        </div>
+      </button>
+    );
+  };
+
   return (
     <main className="detail-page add-exercise-page">
       <header className="detail-topbar">
-        <button className="back-nav-button detail-back-button" type="button" onClick={onBack} aria-label="Back">
+        <button
+          className="back-nav-button detail-back-button"
+          type="button"
+          onClick={() => {
+            if (mode === "create") {
+              setMode("browse");
+              return;
+            }
+            onBack();
+          }}
+          aria-label="Back"
+        >
           ←
         </button>
         <div className="detail-topbar-copy">
-          <p className="label">Exercise Selector</p>
-          <h1>Add Exercise</h1>
+          <p className="label">{mode === "create" ? "Custom Exercise" : "Exercise Selector"}</p>
+          <h1>{mode === "create" ? "Create Exercise" : "Add Exercise"}</h1>
         </div>
-        <span className="detail-topbar-spacer" aria-hidden="true" />
+        <div className="detail-topbar-actions">
+          {mode === "browse" ? (
+            <div className="detail-topbar-action-group">
+              <button
+                className="icon-button add-exercise-header-icon"
+                type="button"
+                aria-label="Sort and filter"
+                title="Sort and filter"
+                onClick={() => setFilterOpen(true)}
+              >
+                ≡
+              </button>
+            </div>
+          ) : (
+            <span className="detail-topbar-spacer" aria-hidden="true" />
+          )}
+        </div>
       </header>
 
-      <section className="detail-section">
-        <p className="settings-note">
-          Choose an exercise to add to the current workout. Custom exercise creation comes next.
-        </p>
+      <section className={`detail-section ${mode === "browse" ? "add-exercise-section" : ""}`}>
+        {mode === "browse" ? (
+          <>
+            <div className="add-exercise-browse">
+              <div className="add-exercise-toolbar">
+                <div className="add-exercise-tab-strip">
+                  <button
+                    type="button"
+                    className={`theme-choice add-exercise-tab ${browseTab === "all" ? "is-active" : ""}`}
+                    onClick={() => setBrowseTab("all")}
+                  >
+                    All Exercises
+                  </button>
+                  <button
+                    type="button"
+                    className={`theme-choice add-exercise-tab ${browseTab === "muscle" ? "is-active" : ""}`}
+                    onClick={() => setBrowseTab("muscle")}
+                  >
+                    By Muscle
+                  </button>
+                  <button
+                    type="button"
+                    className={`theme-choice add-exercise-tab ${browseTab === "type" ? "is-active" : ""}`}
+                    onClick={() => setBrowseTab("type")}
+                  >
+                    Types
+                  </button>
+                </div>
 
-        <div className="template-list">
-          {templates.map((template) => (
+                <div className="search-shell">
+                  <div className="search-shell-head">
+                    <div className="search-shell-head-left">
+                      <span className="label">{selectedTemplateIds.length} SELECTED</span>
+                      <div className="quick-filter-row" aria-label="Quick exercise filters">
+                        <button
+                          type="button"
+                          className={`quick-filter-chip ${showInWorkoutOnly ? "is-active" : ""}`}
+                          onClick={() => setShowInWorkoutOnly((current) => !current)}
+                        >
+                          In workout
+                        </button>
+                        <button
+                          type="button"
+                          className={`quick-filter-chip ${showSelectedOnly ? "is-active" : ""}`}
+                          onClick={() => setShowSelectedOnly((current) => !current)}
+                        >
+                          Selected
+                        </button>
+                      </div>
+                    </div>
+                    <div className="search-shell-head-right">
+                      {browseTab === "type" && (
+                        <button
+                          type="button"
+                          className="template-group-toolbar-button"
+                          onClick={toggleAllTypeGroups}
+                        >
+                          {expandedTypeKeys.length === typeGroupKeys.length ? "Collapse all" : "Expand all"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="search-input-shell">
+                    <input
+                      className="search-input"
+                      type="text"
+                      aria-label="Search exercises"
+                      placeholder="Search by exercise or muscle"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                    />
+                    {query.trim().length > 0 && (
+                      <button
+                        className="search-clear-button"
+                        type="button"
+                        aria-label="Clear search"
+                        onClick={clearSearch}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div ref={resultsRef} className="template-results">
+                {filteredTemplates.length === 0 ? (
+                  <article className="empty-state-card">
+                    <strong>No matching exercise yet</strong>
+                    <p>Try a broader search or use the + button below to create a custom exercise.</p>
+                  </article>
+                ) : (
+                  <>
+                    {browseTab === "all" && (
+                      <div className="template-list">{filteredTemplates.map(renderTemplateCard)}</div>
+                    )}
+
+                    {browseTab === "muscle" && (
+                      <div className="template-group-list">
+                        {Object.keys(groupedByMuscle)
+                          .sort((left, right) => left.localeCompare(right))
+                          .map((muscle) => (
+                            <section key={muscle} className="template-group-section">
+                              <div className="template-group-heading">
+                                <strong>{muscle}</strong>
+                                <span>{groupedByMuscle[muscle].length}</span>
+                              </div>
+                              <div className="template-list">
+                                {groupedByMuscle[muscle].map(renderTemplateCard)}
+                              </div>
+                            </section>
+                          ))}
+                      </div>
+                    )}
+
+                    {browseTab === "type" && (
+                      <div className="template-group-list">
+                        {typeGroupKeys.map((type) => (
+                          <section key={type} className="template-group-section">
+                            <button
+                              type="button"
+                              className={`template-group-heading template-group-heading-button ${
+                                expandedTypeKeys.includes(type) ? "is-expanded" : ""
+                              }`}
+                              onClick={() => toggleTypeGroup(type)}
+                            >
+                              <strong>{type}</strong>
+                              <span>{groupedByType[type].length}</span>
+                              <span className="template-group-chevron" aria-hidden="true">
+                                {expandedTypeKeys.includes(type) ? "⌃" : "⌄"}
+                              </span>
+                            </button>
+                            {expandedTypeKeys.includes(type) && (
+                              <div className="template-list">
+                                {groupedByType[type].map(renderTemplateCard)}
+                              </div>
+                            )}
+                          </section>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {selectedTemplateIds.length > 0 && (
+                <div className="add-exercise-sticky-actions">
+                  <button
+                    className="primary-button add-exercise-sticky-submit"
+                    type="button"
+                    onClick={() => onAddSelected(selectedTemplateIds)}
+                  >
+                    Add Exercise{selectedTemplateIds.length > 1 ? "s" : ""} ({selectedTemplateIds.length})
+                  </button>
+                </div>
+              )}
+            </div>
+
             <button
-              key={template.id}
+              className={`icon-button add-exercise-create-fab ${
+                selectedTemplateIds.length > 0 ? "is-raised" : ""
+              } ${filterOpen ? "is-hidden" : ""}`}
               type="button"
-              className="template-card"
-              title={template.name}
-              onClick={() => onSelect(template.id)}
+              aria-label="Create custom exercise"
+              title="Create custom exercise"
+              onClick={() => setMode("create")}
             >
-              <img src={template.imageSrc} alt={template.name} className="template-thumb" />
-              <span>{template.name}</span>
+              +
             </button>
-          ))}
-        </div>
+          </>
+        ) : (
+          <div className="custom-exercise-form">
+            <p className="settings-note">
+              Create a custom exercise once, then reuse it from the library later.
+            </p>
+
+            <label className="settings-row">
+              <span>Exercise name</span>
+              <input
+                type="text"
+                value={customName}
+                placeholder="e.g. Machine Chest Press"
+                onChange={(event) => setCustomName(event.target.value)}
+              />
+            </label>
+
+            <label className="settings-row">
+              <span>Primary muscle</span>
+              <input
+                type="text"
+                list="primary-muscle-options"
+                value={customPrimaryMuscle}
+                placeholder="Choose or type"
+                onChange={(event) => setCustomPrimaryMuscle(event.target.value)}
+              />
+            </label>
+            <datalist id="primary-muscle-options">
+              {commonPrimaryMuscles.map((muscle) => (
+                <option key={muscle} value={muscle} />
+              ))}
+            </datalist>
+
+            <label className="settings-row">
+              <span>Secondary muscles</span>
+              <input
+                type="text"
+                value={customSecondaryMuscles}
+                placeholder="Comma separated, e.g. Triceps, Front Delts"
+                onChange={(event) => setCustomSecondaryMuscles(event.target.value)}
+              />
+            </label>
+
+            <label className="settings-row">
+              <span>Default rest timer</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={customRestTimer}
+                onChange={(event) =>
+                  setCustomRestTimer(formatMinutesSecondsInput(event.target.value))
+                }
+              />
+            </label>
+
+            <label className="settings-stack-row">
+              <span>How to perform</span>
+              <textarea
+                className="notes-textarea"
+                rows={5}
+                value={customHowTo}
+                placeholder={"One cue per line\nSet up position\nControl the lowering phase\nDrive through the target muscle"}
+                onChange={(event) => setCustomHowTo(event.target.value)}
+              />
+            </label>
+
+            <div className="sheet-actions">
+              <button className="secondary-button" type="button" onClick={() => setMode("browse")}>
+                Back to Library
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={!canCreateCustom}
+                onClick={() =>
+                  onCreateCustom({
+                    name: customName.trim(),
+                    primaryMuscle: customPrimaryMuscle.trim(),
+                    secondaryMuscles: customSecondaryMuscles
+                      .split(",")
+                      .map((value) => value.trim())
+                      .filter(Boolean),
+                    restTimer: customRestTimer,
+                    howTo: customHowTo
+                      .split("\n")
+                      .map((step) => step.trim())
+                      .filter(Boolean)
+                  })
+                }
+              >
+                Create and Add
+              </button>
+            </div>
+          </div>
+        )}
       </section>
+
+      {filterOpen && (
+        <section className="sheet-overlay bottom-sheet-overlay" onClick={() => setFilterOpen(false)}>
+          <div className="sheet-card action-sheet" onClick={(event) => event.stopPropagation()}>
+            <div className="sheet-handle" />
+            <div className="sheet-head">
+              <div>
+                <p className="label">Sort Exercises</p>
+                <h3>Choose order</h3>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setFilterOpen(false)}>
+                ×
+              </button>
+            </div>
+
+            <div className="action-sheet-list">
+              <button
+                type="button"
+                onClick={() => {
+                  setSortMode("alphabetical");
+                  setFilterOpen(false);
+                }}
+              >
+                Alphabetical {sortMode === "alphabetical" ? "✓" : ""}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSortMode("frequency");
+                  setFilterOpen(false);
+                }}
+              >
+                Most Logged {sortMode === "frequency" ? "✓" : ""}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
     </main>
   );
 }
@@ -1812,6 +2838,7 @@ export function App() {
   const [systemTheme, setSystemTheme] = useState<"light" | "dark">(getSystemTheme);
   const [exercises, setExercises] = useState<ExerciseDraft[]>(initialWorkoutExercises);
   const [activeExerciseId, setActiveExerciseId] = useState<string>(initialWorkoutExercises[0].id);
+  const [userActiveExerciseId, setUserActiveExerciseId] = useState<string | null>(null);
   const [detailsExerciseId, setDetailsExerciseId] = useState<string | null>(null);
   const [detailsScrollTarget, setDetailsScrollTarget] = useState<"top" | "bottom">("top");
   const [musclesExerciseId, setMusclesExerciseId] = useState<string | null>(null);
@@ -1824,22 +2851,27 @@ export function App() {
   const [reorderOpen, setReorderOpen] = useState(false);
   const [reorderDragId, setReorderDragId] = useState<string | null>(null);
   const [collapsedExerciseIds, setCollapsedExerciseIds] = useState<string[]>([]);
+  const [guidanceCollapsed, setGuidanceCollapsed] = useState(false);
   const [timingOpen, setTimingOpen] = useState(false);
   const [leavePromptOpen, setLeavePromptOpen] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [supersetSheetExerciseId, setSupersetSheetExerciseId] = useState<string | null>(null);
   const [supersetSelectionIds, setSupersetSelectionIds] = useState<string[]>([]);
   const [exerciseRestDefaults, setExerciseRestDefaults] = useState<ExerciseRestDefaults>({});
+  const [customExercises, setCustomExercises] = useState<ExerciseDraft[]>(getStoredCustomExercises);
+  const [noteEditorExerciseId, setNoteEditorExerciseId] = useState<string | null>(null);
+  const [noteEditorValue, setNoteEditorValue] = useState("");
   const [restTimerEditorExerciseId, setRestTimerEditorExerciseId] = useState<string | null>(null);
   const [restTimerEditorValue, setRestTimerEditorValue] = useState("");
   const [saveRestTimerToDefault, setSaveRestTimerToDefault] = useState(false);
-  const [settings, setSettings] = useState<WorkoutSettings>(defaultWorkoutSettings);
+  const [settings, setSettings] = useState<WorkoutSettings>(getStoredWorkoutSettings);
   const [workoutMeta, setWorkoutMeta] = useState<WorkoutMeta>(defaultWorkoutMeta);
   const [setTypePickerRowId, setSetTypePickerRowId] = useState<string | null>(null);
   const [swipeState, setSwipeState] = useState<SwipeState>(createInitialSwipeState);
   const swipeStateRef = useRef<SwipeState>(createInitialSwipeState());
   const [revealedDeleteRowId, setRevealedDeleteRowId] = useState<string | null>(null);
   const [state, setState] = useState<FlowState>(defaultState);
-  const [topGuidanceEnabled, setTopGuidanceEnabled] = useState(true);
+  const [inlineGuidanceOpen, setInlineGuidanceOpen] = useState(false);
   const [showTopGuidance, setShowTopGuidance] = useState(false);
   const [topGuidanceExpanded, setTopGuidanceExpanded] = useState(false);
   const [topGuidancePullDistance, setTopGuidancePullDistance] = useState(0);
@@ -1865,6 +2897,7 @@ export function App() {
 
   const activeExercise =
     exercises.find((exercise) => exercise.id === activeExerciseId) ?? exercises[0];
+  const activeExerciseIndex = exercises.findIndex((exercise) => exercise.id === activeExercise.id);
   const detailsExercise =
     exercises.find((exercise) => exercise.id === detailsExerciseId) ?? null;
   const musclesExercise =
@@ -1885,6 +2918,11 @@ export function App() {
     state.status === "loading"
       ? "RepIQ is checking your completed sets against recent sessions so the next prompt reflects your actual workout pattern, not just the plan on paper."
       : state.suggestion?.why ?? state.message ?? fallbackGuidanceWhy;
+  const allExercisesComplete =
+    exercises.length > 0 && exercises.every((exercise) => exercise.draftSets.every((set) => set.done));
+  const hasStartedExercise = exercises.some((exercise) => isExerciseStarted(exercise));
+  const showTopGuidanceSurface =
+    settings.guidanceTopStrip && showTopGuidance && !allExercisesComplete;
 
   const activeRestSeconds =
     activeRestTimer
@@ -1922,6 +2960,11 @@ export function App() {
       { total: 0, set: 0, exercise: 0, session: 0 }
     );
   }, [loggerRewards]);
+
+  const availableExerciseTemplates = useMemo(
+    () => [...exerciseTemplates, ...customExercises],
+    [customExercises]
+  );
 
   const derivedDuration = useMemo(
     () => formatElapsedDuration(workoutMeta.date, workoutMeta.startTime),
@@ -1977,6 +3020,22 @@ export function App() {
   }, [resolvedTheme, themePreference]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(workoutSettingsStorageKey, JSON.stringify(settings));
+  }, [settings]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(customExercisesStorageKey, JSON.stringify(customExercises));
+  }, [customExercises]);
+
+  useEffect(() => {
     if (typeof document === "undefined" || !setTypePickerRowId) {
       return undefined;
     }
@@ -2007,7 +3066,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !topGuidanceEnabled) {
+    if (typeof window === "undefined" || !settings.guidanceTopStrip) {
       setShowTopGuidance(false);
       setTopGuidanceExpanded(false);
       setTopGuidancePullDistance(0);
@@ -2027,7 +3086,7 @@ export function App() {
       window.removeEventListener("scroll", updateTopGuidanceVisibility);
       window.removeEventListener("resize", updateTopGuidanceVisibility);
     };
-  }, [hasGuidance, topGuidanceEnabled]);
+  }, [hasGuidance, settings.guidanceTopStrip]);
 
   useEffect(() => {
     if (!showTopGuidance) {
@@ -2035,6 +3094,27 @@ export function App() {
       setTopGuidancePullDistance(0);
     }
   }, [showTopGuidance]);
+
+  useEffect(() => {
+    const validUserActiveExerciseId =
+      userActiveExerciseId &&
+      exercises.some(
+        (exercise) => exercise.id === userActiveExerciseId && !isExerciseComplete(exercise)
+      )
+        ? userActiveExerciseId
+        : null;
+
+    if (!validUserActiveExerciseId && userActiveExerciseId) {
+      setUserActiveExerciseId(null);
+    }
+
+    const nextActiveExerciseId =
+      validUserActiveExerciseId ?? getDefaultActiveExerciseId(exercises);
+
+    if (nextActiveExerciseId && nextActiveExerciseId !== activeExerciseId) {
+      setActiveExerciseId(nextActiveExerciseId);
+    }
+  }, [activeExerciseId, exercises, userActiveExerciseId]);
 
   function openDetails(
     exerciseId: string,
@@ -2047,12 +3127,87 @@ export function App() {
     setMenuExerciseId(null);
   }
 
+  function getFirstNotStartedExerciseId(exerciseList: ExerciseDraft[]) {
+    return exerciseList.find((exercise) => !isExerciseComplete(exercise) && !isExerciseStarted(exercise))?.id ?? null;
+  }
+
+  function getDefaultActiveExerciseId(exerciseList: ExerciseDraft[]) {
+    return (
+      getFirstNotStartedExerciseId(exerciseList) ??
+      exerciseList.find((exercise) => !isExerciseComplete(exercise))?.id ??
+      exerciseList[0]?.id ??
+      null
+    );
+  }
+
+  function getFirstIncompleteExerciseId(exerciseList: ExerciseDraft[]) {
+    return (
+      exerciseList.find((exercise) => exercise.draftSets.some((set) => !set.done))?.id ?? null
+    );
+  }
+
+  function getNextActiveExerciseIdFromProgress(
+    exerciseList: ExerciseDraft[],
+    fallbackExerciseId?: string
+  ) {
+    return (
+      getFirstIncompleteExerciseId(exerciseList) ??
+      fallbackExerciseId ??
+      exerciseList[0]?.id ??
+      null
+    );
+  }
+
+  function getNextIncompleteExerciseIdAfter(
+    exerciseList: ExerciseDraft[],
+    exerciseId: string
+  ) {
+    const currentIndex = exerciseList.findIndex((exercise) => exercise.id === exerciseId);
+    if (currentIndex === -1) {
+      return null;
+    }
+
+    for (let index = currentIndex + 1; index < exerciseList.length; index += 1) {
+      if (!isExerciseComplete(exerciseList[index])) {
+        return exerciseList[index].id;
+      }
+    }
+
+    return null;
+  }
+
+  function setInteractedExerciseActive(exerciseId: string) {
+    const exercise = exercises.find((entry) => entry.id === exerciseId);
+    if (!exercise || isExerciseComplete(exercise)) {
+      return;
+    }
+    const hasInProgressExercise = exercises.some((entry) => isExerciseInProgress(entry));
+    if (hasInProgressExercise && activeExerciseId !== exerciseId) {
+      return;
+    }
+    setUserActiveExerciseId(exerciseId);
+    if (activeExerciseId !== exerciseId) {
+      setActiveExerciseId(exerciseId);
+    }
+    setCollapsedExerciseIds((current) => current.filter((id) => id !== exerciseId));
+  }
+
+  function setPreStartExerciseActive(exerciseId: string) {
+    const exercise = exercises.find((entry) => entry.id === exerciseId);
+    if (!exercise || isExerciseComplete(exercise)) {
+      return;
+    }
+    setUserActiveExerciseId(exerciseId);
+    if (activeExerciseId !== exerciseId) {
+      setActiveExerciseId(exerciseId);
+    }
+  }
+
   function toggleExerciseCollapse(exerciseId: string) {
     setCollapsedExerciseIds((current) => {
       const isCollapsed = current.includes(exerciseId);
 
       if (isCollapsed) {
-        setActiveExerciseId(exerciseId);
         return current.filter((id) => id !== exerciseId);
       }
 
@@ -2072,9 +3227,9 @@ export function App() {
   }
 
   function toggleCollapseAllExercises() {
-    setCollapsedExerciseIds((current) =>
-      current.length === exercises.length ? [] : exercises.map((exercise) => exercise.id)
-    );
+    const allCollapsed = collapsedExerciseIds.length === exercises.length && guidanceCollapsed;
+    setCollapsedExerciseIds(allCollapsed ? [] : exercises.map((exercise) => exercise.id));
+    setGuidanceCollapsed(!allCollapsed);
     setMenuExerciseId(null);
   }
 
@@ -2098,7 +3253,7 @@ export function App() {
     titleHoldTriggered.current = false;
     titleHoldTimer.current = window.setTimeout(() => {
       titleHoldTriggered.current = true;
-      setActiveExerciseId(exerciseId);
+      setInteractedExerciseActive(exerciseId);
       setReorderOpen(true);
       setWorkoutMenuOpen(false);
       setMenuExerciseId(null);
@@ -2118,7 +3273,9 @@ export function App() {
     field: "weightInput" | "repsInput" | "rpeInput" | "done" | "failed",
     value: string | boolean
   ) {
-    setActiveExerciseId(exerciseId);
+    if (field !== "done" || value !== false) {
+      setInteractedExerciseActive(exerciseId);
+    }
     setExercises((current) =>
       current.map((exercise) => {
         if (exercise.id !== exerciseId) {
@@ -2147,23 +3304,161 @@ export function App() {
     );
   }
 
-  function markSetDone(exerciseId: string, setIndex: number) {
-    updateDraftSet(exerciseId, setIndex, "done", true);
-    const exerciseIndex = exercises.findIndex((entry) => entry.id === exerciseId);
-    const timerExercise = exerciseIndex >= 0 ? exercises[exerciseIndex] : null;
-    const isLastSetInExercise =
-      timerExercise !== null && setIndex >= timerExercise.draftSets.length - 1;
-    const nextExerciseId =
-      exerciseIndex >= 0 && exerciseIndex < exercises.length - 1
-        ? exercises[exerciseIndex + 1]?.id
-        : null;
+  function applyResolvedValuesToDraftSet(
+    exerciseId: string,
+    setIndex: number,
+    values: { weightInput?: string; repsInput?: string; rpeInput?: string }
+  ) {
+    setExercises((current) =>
+      current.map((exercise) => {
+        if (exercise.id !== exerciseId) {
+          return exercise;
+        }
 
-    if (isLastSetInExercise && nextExerciseId) {
-      startRestTimer(nextExerciseId, settings.transitionRestSeconds);
+        return {
+          ...exercise,
+          draftSets: exercise.draftSets.map((set, index) =>
+            index === setIndex
+              ? {
+                  ...set,
+                  weightInput: values.weightInput ?? set.weightInput,
+                  repsInput: values.repsInput ?? set.repsInput,
+                  rpeInput: values.rpeInput ?? set.rpeInput
+                }
+              : set
+          )
+        };
+      })
+    );
+  }
+
+  function applyPreviousValuesToDraftSet(exerciseId: string, setIndex: number) {
+    const exercise = exercises.find((entry) => entry.id === exerciseId);
+    if (!exercise) {
+      return;
+    }
+
+    const previousSet = getPreviousReferenceSet(
+      exercise.draftSets,
+      setIndex,
+      exercise.history[exercise.history.length - 1]
+    );
+
+    if (!previousSet) {
+      return;
+    }
+
+    setInteractedExerciseActive(exerciseId);
+
+    applyResolvedValuesToDraftSet(exerciseId, setIndex, {
+      weightInput: String(previousSet.weight),
+      repsInput: String(previousSet.reps),
+      rpeInput:
+        typeof previousSet.rpe === "number" && Number.isFinite(previousSet.rpe)
+          ? String(previousSet.rpe)
+          : ""
+    });
+  }
+
+  function markSetDone(exerciseId: string, setIndex: number) {
+    const exercise = exercises.find((entry) => entry.id === exerciseId);
+    if (!exercise) {
+      return;
+    }
+
+    const previousSet = getPreviousReferenceSet(
+      exercise.draftSets,
+      setIndex,
+      exercise.history[exercise.history.length - 1]
+    );
+    const draftSet = exercise.draftSets[setIndex];
+    const resolvedWeightInput =
+      settings.carryForwardDefaults &&
+      previousSet &&
+      draftSet.weightInput.trim().length === 0
+        ? String(previousSet.weight)
+        : draftSet.weightInput;
+    const resolvedRepsInput =
+      settings.carryForwardDefaults &&
+      previousSet &&
+      draftSet.repsInput.trim().length === 0
+        ? String(previousSet.reps)
+        : draftSet.repsInput;
+    const resolvedRpeInput =
+      settings.carryForwardDefaults &&
+      previousSet &&
+      draftSet.rpeInput.trim().length === 0
+        ? typeof previousSet.rpe === "number" && Number.isFinite(previousSet.rpe)
+          ? String(previousSet.rpe)
+          : ""
+        : draftSet.rpeInput;
+
+    const nextExercises = exercises.map((currentExercise) => {
+      if (currentExercise.id !== exerciseId) {
+        return currentExercise;
+      }
+
+      return {
+        ...currentExercise,
+        draftSets: currentExercise.draftSets.map((set, index) =>
+          index === setIndex
+            ? {
+                ...set,
+                weightInput: resolvedWeightInput,
+                repsInput: resolvedRepsInput,
+                rpeInput: resolvedRpeInput,
+                done: true
+              }
+            : set
+        )
+      };
+    });
+
+    setExercises(nextExercises);
+
+    const nextExerciseState = nextExercises.find((entry) => entry.id === exerciseId);
+    if (nextExerciseState && !isExerciseComplete(nextExerciseState)) {
+      setUserActiveExerciseId(exerciseId);
+      setCollapsedExerciseIds((current) => current.filter((id) => id !== exerciseId));
+    } else {
+      setUserActiveExerciseId(null);
+    }
+
+    const nextExerciseStateIndex = nextExercises.findIndex((entry) => entry.id === exerciseId);
+    const nextExerciseStateForTimer =
+      nextExerciseStateIndex >= 0 ? nextExercises[nextExerciseStateIndex] : null;
+    const didCompleteExercise =
+      nextExerciseStateForTimer !== null && isExerciseComplete(nextExerciseStateForTimer);
+    const nextTransitionExerciseId = getNextIncompleteExerciseIdAfter(nextExercises, exerciseId);
+    if (didCompleteExercise && nextTransitionExerciseId) {
+      setCollapsedExerciseIds((current) =>
+        current.filter((id) => id !== nextTransitionExerciseId)
+      );
+      startRestTimer(nextTransitionExerciseId, settings.transitionRestSeconds);
       return;
     }
 
     startRestTimer(exerciseId);
+  }
+
+  function markSetUndone(exerciseId: string, setIndex: number) {
+    const nextExercises = exercises.map((exercise) => {
+      if (exercise.id !== exerciseId) {
+        return exercise;
+      }
+
+      return {
+        ...exercise,
+        draftSets: exercise.draftSets.map((set, index) =>
+          index === setIndex ? { ...set, done: false } : set
+        )
+      };
+    });
+
+    setExercises(nextExercises);
+    setUserActiveExerciseId(exerciseId);
+    setCollapsedExerciseIds((current) => current.filter((id) => id !== exerciseId));
+    stopRestTimer(exerciseId);
   }
 
   function updateExerciseNote(exerciseId: string, note: string) {
@@ -2172,6 +3467,52 @@ export function App() {
         exercise.id === exerciseId ? { ...exercise, note } : exercise
       )
     );
+  }
+
+  function setExerciseStickyNoteEnabled(exerciseId: string, enabled: boolean) {
+    setExercises((current) =>
+      current.map((exercise) =>
+        exercise.id === exerciseId ? { ...exercise, stickyNoteEnabled: enabled } : exercise
+      )
+    );
+  }
+
+  function openNoteEditor(exerciseId: string) {
+    const exercise = exercises.find((entry) => entry.id === exerciseId);
+    if (!exercise) {
+      return;
+    }
+
+    setNoteEditorExerciseId(exerciseId);
+    setNoteEditorValue(exercise.note);
+    setMenuExerciseId(null);
+  }
+
+  function enableStickyNote(exerciseId: string) {
+    setExerciseStickyNoteEnabled(exerciseId, true);
+    setMenuExerciseId(null);
+  }
+
+  function hideStickyNote(exerciseId: string) {
+    setExerciseStickyNoteEnabled(exerciseId, false);
+    if (noteEditorExerciseId === exerciseId) {
+      closeNoteEditor();
+    }
+    setMenuExerciseId(null);
+  }
+
+  function closeNoteEditor() {
+    setNoteEditorExerciseId(null);
+    setNoteEditorValue("");
+  }
+
+  function saveNoteEditor() {
+    if (!noteEditorExerciseId) {
+      return;
+    }
+
+    updateExerciseNote(noteEditorExerciseId, noteEditorValue.trim());
+    closeNoteEditor();
   }
 
   function updateExerciseRestTimer(exerciseId: string, restTimer: string) {
@@ -2288,6 +3629,12 @@ export function App() {
     setHasActiveWorkout(false);
     setAppView("selector");
     setWorkoutMenuOpen(false);
+    setDiscardConfirmOpen(false);
+  }
+
+  function requestDiscardWorkout() {
+    setWorkoutMenuOpen(false);
+    setDiscardConfirmOpen(true);
   }
 
   function returnToWorkoutSelector() {
@@ -2393,7 +3740,7 @@ export function App() {
   }
 
   function addSet(exerciseId: string) {
-    setActiveExerciseId(exerciseId);
+    setInteractedExerciseActive(exerciseId);
     setExercises((current) =>
       current.map((exercise) => {
         if (exercise.id !== exerciseId) {
@@ -2418,25 +3765,138 @@ export function App() {
     );
   }
 
-  function addExerciseFromTemplate(templateId: string) {
-    const template = exerciseTemplates.find((entry) => entry.id === templateId);
-    if (!template) {
+  function addExercisesFromTemplates(templateIds: string[]) {
+    if (templateIds.length === 0) {
       return;
     }
 
-    const suffix = `${Date.now()}`;
-    const nextExercise = cloneExerciseTemplate(
-      template,
-      settings.defaultRestSeconds,
-      suffix
-    );
+    const nextExercises = templateIds
+      .map((templateId, index) => {
+        const template = availableExerciseTemplates.find((entry) => entry.id === templateId);
+        if (!template) {
+          return null;
+        }
 
-    const configuredRestTimer = exerciseRestDefaults[template.name];
-    if (configuredRestTimer) {
-      nextExercise.restTimer = configuredRestTimer;
+        const suffix = `${Date.now()}-${index + 1}`;
+        const nextExercise = cloneExerciseTemplate(
+          template,
+          settings.defaultRestSeconds,
+          suffix
+        );
+
+        const configuredRestTimer = exerciseRestDefaults[template.name];
+        if (configuredRestTimer) {
+          nextExercise.restTimer = configuredRestTimer;
+        }
+
+        return nextExercise;
+      })
+      .filter((exercise): exercise is ExerciseDraft => exercise !== null);
+
+    if (nextExercises.length === 0) {
+      return;
     }
 
+    setExercises((current) => [...current, ...nextExercises]);
+    setUserActiveExerciseId(nextExercises[0].id);
+    setActiveExerciseId(nextExercises[0].id);
+    setCollapsedExerciseIds((current) =>
+      current.filter((id) => !nextExercises.some((exercise) => exercise.id === id))
+    );
+    setAddExerciseOpen(false);
+    setWorkoutMenuOpen(false);
+  }
+
+  function createCustomExercise(draft: {
+    name: string;
+    primaryMuscle: string;
+    secondaryMuscles: string[];
+    restTimer: string;
+    howTo: string[];
+  }) {
+    const normalizedName = draft.name.trim();
+    if (!normalizedName) {
+      return;
+    }
+
+    const customIdBase = normalizedName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const customId = `custom-${customIdBase || "exercise"}-${Date.now()}`;
+    const restSeconds = Math.max(1, parseMinutesSecondsToSeconds(draft.restTimer));
+    const normalizedTemplate: ExerciseDraft = {
+      id: customId,
+      name: normalizedName,
+      note: "",
+      stickyNoteEnabled: false,
+      restTimer: formatRestTimer(String(restSeconds)),
+      goal: "hypertrophy",
+      imageSrc: genericExerciseImage,
+      primaryMuscle: draft.primaryMuscle.trim(),
+      secondaryMuscles: draft.secondaryMuscles,
+      howTo:
+        draft.howTo.length > 0
+          ? draft.howTo
+          : [
+              "Set up with a controlled starting position before the first rep.",
+              "Move through the target muscle with a steady tempo.",
+              "Finish the range with control and keep tension on the working muscle."
+            ],
+      history: [],
+      draftSets: [
+        {
+          id: `${customId}-set-1`,
+          setType: "warmup",
+          weightInput: "",
+          repsInput: "",
+          rpeInput: "",
+          done: false,
+          failed: false
+        },
+        {
+          id: `${customId}-set-2`,
+          setType: "normal",
+          weightInput: "",
+          repsInput: "",
+          rpeInput: "",
+          done: false,
+          failed: false
+        },
+        {
+          id: `${customId}-set-3`,
+          setType: "normal",
+          weightInput: "",
+          repsInput: "",
+          rpeInput: "",
+          done: false,
+          failed: false
+        },
+        {
+          id: `${customId}-set-4`,
+          setType: "normal",
+          weightInput: "",
+          repsInput: "",
+          rpeInput: "",
+          done: false,
+          failed: false
+        }
+      ]
+    };
+
+    setCustomExercises((current) => [...current, normalizedTemplate]);
+    setExerciseRestDefaults((current) => ({
+      ...current,
+      [normalizedTemplate.name]: normalizedTemplate.restTimer
+    }));
+
+    const nextExercise = cloneExerciseTemplate(
+      normalizedTemplate,
+      String(restSeconds),
+      `${Date.now()}`
+    );
     setExercises((current) => [...current, nextExercise]);
+    setUserActiveExerciseId(nextExercise.id);
     setActiveExerciseId(nextExercise.id);
     setCollapsedExerciseIds((current) => current.filter((id) => id !== nextExercise.id));
     setAddExerciseOpen(false);
@@ -2544,10 +4004,16 @@ export function App() {
         return current;
       }
       if (activeExerciseId === exerciseId) {
-        setActiveExerciseId(remaining[0].id);
+        const nextActiveExerciseId = getDefaultActiveExerciseId(remaining);
+        if (nextActiveExerciseId) {
+          setActiveExerciseId(nextActiveExerciseId);
+        }
       }
       return remaining;
     });
+    if (userActiveExerciseId === exerciseId) {
+      setUserActiveExerciseId(null);
+    }
     if (supersetSheetExerciseId === exerciseId) {
       setSupersetSheetExerciseId(null);
       setSupersetSelectionIds([]);
@@ -2559,6 +4025,7 @@ export function App() {
   function resetWorkout() {
     const nextExercises = buildInitialWorkoutExercises(exerciseRestDefaults);
     setExercises(nextExercises);
+    setUserActiveExerciseId(null);
     setActiveExerciseId(nextExercises[0].id);
     setDetailsExerciseId(null);
     setMusclesExerciseId(null);
@@ -2580,10 +4047,8 @@ export function App() {
     setRevealedDeleteRowId(null);
     setPullDownDistance(0);
     updateSwipeState(createInitialSwipeState());
-    setSettings(defaultWorkoutSettings);
     setWorkoutMeta(defaultWorkoutMeta);
     setState(defaultState);
-    setTopGuidanceEnabled(true);
     setShowTopGuidance(false);
     setActiveRestTimer(null);
     setLoggerRewards([]);
@@ -2905,9 +4370,11 @@ export function App() {
     return (
       <div data-theme={resolvedTheme}>
         <AddExercisePage
-          templates={exerciseTemplates}
+          templates={availableExerciseTemplates}
+          existingExerciseNames={exercises.map((exercise) => exercise.name)}
           onBack={() => setAddExerciseOpen(false)}
-          onSelect={addExerciseFromTemplate}
+          onAddSelected={addExercisesFromTemplates}
+          onCreateCustom={createCustomExercise}
         />
       </div>
     );
@@ -3004,7 +4471,7 @@ export function App() {
   return (
     <main className="shell" data-theme={resolvedTheme}>
       <section className="app-shell">
-        {topGuidanceEnabled && showTopGuidance && (
+        {showTopGuidanceSurface && (
           <section
             className={`guidance-top-helper ${topGuidanceExpanded ? "is-expanded" : ""}`}
             style={{ transform: `translateY(${topGuidancePullDistance}px)` }}
@@ -3019,7 +4486,10 @@ export function App() {
               type="button"
               aria-label="Disable top helper"
               onClick={() => {
-                setTopGuidanceEnabled(false);
+                setSettings((current) => ({
+                  ...current,
+                  guidanceTopStrip: false
+                }));
                 setShowTopGuidance(false);
               }}
             >
@@ -3050,17 +4520,26 @@ export function App() {
             </div>
             <div className="topbar-actions">
               <button
+                className="icon-button topbar-settings-button"
+                type="button"
+                aria-label="Workout settings and actions"
+                title="Alter"
+                onClick={() => setWorkoutMenuOpen((current) => !current)}
+              >
+                <span className="topbar-settings-glyph" aria-hidden="true">⚙</span>
+              </button>
+              <button
                 className="icon-button topbar-collapse-toggle"
                 type="button"
                 aria-label={
-                  collapsedExerciseIds.length === exercises.length
-                    ? "Expand all exercises"
-                    : "Collapse all exercises"
+                  collapsedExerciseIds.length === exercises.length && guidanceCollapsed
+                    ? "Expand all"
+                    : "Collapse all"
                 }
                 title={
-                  collapsedExerciseIds.length === exercises.length
-                    ? "Expand all exercises"
-                    : "Collapse all exercises"
+                  collapsedExerciseIds.length === exercises.length && guidanceCollapsed
+                    ? "Expand all"
+                    : "Collapse all"
                 }
                 onClick={toggleCollapseAllExercises}
               >
@@ -3068,24 +4547,12 @@ export function App() {
                   <span className="stack-toggle-corner" />
                   <span
                     className={`stack-toggle-card ${
-                      collapsedExerciseIds.length === exercises.length
-                        ? "is-expand"
-                        : "is-collapse"
+                      collapsedExerciseIds.length === exercises.length && guidanceCollapsed ? "is-expand" : "is-collapse"
                     }`}
                   >
                     <span className="stack-toggle-card-line" />
                   </span>
                 </span>
-              </button>
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => setWorkoutMenuOpen((current) => !current)}
-              >
-                Alter
-              </button>
-              <button className="primary-button" type="button" onClick={() => void finishWorkout()}>
-                Finish
               </button>
             </div>
           </header>
@@ -3101,7 +4568,7 @@ export function App() {
                 {derivedDuration}
               </button>
             </div>
-            <div className="stat-item">
+            <div className="stat-item stat-item-volume">
               <span className="stat-label">Volume</span>
               <span className="stat-value">{workoutSummary.volume.toFixed(0)} kg</span>
             </div>
@@ -3142,22 +4609,20 @@ export function App() {
           </div>
         </div>
 
-        <section
-          className="exercise-stack"
-          onPointerDown={beginPullToAdd}
-          onPointerMove={movePullToAdd}
-          onPointerUp={endPullToAdd}
-          onPointerCancel={endPullToAdd}
-        >
+        <section className="exercise-stack">
           <div
             className={`pull-to-add ${pullDownDistance > 0 ? "is-visible" : ""} ${
               pullDownDistance > 58 ? "is-ready" : ""
             }`}
             style={{ height: `${pullDownDistance}px` }}
+            onPointerDown={beginPullToAdd}
+            onPointerMove={movePullToAdd}
+            onPointerUp={endPullToAdd}
+            onPointerCancel={endPullToAdd}
           >
             <span>{pullDownDistance > 58 ? "Release for workout actions" : "Pull for workout actions"}</span>
           </div>
-          {exercises.map((exercise) => {
+          {exercises.map((exercise, exerciseIndex) => {
             const lastSession = exercise.history[exercise.history.length - 1];
             const isCollapsed = collapsedExerciseIds.includes(exercise.id);
             const completedExerciseSets = buildCompletedSets(
@@ -3193,7 +4658,14 @@ export function App() {
                     : undefined
                 }
                 onClick={() => {
-                  setActiveExerciseId(exercise.id);
+                  if (isCollapsed) {
+                    if (!hasStartedExercise) {
+                      setPreStartExerciseActive(exercise.id);
+                    }
+                    toggleExerciseCollapse(exercise.id);
+                  } else {
+                    setInteractedExerciseActive(exercise.id);
+                  }
                   setMenuExerciseId(null);
                 }}
                 >
@@ -3201,29 +4673,53 @@ export function App() {
                   className="exercise-title-row"
                   onClick={(event) => {
                     event.stopPropagation();
+                    if (!hasStartedExercise) {
+                      setPreStartExerciseActive(exercise.id);
+                    }
                     toggleExerciseCollapse(exercise.id);
                   }}
                 >
-                  <img src={exercise.imageSrc} alt={exercise.name} className="exercise-thumb" />
                   <button
-                    className="exercise-link"
+                    className="exercise-header-toggle"
                     type="button"
-                    title={exercise.name}
-                    onPointerDown={() => beginTitleHold(exercise.id)}
-                    onPointerUp={endTitleHold}
-                    onPointerCancel={endTitleHold}
-                    onPointerLeave={endTitleHold}
+                    aria-label={isCollapsed ? `Expand ${exercise.name}` : `Collapse ${exercise.name}`}
                     onClick={(event) => {
                       event.stopPropagation();
-                      if (titleHoldTriggered.current) {
-                        titleHoldTriggered.current = false;
-                        return;
+                      if (!hasStartedExercise) {
+                        setPreStartExerciseActive(exercise.id);
                       }
-                      openDetails(exercise.id);
+                      toggleExerciseCollapse(exercise.id);
                     }}
                   >
-                    {exercise.name}
+                    <img src={exercise.imageSrc} alt="" className="exercise-thumb" aria-hidden="true" />
                   </button>
+                  <div className="exercise-title-copy">
+                    <div className="exercise-title-heading">
+                      <button
+                        className={`exercise-link ${exercise.id === activeExerciseId ? "is-active" : ""}`}
+                        type="button"
+                        title={exercise.name}
+                        style={exercise.id === activeExerciseId ? { color: "var(--accent)" } : undefined}
+                        onPointerDown={() => beginTitleHold(exercise.id)}
+                        onPointerUp={endTitleHold}
+                        onPointerCancel={endTitleHold}
+                        onPointerLeave={endTitleHold}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (titleHoldTriggered.current) {
+                            titleHoldTriggered.current = false;
+                            return;
+                          }
+                          openDetails(exercise.id);
+                        }}
+                      >
+                        {exercise.name}
+                      </button>
+                      {exercise.id === activeExerciseId && (
+                        <span className="exercise-active-indicator" aria-hidden="true" />
+                      )}
+                    </div>
+                  </div>
                   {(exerciseRewards.length > 0 || (isCollapsed && setRewardCount > 0)) && (
                     <button
                       className="exercise-reward-trigger"
@@ -3294,8 +4790,11 @@ export function App() {
                       type="button"
                       aria-label={isCollapsed ? "Expand exercise" : "Collapse exercise"}
                       aria-expanded={!isCollapsed}
-                      onClick={(event) => {
-                        event.stopPropagation();
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (!hasStartedExercise) {
+                      setPreStartExerciseActive(exercise.id);
+                    }
                         toggleExerciseCollapse(exercise.id);
                       }}
                     >
@@ -3330,56 +4829,67 @@ export function App() {
                   </p>
                 )}
 
-                <input
-                  className="exercise-note-input"
-                  type="text"
-                  placeholder="Add notes here..."
-                  value={exercise.note}
-                  onClick={(event) => event.stopPropagation()}
-                  onChange={(event) =>
-                    updateExerciseNote(exercise.id, event.target.value)
-                  }
-                />
+                {exercise.stickyNoteEnabled && (
+                  <button
+                    className={`exercise-sticky-note ${
+                      exercise.note.trim().length > 0 ? "has-note" : "is-empty"
+                    }`}
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openNoteEditor(exercise.id);
+                    }}
+                  >
+                    <span className="exercise-sticky-label">Sticky note</span>
+                    <span className="exercise-sticky-text">
+                      {exercise.note.trim().length > 0 ? exercise.note : "Add a quick reference note"}
+                    </span>
+                  </button>
+                )}
 
                 <div className="rest-timer-row" onClick={(event) => event.stopPropagation()}>
-                  <span className="rest-timer-icon" aria-hidden="true">◷</span>
-                  <span className="rest-timer-label">Rest Timer:</span>
-                  {activeRestTimer?.exerciseId === exercise.id ? (
-                    <>
-                      <span className="rest-timer-countdown">
-                        {formatRemainingSeconds(activeRestSeconds)}
-                      </span>
-                      <button
-                        className="rest-timer-icon-button"
-                        type="button"
-                        aria-label={
-                          activeRestTimer.pausedRemainingSeconds !== null
-                            ? "Resume rest timer"
-                            : "Pause rest timer"
-                        }
-                        onClick={() => togglePauseRestTimer(exercise.id)}
-                      >
-                        {activeRestTimer.pausedRemainingSeconds !== null ? "▶" : "⏸"}
-                      </button>
-                      <button
-                        className="rest-timer-icon-button"
-                        type="button"
-                        aria-label="Stop rest timer"
-                        onClick={() => stopRestTimer(exercise.id)}
-                      >
-                        ■
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      className="rest-timer-trigger"
-                      type="button"
-                      aria-label={`Edit ${exercise.name} rest timer`}
-                      onClick={() => openRestTimerEditor(exercise.id)}
-                    >
-                      {exercise.restTimer}
-                    </button>
-                  )}
+                  <div className="rest-timer-main">
+                    <span className="rest-timer-icon" aria-hidden="true">◷</span>
+                    <span className="rest-timer-label">Rest Timer:</span>
+                    <span className="rest-timer-controls">
+                      {activeRestTimer?.exerciseId === exercise.id ? (
+                        <>
+                          <span className="rest-timer-countdown">
+                            {formatRemainingSeconds(activeRestSeconds)}
+                          </span>
+                          <button
+                            className="rest-timer-icon-button"
+                            type="button"
+                            aria-label={
+                              activeRestTimer.pausedRemainingSeconds !== null
+                                ? "Resume rest timer"
+                                : "Pause rest timer"
+                            }
+                            onClick={() => togglePauseRestTimer(exercise.id)}
+                          >
+                            {activeRestTimer.pausedRemainingSeconds !== null ? "▶" : "⏸"}
+                          </button>
+                          <button
+                            className="rest-timer-icon-button rest-timer-stop-button"
+                            type="button"
+                            aria-label="Stop rest timer"
+                            onClick={() => stopRestTimer(exercise.id)}
+                          >
+                            <span className="rest-timer-stop-glyph" aria-hidden="true">■</span>
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="rest-timer-trigger"
+                          type="button"
+                          aria-label={`Edit ${exercise.name} rest timer`}
+                          onClick={() => openRestTimerEditor(exercise.id)}
+                        >
+                          {exercise.restTimer}
+                        </button>
+                      )}
+                    </span>
+                  </div>
                   {exercise.supersetGroupId && (
                     <span
                       className="superset-badge"
@@ -3394,6 +4904,24 @@ export function App() {
                     </span>
                   )}
                 </div>
+
+                {settings.guidanceInline &&
+                  !allExercisesComplete &&
+                  !isCollapsed &&
+                  exerciseIndex === activeExerciseIndex && (
+                    <button
+                      className="exercise-guidance-inline"
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setInlineGuidanceOpen(true);
+                      }}
+                    >
+                      <span className="exercise-guidance-inline-label">Next Tip</span>
+                      <span className="exercise-guidance-inline-text">{guidanceTip}</span>
+                      <span className="exercise-guidance-inline-arrow" aria-hidden="true">›</span>
+                    </button>
+                  )}
 
                 <div className={`set-grid-header ${settings.showRpe ? "has-rpe" : "no-rpe"}`}>
                   <span>Set</span>
@@ -3495,7 +5023,22 @@ export function App() {
                           >
                             {setLabel}
                           </button>
-                          <span className="previous-cell">{formatPreviousSet(previousSet)}</span>
+                          <button
+                            type="button"
+                            className={`previous-cell ${
+                              previousSet ? "previous-cell-button" : "previous-cell-empty"
+                            }`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (previousSet) {
+                                applyPreviousValuesToDraftSet(exercise.id, index);
+                              }
+                            }}
+                            disabled={!previousSet}
+                            title={previousSet ? "Use previous values" : undefined}
+                          >
+                            {formatPreviousSet(previousSet)}
+                          </button>
                           <input
                             className="cell-input"
                             type="text"
@@ -3554,8 +5097,7 @@ export function App() {
                                   markSetDone(exercise.id, index);
                                   return;
                                 }
-                                updateDraftSet(exercise.id, index, "done", false);
-                                stopRestTimer(exercise.id);
+                                markSetUndone(exercise.id, index);
                               }}
                             />
                           </label>
@@ -3665,88 +5207,149 @@ export function App() {
           })}
         </section>
 
-        <section className="coach-shell">
+        <section className={`coach-shell ${guidanceCollapsed ? "is-collapsed" : ""}`}>
             <header className="coach-header">
-              <div>
-                <p className="label">Next Guidance</p>
-                <h2>{activeExercise.name}</h2>
-              </div>
-              <div className="coach-header-actions">
-                <button
-                  className={`guidance-preference-button ${topGuidanceEnabled ? "is-active" : ""}`}
-                  type="button"
-                  onClick={() => {
-                    setTopGuidanceEnabled((current) => {
-                      if (current) {
-                        setShowTopGuidance(false);
-                      }
-                      return !current;
-                    });
-                  }}
-                >
-                  {topGuidanceEnabled ? "Top helper on" : "Enable top helper"}
-                </button>
-                {(state.status === "loading" || state.status === "success" || state.engineSource) && (
-                  <div className="status-group">
-                    {(state.status === "loading" || state.status === "success") && (
-                      <span className={`status-pill status-${state.status}`}>
-                        {state.status === "loading" && "Checking"}
-                        {state.status === "success" && "Ready"}
-                      </span>
-                    )}
-                    {state.engineSource && (
-                      <span className="status-pill status-source">
-                        {state.engineSource === "live" ? "Engine live" : "Fallback only"}
-                      </span>
-                    )}
-                  </div>
+              <div className="coach-header-text">
+                <p className="label">{allExercisesComplete ? "Overall Guidance" : "Next Guidance"}</p>
+                {!guidanceCollapsed && (
+                  <h2>{allExercisesComplete ? "Workout" : activeExercise.name}</h2>
                 )}
               </div>
+              {guidanceCollapsed && (
+                <div className="coach-collapsed-preview">
+                  <strong className="coach-collapsed-title">
+                    {allExercisesComplete ? "Workout" : activeExercise.name}
+                  </strong>
+                  <p className="coach-collapsed-tip">{guidanceTip}</p>
+                </div>
+              )}
+              {!guidanceCollapsed && (state.status === "loading" || state.status === "success" || state.engineSource) && (
+                <div className="status-group">
+                  {(state.status === "loading" || state.status === "success") && (
+                    <span className={`status-pill status-${state.status}`}>
+                      {state.status === "loading" && "Checking"}
+                      {state.status === "success" && "Ready"}
+                    </span>
+                  )}
+                  {state.engineSource && (
+                    <span className="status-pill status-source">
+                      {state.engineSource === "live" ? "Engine live" : "Fallback only"}
+                    </span>
+                  )}
+                </div>
+              )}
+              <button
+                className="coach-collapse-toggle"
+                type="button"
+                aria-label={guidanceCollapsed ? "Expand guidance" : "Collapse guidance"}
+                onClick={() => setGuidanceCollapsed((c) => !c)}
+              >
+                {guidanceCollapsed ? "⌄" : "⌃"}
+              </button>
             </header>
 
-            {!hasGuidance && (
-              <div className="idle-card">
-                <strong>{guidanceTip}</strong>
-                <p>{guidanceWhy}</p>
-              </div>
-            )}
-
-            {state.status === "loading" && (
-              <div className="loading-card">
-                <div className="loading-bar" />
-                <p>Reviewing the latest logged sets.</p>
-              </div>
-            )}
-
-            {state.message && (
-              <div className={`notice ${state.status === "error" ? "notice-error" : ""}`}>
-                {state.message}
-              </div>
-            )}
-
-            {state.suggestion && (
-              <article className={`coach-card ${certaintyTone[state.suggestion.certainty]}`}>
-                <div className="coach-card-top">
-                  <div>
-                    <p className="label">Tip</p>
-                    <h3>{guidanceTip}</h3>
+            {!guidanceCollapsed && (
+              <>
+                {!hasGuidance && (
+                  <div className="idle-card">
+                    <strong>{guidanceTip}</strong>
+                    <p>{guidanceWhy}</p>
                   </div>
-                  <div className="certainty-block">
-                    <span className="certainty-label">Certainty</span>
-                    <strong>{state.suggestion.certainty}</strong>
+                )}
+
+                {state.status === "loading" && (
+                  <div className="loading-card">
+                    <div className="loading-bar" />
+                    <p>Analysing your last sets…</p>
                   </div>
+                )}
+
+                {state.message && (
+                  <div className={`notice ${state.status === "error" ? "notice-error" : ""}`}>
+                    {state.message}
+                  </div>
+                )}
+
+                {state.suggestion && (
+                  <article className={`coach-card ${certaintyTone[state.suggestion.certainty]}`}>
+                    <p className="label">
+                      Tip
+                      <span className={`certainty-badge certainty-badge-${state.suggestion.certainty}`}>
+                        {state.suggestion.certainty}
+                      </span>
+                    </p>
+                    <h3 className="coach-tip">{guidanceTip}</h3>
+                    <p className="coach-why">{guidanceWhy}</p>
+                  </article>
+                )}
+              </>
+            )}
+
+            {!guidanceCollapsed && (
+              <div className="coach-footer">
+                <span className="coach-footer-label">Show in</span>
+                <div className="guidance-mode-row">
+                  <button
+                    className={`guidance-mode-button ${settings.guidanceTopStrip ? "is-active" : ""}`}
+                    type="button"
+                    onClick={() => {
+                      setSettings((current) => ({
+                        ...current,
+                        guidanceTopStrip: !current.guidanceTopStrip
+                      }));
+                      setShowTopGuidance((current) => {
+                        if (current) {
+                          return false;
+                        }
+                        return current;
+                      });
+                    }}
+                  >
+                    Top Strip
+                  </button>
+                  <button
+                    className={`guidance-mode-button ${settings.guidanceInline ? "is-active" : ""}`}
+                    type="button"
+                    onClick={() =>
+                      setSettings((current) => ({
+                        ...current,
+                        guidanceInline: !current.guidanceInline
+                      }))
+                    }
+                  >
+                    Inline
+                  </button>
                 </div>
-
-                <p className="coach-why">{guidanceWhy}</p>
-              </article>
+              </div>
             )}
 
           </section>
 
+        <div className="logger-end-actions">
+          <div className="logger-end-actions-row">
+            <button
+              className="secondary-button logger-action-button logger-add-button"
+              type="button"
+              onClick={() => setAddExerciseOpen(true)}
+            >
+              + Exercise
+            </button>
+            <button
+              className="secondary-button logger-action-button logger-discard-button"
+              type="button"
+              onClick={requestDiscardWorkout}
+            >
+              Discard
+            </button>
+          </div>
+          <button className="primary-button logger-finish-button" type="button" onClick={() => void finishWorkout()}>
+            Finish Workout
+          </button>
+        </div>
+
         {leavePromptOpen && (
-          <section className="sheet-overlay bottom-sheet-overlay" onClick={() => setLeavePromptOpen(false)}>
-            <div className="sheet-card action-sheet" onClick={(event) => event.stopPropagation()}>
-              <div className="sheet-handle" />
+          <section className="sheet-overlay leave-center-overlay" onClick={() => setLeavePromptOpen(false)}>
+            <div className="leave-center-card" onClick={(event) => event.stopPropagation()}>
               <div className="sheet-head">
                 <div>
                   <p className="label">Leave Workout</p>
@@ -3787,6 +5390,34 @@ export function App() {
                 </button>
                 <button className="primary-button" type="button" onClick={returnToWorkoutSelector}>
                   Come back later
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {discardConfirmOpen && (
+          <section className="sheet-overlay bottom-sheet-overlay" onClick={() => setDiscardConfirmOpen(false)}>
+            <div className="sheet-card action-sheet" onClick={(event) => event.stopPropagation()}>
+              <div className="sheet-handle" />
+              <div className="sheet-head">
+                <div>
+                  <p className="label">Discard Workout</p>
+                  <h3>{workoutMeta.sessionName}</h3>
+                </div>
+                <button className="icon-button" type="button" onClick={() => setDiscardConfirmOpen(false)}>
+                  ×
+                </button>
+              </div>
+              <p className="settings-note">
+                This will remove the current workout in progress. You can&apos;t undo this action.
+              </p>
+              <div className="sheet-actions">
+                <button className="secondary-button" type="button" onClick={() => setDiscardConfirmOpen(false)}>
+                  Cancel
+                </button>
+                <button className="secondary-button logger-discard-button" type="button" onClick={discardWorkout}>
+                  Discard workout
                 </button>
               </div>
             </div>
@@ -3847,7 +5478,7 @@ export function App() {
                 <button type="button" onClick={resetWorkout}>
                   Reset workout
                 </button>
-                <button type="button" onClick={discardWorkout}>
+                <button type="button" onClick={requestDiscardWorkout}>
                   Discard workout
                 </button>
               </div>
@@ -3886,6 +5517,38 @@ export function App() {
                 >
                   View details
                 </button>
+                {activeMenuExercise.stickyNoteEnabled ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openNoteEditor(activeMenuExercise.id);
+                      }}
+                    >
+                      Edit sticky note
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        hideStickyNote(activeMenuExercise.id);
+                      }}
+                    >
+                      Hide sticky note
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      enableStickyNote(activeMenuExercise.id);
+                    }}
+                  >
+                    Enable sticky note
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={(event) => {
@@ -3929,7 +5592,7 @@ export function App() {
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
-                    setActiveExerciseId(activeMenuExercise.id);
+                    setInteractedExerciseActive(activeMenuExercise.id);
                     setReorderOpen(true);
                     setMenuExerciseId(null);
                   }}
@@ -3952,14 +5615,13 @@ export function App() {
 
         {rewardSheetOpen && (
           <section
-            className="sheet-overlay bottom-sheet-overlay"
+            className="sheet-overlay reward-center-overlay"
             onClick={() => setRewardSheetOpen(false)}
           >
             <div
-              className="sheet-card action-sheet"
+              className="reward-center-card"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="sheet-handle" />
               <div className="sheet-head">
                 <div>
                   <p className="label">Workout Rewards</p>
@@ -4005,6 +5667,39 @@ export function App() {
                   ))
                 )}
               </div>
+            </div>
+          </section>
+        )}
+
+        {inlineGuidanceOpen && (
+          <section
+            className="sheet-overlay guidance-center-overlay"
+            onClick={() => setInlineGuidanceOpen(false)}
+          >
+            <div
+              className="guidance-center-card"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="sheet-head">
+                <div>
+                  <p className="label">{allExercisesComplete ? "Overall Guidance" : "Next Guidance"}</p>
+                  <h3>{allExercisesComplete ? "Workout" : activeExercise.name}</h3>
+                </div>
+                <button className="icon-button" type="button" onClick={() => setInlineGuidanceOpen(false)}>
+                  ×
+                </button>
+              </div>
+              <article className={`coach-card ${state.suggestion ? certaintyTone[state.suggestion.certainty] : ""}`}>
+                {state.suggestion && (
+                  <p className="label">
+                    <span className={`certainty-badge certainty-badge-${state.suggestion.certainty}`}>
+                      {state.suggestion.certainty}
+                    </span>
+                  </p>
+                )}
+                <h3 className="coach-tip">{guidanceTip}</h3>
+                <p className="coach-why">{guidanceWhy}</p>
+              </article>
             </div>
           </section>
         )}
@@ -4081,6 +5776,44 @@ export function App() {
               </label>
 
               <div className="settings-block">
+                <p className="settings-section-title">Guidance Defaults</p>
+
+                <label className="toggle-row">
+                  <span>Show top strip guidance</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.guidanceTopStrip}
+                    onChange={(event) =>
+                      setSettings((current) => ({
+                        ...current,
+                        guidanceTopStrip: event.target.checked
+                      }))
+                    }
+                  />
+                </label>
+
+                <label className="toggle-row">
+                  <span>Show inline guidance</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.guidanceInline}
+                    onChange={(event) =>
+                      setSettings((current) => ({
+                        ...current,
+                        guidanceInline: event.target.checked
+                      }))
+                    }
+                  />
+                </label>
+
+                <p className="settings-note">
+                  New workout sessions start with these guidance defaults. You can still turn the
+                  top strip and inline guidance on or off from the bottom guidance section while
+                  logging.
+                </p>
+              </div>
+
+              <div className="settings-block">
                 <p className="settings-section-title">Appearance</p>
                 <div className="theme-choice-group" role="radiogroup" aria-label="Theme preference">
                   {(["light", "dark", "system"] as const).map((option) => (
@@ -4107,6 +5840,49 @@ export function App() {
                 for now. The between-exercises timer is used after the final set of an exercise when
                 the workout moves on to the next one.
               </p>
+            </div>
+          </section>
+        )}
+
+        {noteEditorExerciseId && (
+          <section className="sheet-overlay" onClick={closeNoteEditor}>
+            <div className="sheet-card" onClick={(event) => event.stopPropagation()}>
+              <div className="sheet-head">
+                <div>
+                  <p className="label">Exercise Sticky Note</p>
+                  <h3>
+                    {exercises.find((exercise) => exercise.id === noteEditorExerciseId)?.name ??
+                      "Exercise"}
+                  </h3>
+                </div>
+                <button className="icon-button" type="button" onClick={closeNoteEditor}>
+                  ×
+                </button>
+              </div>
+
+              <label className="settings-stack-row">
+                <span>Quick note</span>
+                <textarea
+                  className="notes-textarea"
+                  rows={6}
+                  value={noteEditorValue}
+                  placeholder="Save a quick setup cue, seat setting, grip width, or anything you want to remember for this exercise."
+                  onChange={(event) => setNoteEditorValue(event.target.value)}
+                />
+              </label>
+
+              <p className="settings-note">
+                This stays attached to the exercise in the current workout and can be referred to later.
+              </p>
+
+              <div className="sheet-actions">
+                <button className="secondary-button" type="button" onClick={closeNoteEditor}>
+                  Cancel
+                </button>
+                <button className="primary-button" type="button" onClick={saveNoteEditor}>
+                  Save Note
+                </button>
+              </div>
             </div>
           </section>
         )}

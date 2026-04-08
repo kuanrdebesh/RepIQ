@@ -38,6 +38,7 @@ These are important current behaviors in the web app even when they do not yet m
   - per-card collapse / expand
   - collapse-all / expand-all
   - collapsed summaries with logged volume, reward summary, and superset visibility
+  - title-led active exercise indication
 - The `Muscles Worked` page is currently a web-only surface with:
   - overall workout mode
   - exercise-focused mode
@@ -48,6 +49,15 @@ These are important current behaviors in the web app even when they do not yet m
   - later same-session sets can replace earlier rewarded sets
   - exercise-level rewards appear only once the exercise result is meaningful
   - session-level reward presentation is intentionally deferred to completion / summary flows
+- Guidance behavior is currently client-side:
+  - user preference can enable top strip, inline, both, or neither
+  - inline guidance opens a centered modal on demand
+  - bottom guidance remains the stable fallback surface
+- `Add Exercise` client flow now includes:
+  - always-visible search
+  - tabbed browsing for all exercises, muscle groups, and exercise types
+  - thin quick filters for `In workout` and `Selected`
+  - ordered multi-select with fixed bottom add-action bar
 
 ## Shared Contracts
 
