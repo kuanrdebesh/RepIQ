@@ -4,6 +4,8 @@
 
 RepIQ has a working project foundation across the web app, API, engine, shared types, and planning docs. The product is still pre-V1, but the core workout-logger direction is now established and testable.
 
+Detailed implemented logic now also has a dedicated reference in [algorithms.md](/Users/debeshkuanr/Documents/RepIQ/docs/algorithms.md).
+
 ## Foundation
 
 - Monorepo structure is in place for `web`, `api`, `engine`, and shared packages

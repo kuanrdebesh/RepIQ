@@ -2,6 +2,8 @@
 
 This is a living engineering reference for the APIs currently in use and the main request/response flows around them.
 
+For implemented decision rules and heuristics, see [algorithms.md](/Users/debeshkuanr/Documents/RepIQ/docs/algorithms.md).
+
 Update this document whenever:
 
 - a new endpoint is added
