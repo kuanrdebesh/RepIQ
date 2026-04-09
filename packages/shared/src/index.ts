@@ -43,6 +43,10 @@ export const certaintyBandSchema = z.enum([
   "high"
 ]);
 
+export const mediaKindSchema = z.enum(["image", "video"]);
+
+export const mediaStorageTargetSchema = z.enum(["local_uploads", "cloud"]);
+
 export const evidenceItemSchema = z.object({
   key: z.string(),
   label: z.string(),
@@ -100,16 +104,58 @@ export const exerciseEvaluationRequestSchema = z.object({
   sessions: z.array(exerciseHistorySessionSchema).min(1)
 });
 
+export const workoutMediaAssetSchema = z.object({
+  id: z.string(),
+  kind: mediaKindSchema,
+  storage_key: z.string(),
+  original_name: z.string(),
+  mime_type: z.string(),
+  byte_size: z.number().int().positive(),
+  upload_url: z.string().nullable().optional(),
+  public_url: z.string().nullable().optional()
+});
+
+export const mediaConfigSchema = z.object({
+  target: mediaStorageTargetSchema,
+  max_images_per_workout: z.number().int().positive(),
+  image_enabled: z.boolean(),
+  video_enabled: z.boolean(),
+  max_photo_mb: z.number().positive(),
+  max_video_mb: z.number().positive(),
+  max_video_seconds: z.number().int().positive()
+});
+
+export const mediaPrepareUploadRequestSchema = z.object({
+  kind: mediaKindSchema,
+  file_name: z.string().min(1),
+  mime_type: z.string().min(1),
+  byte_size: z.number().int().positive(),
+  workout_id: z.string().min(1).optional()
+});
+
+export const mediaPrepareUploadResponseSchema = z.object({
+  status: z.literal("ready"),
+  target: mediaStorageTargetSchema,
+  asset: workoutMediaAssetSchema,
+  constraints: mediaConfigSchema
+});
+
 export type ExperienceLevel = z.infer<typeof experienceLevelSchema>;
 export type Goal = z.infer<typeof goalSchema>;
 export type EngineGoal = z.infer<typeof engineGoalSchema>;
 export type SessionStatus = z.infer<typeof sessionStatusSchema>;
 export type SuggestionType = z.infer<typeof suggestionTypeSchema>;
 export type CertaintyBand = z.infer<typeof certaintyBandSchema>;
+export type MediaKind = z.infer<typeof mediaKindSchema>;
+export type MediaStorageTarget = z.infer<typeof mediaStorageTargetSchema>;
 export type CoachingSuggestion = z.infer<typeof coachingSuggestionSchema>;
 export type WorkoutSet = z.infer<typeof workoutSetSchema>;
 export type ExerciseHistorySession = z.infer<typeof exerciseHistorySessionSchema>;
 export type ExerciseEvaluationRequest = z.infer<typeof exerciseEvaluationRequestSchema>;
+export type WorkoutMediaAsset = z.infer<typeof workoutMediaAssetSchema>;
+export type MediaConfig = z.infer<typeof mediaConfigSchema>;
+export type MediaPrepareUploadRequest = z.infer<typeof mediaPrepareUploadRequestSchema>;
+export type MediaPrepareUploadResponse = z.infer<typeof mediaPrepareUploadResponseSchema>;
 
 export const northStar =
   "You've been putting in the work. RepIQ makes sure the work pays off.";

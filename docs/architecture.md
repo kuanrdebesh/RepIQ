@@ -20,6 +20,43 @@ A local-only prototype would be useful for UI exploration, but not for the produ
 - Python engine service for auditable training logic
 - Shared domain package for app and API contracts
 
+## Mobile-Ready Direction
+
+- the current web app should behave like the first client, not the only client
+- a future mobile app should be able to reuse:
+  - API contracts
+  - engine contracts
+  - workout/session domain rules
+  - media constraints
+- client-specific behavior should stay at the edge:
+  - browser file picking
+  - native media picking
+  - notifications
+  - local device storage
+
+## Media Boundary
+
+- finish-workout images are a real product need for progress/self-reference
+- media should not be persisted as temporary browser blob URLs long-term
+- RepIQ should use a backend-managed media contract even before cloud storage exists
+- near-term beta path:
+  - frontend requests media constraints and an upload slot from the API
+  - API owns the storage target
+  - local uploads folder can sit behind the API first
+- later production path:
+  - keep the same contract
+  - swap storage target from local uploads to cloud/object storage
+
+## Architectural Modifications Applied
+
+- shared media schemas now live in `packages/shared`
+- API now exposes a media boundary via:
+  - `GET /v1/media/config`
+  - `POST /v1/media/prepare`
+- this keeps the repo ready for:
+  - beta web users with backend-managed uploads
+  - a later mobile client using the same media handshake
+
 ## First vertical slice
 
 1. User profile created

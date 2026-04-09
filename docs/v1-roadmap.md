@@ -20,7 +20,13 @@
 - Plateau detection
 - Session-complete recommendation surface
 - In-workout top guidance strip / expandable coaching tray
-- Post-finish workout save screen for workout title, notes, attachments, and summary
+- Post-finish workout save screen for workout title, notes, reward review, and summary/share handoff
+- Finish-flow media is limited in V1:
+  - allow up to 3 images for progress/self-reference
+  - route image persistence through the API media boundary into backend-managed local uploads
+  - keep video implementation parked in code
+  - re-enable video once durable media persistence/social direction is defined
+  - later swap local uploads to cloud/object storage without changing the client contract
 - Reward detection and records table
 - Reward UX design on the post-finish workout screen:
   - PR / record moments
@@ -59,6 +65,10 @@
   - grouped expand / collapse for both `By Muscle` and `Types`
   - token-based search that matches words in any order
   - stable toolbar positioning while grouped controls change state
+  - explicit selector detail access via info action
+  - repeated sort selection reverses direction
+  - custom exercise create/edit flow with guided 2-step structure
+  - library-side custom exercise edit/delete/archive management
 - Sticky bottom rest dock:
   - full-width timer tray
   - minimize to compact timer FAB

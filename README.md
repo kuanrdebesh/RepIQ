@@ -5,6 +5,7 @@ RepIQ is an AI-powered workout coach for intermediate lifters who have plateaued
 ## Architecture
 
 - `apps/web`: mobile-first React web app and eventual PWA session logger
+- future `apps/mobile`: native beta client can later sit on the same API/engine contracts
 - `apps/api`: Node.js API for auth-adjacent app logic, programs, sessions, suggestions, payments, and share surfaces
 - `apps/engine`: Python coaching engine service for rule-based overload, plateau detection, and later projection/reporting
 - `packages/shared`: shared domain types, constants, and validation boundaries
@@ -39,3 +40,7 @@ RepIQ is an AI-powered workout coach for intermediate lifters who have plateaued
 5. Run `npm run dev:engine`
 
 Supabase is the source of truth for auth and persistence. The API and engine should stay stateless wherever possible.
+
+Media direction:
+- V1 finish flow supports up to 3 images for self-reference/progress
+- API owns the future upload boundary so web and mobile clients can share the same media contract

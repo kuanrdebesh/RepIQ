@@ -160,9 +160,29 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
   - `Types` groups with collapse / expand behavior
   - `By Muscle` groups with collapse / expand behavior
   - `Expand all / Collapse all` for grouped tabs
+  - repeated sort tap to reverse direction
+  - dedicated `i` action to open exercise details from the selector
+- Custom exercise creation now supports:
+  - 2-step guided flow
+  - multi-select primary and secondary muscles
+  - progress chips across the create flow
+  - stronger secondary-muscle discoverability after primary selection
+  - sticky bottom tray actions for create/edit
+- Custom exercise management now exists from exercise details:
+  - edit custom exercise
+  - delete unused custom exercise
+  - hide/archive custom exercise once history exists
+  - archived custom exercises leave the library surface without losing the underlying record
 - Search now tokenizes by words, ignores numbers/special characters, and matches terms in any order across exercise and muscle metadata
 - A simple workout resume/selector shell exists to support leaving and returning to an active workout
-- A dedicated post-finish workout screen is planned for workout naming, notes, attachments, and save/share summary flow
+- A dedicated post-finish workout screen now exists for workout naming, notes, reward review, save, and share handoff
+- Finish screen media is intentionally limited for V1:
+  - up to 3 images are allowed for progress/self-reference
+  - finish-flow images now upload through the API media boundary
+  - uploaded files target backend-managed local uploads for beta/dev
+  - video code stays parked in the web app
+  - video UI is deferred until RepIQ has a clear persistence model for social or long-term self-reference use
+  - local uploads can later be swapped to cloud/object storage without changing the client contract
 - Reward UX is intentionally planned around the post-finish workout screen first, with only subtle in-logger reward signals later if they prove helpful
 - Reward UX direction is now clearer:
   - one set, one exercise, or one session can earn multiple rewards

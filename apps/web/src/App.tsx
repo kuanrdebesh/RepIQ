@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
 import {
   coachingSuggestionSchema,
+  mediaConfigSchema,
+  mediaPrepareUploadResponseSchema,
+  workoutMediaAssetSchema,
   type CoachingSuggestion,
   type ExerciseEvaluationRequest,
   type ExerciseHistorySession,
+  type WorkoutMediaAsset,
   type WorkoutSet
 } from "@repiq/shared";
 import benchPressImage from "./assets/bench-press.svg";
@@ -36,7 +40,13 @@ type ExerciseDraft = {
   goal: ExerciseEvaluationRequest["goal"];
   imageSrc: string;
   primaryMuscle: string;
+  primaryMuscles?: string[];
   secondaryMuscles: string[];
+  exerciseType?: CustomExerciseType;
+  measurementType?: MeasurementType;
+  movementSide?: MovementSide;
+  isCustom?: boolean;
+  libraryStatus?: "active" | "archived";
   howTo: string[];
   videoLabel?: string;
   history: ExerciseHistorySession[];
@@ -46,7 +56,7 @@ type ExerciseDraft = {
 type DetailTab = "summary" | "history" | "howto";
 type ThemePreference = "light" | "dark" | "system";
 type DraftSetType = "warmup" | "normal" | "drop" | "restpause" | "failure";
-type AppView = "selector" | "logger";
+type AppView = "selector" | "logger" | "finish" | "share";
 
 type WorkoutSettings = {
   defaultRestSeconds: string;
@@ -67,6 +77,25 @@ type WorkoutMeta = {
 type RewardCategory = "pr" | "volume" | "progress";
 type RewardLevel = "set" | "exercise" | "session";
 type AddExerciseMode = "browse" | "create";
+type CreateExerciseStep = 1 | 2;
+type CustomExerciseType =
+  | "bodyweight_only"
+  | "bodyweight_weighted"
+  | "free_weights_accessories"
+  | "barbell"
+  | "machine"
+  | "freestyle_cardio";
+type MeasurementType = "timed" | "reps_volume" | "weight_timed";
+type MovementSide = "unilateral" | "bilateral";
+type CustomExerciseInput = {
+  name: string;
+  imageSrc?: string;
+  primaryMuscles: string[];
+  secondaryMuscles: string[];
+  exerciseType: CustomExerciseType;
+  measurementType: MeasurementType;
+  movementSide: MovementSide;
+};
 
 type LoggerReward = {
   id: string;
@@ -76,6 +105,43 @@ type LoggerReward = {
   level: RewardLevel;
   shortLabel: string;
   detail: string;
+};
+
+type RewardSummary = {
+  set: number;
+  exercise: number;
+  session: number;
+  total: number;
+};
+
+type FinishedExerciseSummary = {
+  id: string;
+  name: string;
+  primaryMuscle: string;
+  loggedSets: number;
+  loggedVolume: number;
+};
+
+type FinishWorkoutDraft = {
+  sessionName: string;
+  note: string;
+  date: string;
+  duration: string;
+  totalVolume: number;
+  totalSets: number;
+  exerciseCount: number;
+  loggedExerciseCount: number;
+  ignoredIncompleteSets: number;
+  exercises: FinishedExerciseSummary[];
+  rewards: LoggerReward[];
+  rewardSummary: RewardSummary;
+  takeawayTitle: string;
+  takeawayBody: string;
+  images: WorkoutMediaAsset[];
+};
+
+type SavedWorkoutData = FinishWorkoutDraft & {
+  savedAt: string; // ISO string
 };
 
 type ExerciseRestDefaults = Record<string, string>;
@@ -130,6 +196,7 @@ const apiBaseUrl =
 const themeStorageKey = "repiq-theme-preference";
 const workoutSettingsStorageKey = "repiq-workout-settings";
 const customExercisesStorageKey = "repiq-custom-exercises";
+const savedWorkoutsStorageKey = "repiq-saved-workouts";
 
 const setTypeOptions: Array<{
   value: DraftSetType;
@@ -177,6 +244,17 @@ const rewardLevelIcon: Record<RewardLevel, string> = {
   session: "🏆"
 };
 
+function summarizeRewards(rewards: LoggerReward[]): RewardSummary {
+  return rewards.reduce(
+    (summary, reward) => {
+      summary[reward.level] += 1;
+      summary.total += 1;
+      return summary;
+    },
+    { set: 0, exercise: 0, session: 0, total: 0 }
+  );
+}
+
 const genericExerciseImage = `data:image/svg+xml;utf8,${encodeURIComponent(`
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 88" fill="none">
     <rect x="3" y="3" width="82" height="82" rx="20" fill="#F7FAFC"/>
@@ -189,21 +267,86 @@ const genericExerciseImage = `data:image/svg+xml;utf8,${encodeURIComponent(`
   </svg>
 `)}`;
 
-const commonPrimaryMuscles = [
+const primaryMuscleOptions = [
+  "Chest",
+  "Biceps",
+  "Triceps",
+  "Back",
+  "Middle Back",
+  "Traps",
+  "Front Shoulders",
+  "Side Delts",
+  "Rear Delts",
+  "Quads",
+  "Hamstrings",
+  "Hip Flexors",
+  "Glutes",
+  "Calves",
+  "Abs / Core",
+  "Obliques",
+  "Forearms",
+  "Lower Back",
+  "Abductors"
+];
+
+const secondaryMuscleLibrary = [
   "Chest",
   "Upper Chest",
+  "Back",
   "Lats",
+  "Middle Back",
   "Upper Back",
+  "Lower Back",
+  "Biceps",
+  "Triceps",
+  "Forearms",
+  "Front Delts",
+  "Front Shoulders",
+  "Side Delts",
+  "Rear Delts",
+  "Traps",
   "Quads",
   "Hamstrings",
   "Glutes",
-  "Front Delts",
-  "Side Delts",
-  "Rear Delts",
-  "Triceps",
-  "Biceps",
-  "Lower Back",
-  "Calves"
+  "Calves",
+  "Abs / Core",
+  "Abs",
+  "Core",
+  "Obliques",
+  "Adductors",
+  "Abductors"
+];
+
+const customExerciseTypeOptions: Array<{
+  value: CustomExerciseType;
+  label: string;
+}> = [
+  { value: "bodyweight_only", label: "Bodyweight only" },
+  { value: "bodyweight_weighted", label: "Weighted bodyweight" },
+  {
+    value: "free_weights_accessories",
+    label: "Dumbbells / kettlebells / accessories"
+  },
+  { value: "barbell", label: "Barbell" },
+  { value: "machine", label: "Machine" },
+  { value: "freestyle_cardio", label: "Freestyle / cardio" }
+];
+
+const customMeasurementOptions: Array<{
+  value: MeasurementType;
+  label: string;
+}> = [
+  { value: "timed", label: "Timed" },
+  { value: "reps_volume", label: "Reps and volume" },
+  { value: "weight_timed", label: "Weight + timed" }
+];
+
+const customMovementSideOptions: Array<{
+  value: MovementSide;
+  label: string;
+}> = [
+  { value: "unilateral", label: "Unilateral" },
+  { value: "bilateral", label: "Bilateral" }
 ];
 
 function normalizeSearchText(value: string) {
@@ -224,12 +367,70 @@ function matchesSearchTokens(query: string, values: string[]) {
   return queryTokens.every((token) => haystack.includes(token));
 }
 
+function ensureUniqueExerciseName(name: string, existingNames: string[]) {
+  const normalizedExisting = new Set(existingNames.map((entry) => entry.trim().toLowerCase()));
+  const requestedName = name.trim();
+  if (!normalizedExisting.has(requestedName.toLowerCase())) {
+    return requestedName;
+  }
+
+  const baseName = requestedName.replace(/_\d+$/, "").trim();
+  let nextVersion = 1;
+
+  existingNames.forEach((entry) => {
+    const trimmed = entry.trim();
+    const match = trimmed.match(new RegExp(`^${baseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:_(\\d+))?$`, "i"));
+    if (!match) {
+      return;
+    }
+
+    const suffix = match[1] ? Number(match[1]) : 0;
+    nextVersion = Math.max(nextVersion, suffix + 1);
+  });
+
+  return `${baseName}_${nextVersion}`;
+}
+
+function inferExerciseType(exercise: Pick<ExerciseDraft, "id" | "name" | "exerciseType">): CustomExerciseType {
+  if (exercise.exerciseType) {
+    return exercise.exerciseType;
+  }
+
+  const name = exercise.name.toLowerCase();
+  if (/(run|bike|cycle|walk|elliptical|rower|stair|cardio)/.test(name)) {
+    return "freestyle_cardio";
+  }
+  if (/(stretch|mobility|yoga)/.test(name)) {
+    return "bodyweight_only";
+  }
+  if (/(barbell|ez bar|trap bar|smith)/.test(name)) {
+    return "barbell";
+  }
+  if (/(machine|leg press|selectorized|hack squat)/.test(name)) {
+    return "machine";
+  }
+  if (/(dumbbell|kettlebell|landmine|medicine ball|rope|cable|band)/.test(name)) {
+    return "free_weights_accessories";
+  }
+  if (/(push-up|pull-up|chin-up|dip|plank|crunch|sit-up|bodyweight)/.test(name)) {
+    return "bodyweight_only";
+  }
+  return "bodyweight_weighted";
+}
+
+function getExerciseTypeLabel(exerciseType: CustomExerciseType) {
+  return customExerciseTypeOptions.find((option) => option.value === exerciseType)?.label ?? "Weighted";
+}
+
 function createTemplateExercise({
   id,
   name,
   restTimer,
   goal = "hypertrophy",
   imageSrc = genericExerciseImage,
+  exerciseType,
+  measurementType,
+  movementSide,
   primaryMuscle,
   secondaryMuscles,
   howTo,
@@ -241,6 +442,9 @@ function createTemplateExercise({
   restTimer: string;
   goal?: ExerciseEvaluationRequest["goal"];
   imageSrc?: string;
+  exerciseType?: CustomExerciseType;
+  measurementType?: MeasurementType;
+  movementSide?: MovementSide;
   primaryMuscle: string;
   secondaryMuscles: string[];
   howTo: string[];
@@ -269,7 +473,11 @@ function createTemplateExercise({
     restTimer,
     goal,
     imageSrc,
+    exerciseType,
+    measurementType,
+    movementSide,
     primaryMuscle,
+    primaryMuscles: [primaryMuscle],
     secondaryMuscles,
     howTo,
     videoLabel,
@@ -540,6 +748,579 @@ const selectorCategorySamples: ExerciseDraft[] = [
         { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false },
         { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false },
         { weight: 0, reps: 2, set_type: "normal", rpe: 4, failed: false }
+      ]
+    ]
+  })
+];
+
+const expandedExerciseSamples: ExerciseDraft[] = [
+  createTemplateExercise({
+    id: "weighted-pull-up",
+    name: "Weighted Pull-Up",
+    restTimer: "01:30",
+    exerciseType: "bodyweight_weighted",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Back",
+    secondaryMuscles: ["Biceps", "Middle Back", "Forearms"],
+    howTo: [
+      "Let the load hang still before starting the first rep.",
+      "Pull the elbows down toward the hips instead of craning the neck.",
+      "Lower to full extension without swinging."
+    ],
+    videoLabel: "Weighted Pull-Up Guide",
+    historySets: [
+      [
+        { weight: 5, reps: 6, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 10, reps: 8, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 10, reps: 7, set_type: "normal", rpe: 8, failed: false },
+        { weight: 10, reps: 6, set_type: "normal", rpe: 8.5, failed: false }
+      ],
+      [
+        { weight: 5, reps: 6, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 12.5, reps: 6, set_type: "normal", rpe: 8, failed: false },
+        { weight: 12.5, reps: 6, set_type: "normal", rpe: 8.5, failed: false },
+        { weight: 12.5, reps: 5, set_type: "normal", rpe: 9, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "chest-dip",
+    name: "Chest Dip",
+    restTimer: "01:00",
+    exerciseType: "bodyweight_only",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Chest",
+    secondaryMuscles: ["Triceps", "Front Shoulders"],
+    howTo: [
+      "Lean slightly forward before starting the descent.",
+      "Lower until the chest opens without shrugging the shoulders.",
+      "Press back up while keeping tension through the chest."
+    ],
+    videoLabel: "Chest Dip Guide",
+    historySets: [
+      [
+        { weight: 0, reps: 6, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 0, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 0, reps: 11, set_type: "normal", rpe: 8, failed: false },
+        { weight: 0, reps: 10, set_type: "normal", rpe: 8.5, failed: false }
+      ],
+      [
+        { weight: 0, reps: 6, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 0, reps: 14, set_type: "normal", rpe: 8, failed: false },
+        { weight: 0, reps: 12, set_type: "normal", rpe: 8.5, failed: false },
+        { weight: 0, reps: 10, set_type: "normal", rpe: 9, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "weighted-chest-dip",
+    name: "Weighted Chest Dip",
+    restTimer: "01:15",
+    exerciseType: "bodyweight_weighted",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Chest",
+    secondaryMuscles: ["Triceps", "Front Shoulders"],
+    howTo: [
+      "Let the load settle before lowering into the dip.",
+      "Keep a slight forward lean so the chest stays the main driver.",
+      "Press up without rushing the turnaround."
+    ],
+    videoLabel: "Weighted Chest Dip Guide",
+    historySets: [
+      [
+        { weight: 5, reps: 5, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 10, reps: 10, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 10, reps: 9, set_type: "normal", rpe: 8, failed: false },
+        { weight: 10, reps: 8, set_type: "normal", rpe: 8.5, failed: false }
+      ],
+      [
+        { weight: 5, reps: 5, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 12.5, reps: 8, set_type: "normal", rpe: 8, failed: false },
+        { weight: 12.5, reps: 8, set_type: "normal", rpe: 8.5, failed: false },
+        { weight: 12.5, reps: 7, set_type: "normal", rpe: 9, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "plank",
+    name: "Plank",
+    restTimer: "00:30",
+    exerciseType: "bodyweight_only",
+    measurementType: "timed",
+    movementSide: "bilateral",
+    primaryMuscle: "Abs / Core",
+    secondaryMuscles: ["Obliques", "Glutes"],
+    howTo: [
+      "Brace the abs before lifting into position.",
+      "Keep the ribs and hips stacked instead of sagging through the lower back.",
+      "Breathe behind the brace while holding the line."
+    ],
+    videoLabel: "Plank Guide",
+    historySets: [
+      [
+        { weight: 0, reps: 30, set_type: "warmup", rpe: 4, failed: false },
+        { weight: 0, reps: 45, set_type: "normal", rpe: 6, failed: false },
+        { weight: 0, reps: 45, set_type: "normal", rpe: 6.5, failed: false },
+        { weight: 0, reps: 40, set_type: "normal", rpe: 7, failed: false }
+      ],
+      [
+        { weight: 0, reps: 30, set_type: "warmup", rpe: 4, failed: false },
+        { weight: 0, reps: 50, set_type: "normal", rpe: 6.5, failed: false },
+        { weight: 0, reps: 45, set_type: "normal", rpe: 7, failed: false },
+        { weight: 0, reps: 45, set_type: "normal", rpe: 7.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "weighted-plank",
+    name: "Weighted Plank",
+    restTimer: "00:45",
+    exerciseType: "bodyweight_weighted",
+    measurementType: "weight_timed",
+    movementSide: "bilateral",
+    primaryMuscle: "Abs / Core",
+    secondaryMuscles: ["Obliques", "Glutes"],
+    howTo: [
+      "Set the plate securely before lifting into the hold.",
+      "Brace first so the torso stays locked from ribs to hips.",
+      "Hold cleanly instead of letting the lower back take over."
+    ],
+    videoLabel: "Weighted Plank Guide",
+    historySets: [
+      [
+        { weight: 10, reps: 30, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 20, reps: 40, set_type: "normal", rpe: 7, failed: false },
+        { weight: 20, reps: 35, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 20, reps: 30, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 10, reps: 30, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 25, reps: 35, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 25, reps: 35, set_type: "normal", rpe: 8, failed: false },
+        { weight: 25, reps: 30, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "weighted-push-up",
+    name: "Weighted Push-Up",
+    restTimer: "01:00",
+    exerciseType: "bodyweight_weighted",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Chest",
+    secondaryMuscles: ["Triceps", "Front Shoulders"],
+    howTo: [
+      "Set the load securely before taking the plank position.",
+      "Lower as one unit until the chest nearly reaches the floor.",
+      "Drive away while keeping the core tight."
+    ],
+    videoLabel: "Weighted Push-Up Guide",
+    historySets: [
+      [
+        { weight: 5, reps: 8, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 10, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 10, reps: 10, set_type: "normal", rpe: 8, failed: false },
+        { weight: 10, reps: 9, set_type: "normal", rpe: 8.5, failed: false }
+      ],
+      [
+        { weight: 5, reps: 8, set_type: "warmup", rpe: 6, failed: false },
+        { weight: 15, reps: 10, set_type: "normal", rpe: 8, failed: false },
+        { weight: 15, reps: 9, set_type: "normal", rpe: 8.5, failed: false },
+        { weight: 15, reps: 8, set_type: "normal", rpe: 9, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "wall-sit",
+    name: "Wall Sit",
+    restTimer: "00:30",
+    exerciseType: "bodyweight_only",
+    measurementType: "timed",
+    movementSide: "bilateral",
+    primaryMuscle: "Quads",
+    secondaryMuscles: ["Glutes", "Abs / Core"],
+    howTo: [
+      "Set the knees close to ninety degrees before starting the hold.",
+      "Keep the full foot planted and the lower back supported by the wall.",
+      "Hold steady instead of bouncing through the position."
+    ],
+    videoLabel: "Wall Sit Guide",
+    historySets: [
+      [
+        { weight: 0, reps: 30, set_type: "warmup", rpe: 4, failed: false },
+        { weight: 0, reps: 45, set_type: "normal", rpe: 6, failed: false },
+        { weight: 0, reps: 45, set_type: "normal", rpe: 6.5, failed: false },
+        { weight: 0, reps: 40, set_type: "normal", rpe: 7, failed: false }
+      ],
+      [
+        { weight: 0, reps: 30, set_type: "warmup", rpe: 4, failed: false },
+        { weight: 0, reps: 60, set_type: "normal", rpe: 6.5, failed: false },
+        { weight: 0, reps: 50, set_type: "normal", rpe: 7, failed: false },
+        { weight: 0, reps: 45, set_type: "normal", rpe: 7.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "weighted-wall-sit",
+    name: "Weighted Wall Sit",
+    restTimer: "00:45",
+    exerciseType: "bodyweight_weighted",
+    measurementType: "weight_timed",
+    movementSide: "bilateral",
+    primaryMuscle: "Quads",
+    secondaryMuscles: ["Glutes", "Abs / Core"],
+    howTo: [
+      "Set the load securely before settling into the sit.",
+      "Hold the knee angle steady rather than drifting upward.",
+      "Keep the core braced through the whole hold."
+    ],
+    videoLabel: "Weighted Wall Sit Guide",
+    historySets: [
+      [
+        { weight: 10, reps: 30, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 20, reps: 40, set_type: "normal", rpe: 7, failed: false },
+        { weight: 20, reps: 35, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 20, reps: 30, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 10, reps: 30, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 25, reps: 35, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 25, reps: 35, set_type: "normal", rpe: 8, failed: false },
+        { weight: 25, reps: 30, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "cable-hip-abduction",
+    name: "Cable Hip Abduction",
+    restTimer: "00:45",
+    exerciseType: "free_weights_accessories",
+    measurementType: "reps_volume",
+    movementSide: "unilateral",
+    primaryMuscle: "Abductors",
+    secondaryMuscles: ["Glutes"],
+    howTo: [
+      "Brace against the stack before moving the working leg out.",
+      "Lead from the hip instead of swinging the foot.",
+      "Return slowly so the glute med stays loaded."
+    ],
+    videoLabel: "Cable Hip Abduction Guide",
+    historySets: [
+      [
+        { weight: 5, reps: 12, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 10, reps: 15, set_type: "normal", rpe: 7, failed: false },
+        { weight: 10, reps: 14, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 10, reps: 12, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 5, reps: 12, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 12.5, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 12.5, reps: 12, set_type: "normal", rpe: 8, failed: false },
+        { weight: 12.5, reps: 10, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "standing-calf-raise",
+    name: "Standing Calf Raise",
+    restTimer: "00:45",
+    exerciseType: "machine",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Calves",
+    secondaryMuscles: ["Glutes"],
+    howTo: [
+      "Let the heels drop into a full stretch at the bottom.",
+      "Drive up through the big toe and hold the top briefly.",
+      "Lower slowly instead of bouncing."
+    ],
+    videoLabel: "Standing Calf Raise Guide",
+    historySets: [
+      [
+        { weight: 20, reps: 12, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 40, reps: 18, set_type: "normal", rpe: 7, failed: false },
+        { weight: 40, reps: 16, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 40, reps: 15, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 20, reps: 12, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 50, reps: 15, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 50, reps: 15, set_type: "normal", rpe: 8, failed: false },
+        { weight: 50, reps: 14, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "wrist-curl",
+    name: "Wrist Curl",
+    restTimer: "00:45",
+    exerciseType: "free_weights_accessories",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Forearms",
+    secondaryMuscles: ["Biceps"],
+    howTo: [
+      "Let the wrist extend first to find the full range.",
+      "Curl through the forearm without lifting the whole arm.",
+      "Lower under control instead of dropping the weight."
+    ],
+    videoLabel: "Wrist Curl Guide",
+    historySets: [
+      [
+        { weight: 5, reps: 15, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 10, reps: 18, set_type: "normal", rpe: 7, failed: false },
+        { weight: 10, reps: 16, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 10, reps: 15, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 5, reps: 15, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 12.5, reps: 15, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 12.5, reps: 15, set_type: "normal", rpe: 8, failed: false },
+        { weight: 12.5, reps: 14, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "chest-supported-row",
+    name: "Chest Supported Row",
+    restTimer: "01:00",
+    exerciseType: "free_weights_accessories",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Middle Back",
+    secondaryMuscles: ["Back", "Rear Delts", "Biceps"],
+    howTo: [
+      "Set the chest firmly against the bench before pulling.",
+      "Drive the elbows back without shrugging the shoulders.",
+      "Control the stretch through the upper back on the way down."
+    ],
+    videoLabel: "Chest Supported Row Guide",
+    historySets: [
+      [
+        { weight: 12.5, reps: 10, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 22.5, reps: 12, set_type: "normal", rpe: 7, failed: false },
+        { weight: 22.5, reps: 11, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 22.5, reps: 10, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 12.5, reps: 10, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 25, reps: 10, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 25, reps: 10, set_type: "normal", rpe: 8, failed: false },
+        { weight: 25, reps: 9, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "back-extension",
+    name: "Back Extension",
+    restTimer: "00:45",
+    exerciseType: "bodyweight_weighted",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Lower Back",
+    secondaryMuscles: ["Glutes", "Hamstrings"],
+    howTo: [
+      "Brace before hinging over the pad.",
+      "Lift by extending through the hips and lower back together.",
+      "Stop at a straight line instead of overextending."
+    ],
+    videoLabel: "Back Extension Guide",
+    historySets: [
+      [
+        { weight: 0, reps: 10, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 10, reps: 15, set_type: "normal", rpe: 7, failed: false },
+        { weight: 10, reps: 14, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 10, reps: 12, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 0, reps: 10, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 15, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 15, reps: 12, set_type: "normal", rpe: 8, failed: false },
+        { weight: 15, reps: 10, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "dumbbell-shrug",
+    name: "Dumbbell Shrug",
+    restTimer: "00:45",
+    exerciseType: "free_weights_accessories",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Traps",
+    secondaryMuscles: ["Forearms"],
+    howTo: [
+      "Stand tall and let the shoulders settle before each rep.",
+      "Lift the shoulders straight up without rolling them.",
+      "Pause briefly at the top before lowering."
+    ],
+    videoLabel: "Dumbbell Shrug Guide",
+    historySets: [
+      [
+        { weight: 12.5, reps: 12, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 22.5, reps: 15, set_type: "normal", rpe: 7, failed: false },
+        { weight: 22.5, reps: 14, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 22.5, reps: 12, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 12.5, reps: 12, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 25, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 25, reps: 12, set_type: "normal", rpe: 8, failed: false },
+        { weight: 25, reps: 11, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "barbell-hip-thrust",
+    name: "Barbell Hip Thrust",
+    restTimer: "01:15",
+    exerciseType: "barbell",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Glutes",
+    secondaryMuscles: ["Hamstrings", "Abs / Core"],
+    howTo: [
+      "Set the bench against the shoulder blades before unracking the bar.",
+      "Drive through the heels and squeeze the glutes hard at the top.",
+      "Lower under control without losing the ribcage position."
+    ],
+    videoLabel: "Barbell Hip Thrust Guide",
+    historySets: [
+      [
+        { weight: 30, reps: 10, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 80, reps: 12, set_type: "normal", rpe: 7, failed: false },
+        { weight: 80, reps: 11, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 80, reps: 10, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 30, reps: 10, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 90, reps: 10, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 90, reps: 10, set_type: "normal", rpe: 8, failed: false },
+        { weight: 90, reps: 9, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "hanging-leg-raise",
+    name: "Hanging Leg Raise",
+    restTimer: "00:45",
+    exerciseType: "bodyweight_only",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Abs / Core",
+    secondaryMuscles: ["Obliques", "Hip Flexors"],
+    howTo: [
+      "Set the ribs down before lifting the legs.",
+      "Raise with the abs instead of swinging the torso.",
+      "Lower slowly to keep tension through the midline."
+    ],
+    videoLabel: "Hanging Leg Raise Guide",
+    historySets: [
+      [
+        { weight: 0, reps: 8, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 0, reps: 15, set_type: "normal", rpe: 7, failed: false },
+        { weight: 0, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 0, reps: 10, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 0, reps: 8, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 0, reps: 18, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 0, reps: 14, set_type: "normal", rpe: 8, failed: false },
+        { weight: 0, reps: 12, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "cable-wood-chop",
+    name: "Cable Wood Chop",
+    restTimer: "00:45",
+    exerciseType: "free_weights_accessories",
+    measurementType: "reps_volume",
+    movementSide: "unilateral",
+    primaryMuscle: "Obliques",
+    secondaryMuscles: ["Abs / Core", "Glutes"],
+    howTo: [
+      "Brace before rotating away from the stack.",
+      "Turn through the torso, not just the arms.",
+      "Finish under control and resist the pull back."
+    ],
+    videoLabel: "Cable Wood Chop Guide",
+    historySets: [
+      [
+        { weight: 5, reps: 10, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 12.5, reps: 15, set_type: "normal", rpe: 7, failed: false },
+        { weight: 12.5, reps: 14, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 12.5, reps: 12, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 5, reps: 10, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 15, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 15, reps: 12, set_type: "normal", rpe: 8, failed: false },
+        { weight: 15, reps: 10, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "reverse-pec-deck",
+    name: "Reverse Pec Deck",
+    restTimer: "00:45",
+    exerciseType: "machine",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Rear Delts",
+    secondaryMuscles: ["Middle Back", "Traps"],
+    howTo: [
+      "Set the handles so the shoulders stay slightly below the ears.",
+      "Sweep out and back without arching the lower back.",
+      "Control the return so the rear delts stay loaded."
+    ],
+    videoLabel: "Reverse Pec Deck Guide",
+    historySets: [
+      [
+        { weight: 10, reps: 12, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 25, reps: 15, set_type: "normal", rpe: 7, failed: false },
+        { weight: 25, reps: 14, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 25, reps: 12, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 10, reps: 12, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 30, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 30, reps: 12, set_type: "normal", rpe: 8, failed: false },
+        { weight: 30, reps: 11, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "dumbbell-front-raise",
+    name: "Dumbbell Front Raise",
+    restTimer: "00:45",
+    exerciseType: "free_weights_accessories",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Front Shoulders",
+    secondaryMuscles: ["Upper Chest", "Side Delts"],
+    howTo: [
+      "Lift with a soft elbow and a quiet torso.",
+      "Raise only to shoulder height so the front delts stay loaded.",
+      "Lower slowly without swinging."
+    ],
+    videoLabel: "Dumbbell Front Raise Guide",
+    historySets: [
+      [
+        { weight: 5, reps: 12, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 10, reps: 15, set_type: "normal", rpe: 7, failed: false },
+        { weight: 10, reps: 14, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 10, reps: 12, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 5, reps: 12, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 12.5, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 12.5, reps: 12, set_type: "normal", rpe: 8, failed: false },
+        { weight: 12.5, reps: 10, set_type: "normal", rpe: 8.5, failed: false }
       ]
     ]
   })
@@ -1045,7 +1826,8 @@ const exerciseTemplates: ExerciseDraft[] = [
       { id: "hc-3", setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false }
     ]
   },
-  ...selectorCategorySamples
+  ...selectorCategorySamples,
+  ...expandedExerciseSamples
 ];
 
 const replacementTemplates: Array<
@@ -1127,11 +1909,64 @@ const defaultWorkoutMeta: WorkoutMeta = {
   sessionName: "Upper Push"
 };
 
+function generateWorkoutName(exercises: ExerciseDraft[]): string {
+  const hour = new Date().getHours();
+  const timePrefix =
+    hour < 11 ? "Morning" : hour < 14 ? "Midday" : hour < 17 ? "Afternoon" : hour < 20 ? "Evening" : "Night";
+
+  const pushMuscles = new Set(["Chest", "Upper Chest", "Shoulders", "Triceps"]);
+  const pullMuscles = new Set(["Lats", "Upper Back", "Rear Delts", "Biceps", "Traps"]);
+  const legMuscles = new Set(["Quads", "Hamstrings", "Glutes", "Calves", "Adductors", "Hip Flexors"]);
+  const coreMuscles = new Set(["Core", "Abs", "Obliques"]);
+
+  const muscles = exercises.map((e) => e.primaryMuscle);
+
+  const hasPush = muscles.some((m) => pushMuscles.has(m));
+  const hasPull = muscles.some((m) => pullMuscles.has(m));
+  const hasLegs = muscles.some((m) => legMuscles.has(m));
+  const hasCore = muscles.some((m) => coreMuscles.has(m));
+
+  let label: string;
+  if (hasPush && hasPull && hasLegs) label = "Full Body";
+  else if (hasPush && hasPull) label = "Upper Body";
+  else if ((hasPush || hasPull) && hasLegs) label = "Full Body";
+  else if (hasPush) label = "Upper Push";
+  else if (hasPull) label = "Upper Pull";
+  else if (hasLegs) label = "Legs";
+  else if (hasCore) label = "Core";
+  else label = "Workout";
+
+  return `${timePrefix} ${label}`;
+}
+
 function formatSessionDate(date: string) {
   return new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", {
     day: "numeric",
     month: "short"
   });
+}
+
+function getStoredSavedWorkouts(): SavedWorkoutData[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(savedWorkoutsStorageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedWorkout(workout: SavedWorkoutData): void {
+  try {
+    const existing = getStoredSavedWorkouts();
+    // newest first, keep last 200
+    const updated = [workout, ...existing].slice(0, 200);
+    window.localStorage.setItem(savedWorkoutsStorageKey, JSON.stringify(updated));
+  } catch {
+    // storage full or unavailable — ignore
+  }
 }
 
 function getStoredThemePreference(): ThemePreference {
@@ -1221,6 +2056,8 @@ function getStoredCustomExercises(): ExerciseDraft[] {
       )
       .map((exercise) =>
         cloneExerciseDraft(exercise, {
+          isCustom: true,
+          libraryStatus: exercise.libraryStatus === "archived" ? "archived" : "active",
           imageSrc:
             typeof exercise.imageSrc === "string" && exercise.imageSrc.length > 0
               ? exercise.imageSrc
@@ -1240,10 +2077,70 @@ function getSystemTheme(): Exclude<ThemePreference, "system"> {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function formatPreviousSet(set?: WorkoutSet) {
+function getExerciseMeasurementType(exercise: ExerciseDraft): MeasurementType {
+  if (exercise.measurementType) {
+    return exercise.measurementType;
+  }
+
+  const name = exercise.name.toLowerCase();
+  if (/(run|bike|cycle|walk|elliptical|rower|stair|stretch|mobility|yoga|plank|hold)/.test(name)) {
+    return "timed";
+  }
+
+  const exerciseType = inferExerciseType(exercise);
+  if (exerciseType === "freestyle_cardio") {
+    return "timed";
+  }
+
+  return "reps_volume";
+}
+
+function getPrimaryMuscles(exercise: Pick<ExerciseDraft, "primaryMuscle" | "primaryMuscles">) {
+  return exercise.primaryMuscles && exercise.primaryMuscles.length > 0
+    ? exercise.primaryMuscles
+    : [exercise.primaryMuscle];
+}
+
+function formatPrimaryMuscles(exercise: Pick<ExerciseDraft, "primaryMuscle" | "primaryMuscles">) {
+  return getPrimaryMuscles(exercise).join(", ");
+}
+
+function usesWeightInputForMeasurement(measurementType: MeasurementType) {
+  return measurementType !== "timed";
+}
+
+function usesTimedMetric(measurementType: MeasurementType) {
+  return measurementType === "timed" || measurementType === "weight_timed";
+}
+
+function getMeasurementColumnLabels(measurementType: MeasurementType) {
+  return {
+    first: usesWeightInputForMeasurement(measurementType) ? "Kg" : "—",
+    second: usesTimedMetric(measurementType) ? "Time" : "Reps"
+  };
+}
+
+function formatMeasurementValue(value: number, measurementType: MeasurementType) {
+  if (usesTimedMetric(measurementType)) {
+    return `${value}s`;
+  }
+
+  return String(value);
+}
+
+function formatPreviousSet(set: WorkoutSet | undefined, measurementType: MeasurementType = "reps_volume") {
   if (!set) {
     return "-";
   }
+
+  if (measurementType === "timed") {
+    return formatMeasurementValue(set.reps, measurementType);
+  }
+
+  if (measurementType === "weight_timed") {
+    return `${set.weight}kg x ${formatMeasurementValue(set.reps, measurementType)}`;
+  }
+
   return `${set.weight}kg x ${set.reps}`;
 }
 
@@ -1426,6 +2323,7 @@ function cloneExerciseTemplate(template: ExerciseDraft, restSeconds: string, suf
     stickyNoteEnabled: template.stickyNoteEnabled ?? false,
     restTimer: formatRestTimer(restSeconds),
     supersetGroupId: null,
+    primaryMuscles: template.primaryMuscles ? [...template.primaryMuscles] : [template.primaryMuscle],
     secondaryMuscles: [...template.secondaryMuscles],
     howTo: [...template.howTo],
     history: normalizeExerciseHistory(template.history, template.name, template.id),
@@ -1445,12 +2343,14 @@ function cloneExerciseDraft(
   exercise: ExerciseDraft,
   overrides?: Partial<ExerciseDraft>
 ): ExerciseDraft {
+  const resolvedPrimaryMuscles = overrides?.primaryMuscles ?? exercise.primaryMuscles ?? [exercise.primaryMuscle];
   return {
     ...exercise,
     ...overrides,
     stickyNoteEnabled: overrides?.stickyNoteEnabled ?? exercise.stickyNoteEnabled ?? false,
-    secondaryMuscles: [...exercise.secondaryMuscles],
-    howTo: [...exercise.howTo],
+    primaryMuscles: [...resolvedPrimaryMuscles],
+    secondaryMuscles: [...(overrides?.secondaryMuscles ?? exercise.secondaryMuscles)],
+    howTo: [...(overrides?.howTo ?? exercise.howTo)],
     history: normalizeExerciseHistory(
       exercise.history,
       overrides?.name ?? exercise.name,
@@ -1544,7 +2444,8 @@ function normalizeSupersetGroups(exercises: ExerciseDraft[]) {
 function buildCompletedSets(
   draftSets: DraftSet[],
   lastSession: ExerciseHistorySession,
-  carryForwardDefaults: boolean
+  carryForwardDefaults: boolean,
+  measurementType: MeasurementType = "reps_volume"
 ) {
   const resolvedSets: WorkoutSet[] = [];
   const issues: string[] = [];
@@ -1555,10 +2456,12 @@ function buildCompletedSets(
     }
 
     const previousSet = getPreviousReferenceSet(draftSets, index, lastSession);
-    const weight = parseNumberInput(
-      draftSet.weightInput,
-      carryForwardDefaults ? previousSet?.weight : null
-    );
+    const weight = usesWeightInputForMeasurement(measurementType)
+      ? parseNumberInput(
+          draftSet.weightInput,
+          carryForwardDefaults ? previousSet?.weight : null
+        )
+      : 0;
     const reps = parseNumberInput(
       draftSet.repsInput,
       carryForwardDefaults ? previousSet?.reps : null
@@ -1568,13 +2471,21 @@ function buildCompletedSets(
       carryForwardDefaults ? previousSet?.rpe ?? null : null
     );
 
-    if (weight === null || reps === null) {
-      issues.push(`Set ${getDisplaySetLabel(draftSets, index)} needs weight and reps.`);
+    if (reps === null || (usesWeightInputForMeasurement(measurementType) && weight === null)) {
+      issues.push(
+        `Set ${getDisplaySetLabel(draftSets, index)} needs ${
+          usesWeightInputForMeasurement(measurementType)
+            ? usesTimedMetric(measurementType)
+              ? "weight and time."
+              : "weight and reps."
+            : "time."
+        }`
+      );
       return;
     }
 
     resolvedSets.push({
-      weight,
+      weight: weight ?? 0,
       reps: Math.round(reps),
       set_type: draftSet.setType,
       rpe,
@@ -1612,14 +2523,17 @@ function resolveDraftSet(
   draftSets: DraftSet[],
   index: number,
   lastSession: ExerciseHistorySession,
-  carryForwardDefaults: boolean
+  carryForwardDefaults: boolean,
+  measurementType: MeasurementType = "reps_volume"
 ) {
   const draftSet = draftSets[index];
   const previousSet = getPreviousReferenceSet(draftSets, index, lastSession);
-  const weight = parseNumberInput(
-    draftSet.weightInput,
-    carryForwardDefaults ? previousSet?.weight : null
-  );
+  const weight = usesWeightInputForMeasurement(measurementType)
+    ? parseNumberInput(
+        draftSet.weightInput,
+        carryForwardDefaults ? previousSet?.weight : null
+      )
+    : 0;
   const reps = parseNumberInput(
     draftSet.repsInput,
     carryForwardDefaults ? previousSet?.reps : null
@@ -1629,12 +2543,12 @@ function resolveDraftSet(
     carryForwardDefaults ? previousSet?.rpe ?? null : null
   );
 
-  if (weight === null || reps === null) {
+  if (reps === null || (usesWeightInputForMeasurement(measurementType) && weight === null)) {
     return null;
   }
 
   return {
-    weight,
+    weight: weight ?? 0,
     reps: Math.round(reps),
     set_type: draftSet.setType,
     rpe,
@@ -1757,7 +2671,8 @@ function recomputeLoggerRewards(
         exercise.draftSets,
         index,
         lastSession,
-        carryForwardDefaults
+        carryForwardDefaults,
+        getExerciseMeasurementType(exercise)
       );
 
       if (!resolvedSet) {
@@ -1942,15 +2857,23 @@ function ExerciseDetailPage({
   activeTab,
   initialScrollTarget,
   onTabChange,
-  onBack
+  onBack,
+  customActions
 }: {
   exercise: ExerciseDraft;
   activeTab: DetailTab;
   initialScrollTarget: "top" | "bottom";
   onTabChange: (tab: DetailTab) => void;
   onBack: () => void;
+  customActions?: {
+    deleteMode: "delete" | "archive";
+    onEdit: () => void;
+    onDeleteOrArchive: () => void;
+  } | null;
 }) {
   const bottomRef = useRef<HTMLElement | null>(null);
+  const [manageConfirmOpen, setManageConfirmOpen] = useState(false);
+  const measurementType = getExerciseMeasurementType(exercise);
   const recentHistory = [...exercise.history].reverse();
   const engagementCopy = buildMuscleEngagementCopy(exercise);
   const lastSession = recentHistory[0];
@@ -1996,7 +2919,22 @@ function ExerciseDetailPage({
           <h1>{exercise.name}</h1>
           <p>{exercise.primaryMuscle}</p>
         </div>
-        <span className="detail-topbar-spacer" aria-hidden="true" />
+        {customActions ? (
+          <div className="detail-topbar-manage">
+            <button className="detail-manage-button" type="button" onClick={customActions.onEdit}>
+              Edit
+            </button>
+            <button
+              className="detail-manage-button is-danger"
+              type="button"
+              onClick={() => setManageConfirmOpen(true)}
+            >
+              {customActions.deleteMode === "archive" ? "Hide" : "Delete"}
+            </button>
+          </div>
+        ) : (
+          <span className="detail-topbar-spacer" aria-hidden="true" />
+        )}
       </header>
 
       <nav className="detail-tabs">
@@ -2107,7 +3045,7 @@ function ExerciseDetailPage({
                   </span>
                 </div>
                 <p className="history-detail">
-                  {session.sets.map((set) => formatPreviousSet(set)).join(" • ")}
+                  {session.sets.map((set) => formatPreviousSet(set, measurementType)).join(" • ")}
                 </p>
               </article>
             ))}
@@ -2142,6 +3080,1248 @@ function ExerciseDetailPage({
           </p>
         </section>
       )}
+
+      {customActions && manageConfirmOpen && (
+        <section className="sheet-overlay leave-center-overlay" onClick={() => setManageConfirmOpen(false)}>
+          <div className="leave-center-card" onClick={(event) => event.stopPropagation()}>
+            <div className="sheet-head">
+              <div>
+                <p className="label">
+                  {customActions.deleteMode === "archive" ? "Hide Custom Exercise" : "Delete Custom Exercise"}
+                </p>
+                <h3>{exercise.name}</h3>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setManageConfirmOpen(false)}>
+                ×
+              </button>
+            </div>
+            <p className="settings-note">
+              {customActions.deleteMode === "archive"
+                ? "This exercise already has history, so RepIQ will hide it from the library instead of deleting it."
+                : "This custom exercise will be removed from your library."}
+            </p>
+            <div className="custom-manage-confirm-actions">
+              <div className="custom-manage-confirm-row">
+                <button
+                  className="secondary-button custom-manage-confirm-secondary"
+                  type="button"
+                  onClick={() => setManageConfirmOpen(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+              <button
+                className="primary-button custom-manage-confirm-button"
+                type="button"
+                onClick={() => {
+                  setManageConfirmOpen(false);
+                  customActions.onDeleteOrArchive();
+                }}
+              >
+                {customActions.deleteMode === "archive" ? "Hide from Library" : "Delete Exercise"}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}
+
+const MEDIA_MAX_PHOTOS = 3;
+const MEDIA_MAX_VIDEO_MB = 100;
+const MEDIA_MAX_PHOTO_MB = 10;
+const MEDIA_MAX_VIDEO_SECONDS = 30;
+
+function formatTrimTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+const CROP_OUTPUT_PX = 600;
+const THEME_BG = "#f4f5f7";
+
+// ──────────────────────────────────────────────
+// SHARE CARDS
+// ──────────────────────────────────────────────
+
+function RepIQWatermark() {
+  return (
+    <div className="share-card-watermark" aria-hidden="true">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="10" fill="rgba(255,255,255,0.3)" />
+        <path d="M9 7v10l9-5-9-5z" fill="white" />
+      </svg>
+      <span>RepIQ</span>
+    </div>
+  );
+}
+
+function SummaryShareCard({ draft }: { draft: FinishWorkoutDraft }) {
+  return (
+    <div className="share-card share-card-summary">
+      <span className="share-card-eyebrow">Workout Complete</span>
+      <h2 className="share-card-title">{draft.sessionName || "Today's Workout"}</h2>
+      <p className="share-card-subtitle">{formatSessionDate(draft.date)}</p>
+      <div className="share-card-stats-grid">
+        <div className="share-card-stat">
+          <strong>{draft.duration}</strong>
+          <span>Duration</span>
+        </div>
+        <div className="share-card-stat">
+          <strong>{draft.totalVolume.toFixed(0)}<em>kg</em></strong>
+          <span>Volume</span>
+        </div>
+        <div className="share-card-stat">
+          <strong>{draft.totalSets}</strong>
+          <span>Sets</span>
+        </div>
+        <div className="share-card-stat">
+          <strong>{draft.loggedExerciseCount}</strong>
+          <span>Exercises</span>
+        </div>
+      </div>
+      <RepIQWatermark />
+    </div>
+  );
+}
+
+function RewardsShareCard({ draft }: { draft: FinishWorkoutDraft }) {
+  const displayed = draft.rewards.slice(0, 4);
+  const overflow = draft.rewards.length - displayed.length;
+  return (
+    <div className="share-card share-card-rewards">
+      <span className="share-card-eyebrow">Achievements</span>
+      <h2 className="share-card-title">
+        {draft.rewardSummary.total === 1 ? "1 Reward Earned" : `${draft.rewardSummary.total} Rewards Earned`}
+      </h2>
+      <div className="share-card-reward-chips">
+        {draft.rewardSummary.session > 0 && (
+          <span className="share-card-reward-chip share-card-reward-chip-session">{rewardLevelIcon.session} {draft.rewardSummary.session} session</span>
+        )}
+        {draft.rewardSummary.exercise > 0 && (
+          <span className="share-card-reward-chip share-card-reward-chip-exercise">{rewardLevelIcon.exercise} {draft.rewardSummary.exercise} exercise</span>
+        )}
+        {draft.rewardSummary.set > 0 && (
+          <span className="share-card-reward-chip share-card-reward-chip-set">{rewardLevelIcon.set} {draft.rewardSummary.set} set</span>
+        )}
+      </div>
+      <div className="share-card-reward-list">
+        {displayed.map((r) => (
+          <div key={r.id} className="share-card-reward-row">
+            <span className="share-card-reward-icon">{rewardLevelIcon[r.level]}</span>
+            <div className="share-card-reward-text">
+              <strong>{r.shortLabel}</strong>
+              <p>{r.detail}</p>
+            </div>
+          </div>
+        ))}
+        {overflow > 0 && <p className="share-card-reward-overflow">+{overflow} more</p>}
+      </div>
+      <RepIQWatermark />
+    </div>
+  );
+}
+
+function MusclesShareCard({ draft }: { draft: FinishWorkoutDraft }) {
+  const muscleCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    draft.exercises.forEach((ex) => {
+      if (ex.primaryMuscle) counts[ex.primaryMuscle] = (counts[ex.primaryMuscle] || 0) + ex.loggedSets;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [draft.exercises]);
+  const maxCount = muscleCounts[0]?.[1] ?? 1;
+
+  return (
+    <div className="share-card share-card-muscles">
+      <span className="share-card-eyebrow">Muscles Worked</span>
+      <h2 className="share-card-title">
+        {muscleCounts.length} muscle {muscleCounts.length === 1 ? "group" : "groups"}
+      </h2>
+      <div className="share-card-muscle-list">
+        {muscleCounts.map(([muscle, sets]) => (
+          <div key={muscle} className="share-card-muscle-row">
+            <span className="share-card-muscle-name">{muscle}</span>
+            <div className="share-card-muscle-bar-track">
+              <div
+                className="share-card-muscle-bar-fill"
+                style={{ width: `${(sets / maxCount) * 100}%` }}
+              />
+            </div>
+            <span className="share-card-muscle-sets">{sets}s</span>
+          </div>
+        ))}
+      </div>
+      <RepIQWatermark />
+    </div>
+  );
+}
+
+function ExercisesShareCard({ draft }: { draft: FinishWorkoutDraft }) {
+  const maxVol = Math.max(...draft.exercises.map((e) => e.loggedVolume), 1);
+  const displayed = draft.exercises.slice(0, 6);
+  const overflow = draft.exercises.length - displayed.length;
+
+  return (
+    <div className="share-card share-card-exercises">
+      <span className="share-card-eyebrow">Exercises</span>
+      <h2 className="share-card-title">{draft.exercises.length} logged</h2>
+      <div className="share-card-exercise-list">
+        {displayed.map((ex) => (
+          <div key={ex.id} className="share-card-exercise-row">
+            <div className="share-card-exercise-meta">
+              <span className="share-card-exercise-name">{ex.name}</span>
+              <span className="share-card-exercise-detail">
+                {ex.loggedSets} {ex.loggedSets === 1 ? "set" : "sets"} · {ex.loggedVolume.toFixed(0)} kg
+              </span>
+            </div>
+            <div className="share-card-exercise-bar-track">
+              <div
+                className="share-card-exercise-bar-fill"
+                style={{ width: `${(ex.loggedVolume / maxVol) * 100}%` }}
+              />
+            </div>
+          </div>
+        ))}
+        {overflow > 0 && <p className="share-card-exercise-overflow">+{overflow} more exercises</p>}
+      </div>
+      <RepIQWatermark />
+    </div>
+  );
+}
+
+function AchievementsShareCard({ draft }: { draft: FinishWorkoutDraft }) {
+  return (
+    <div className="share-card share-card-achievements">
+      <span className="share-card-eyebrow">✨ What I Achieved</span>
+      <h2 className="share-card-achieve-title">{draft.takeawayTitle}</h2>
+      <p className="share-card-achieve-body">{draft.takeawayBody}</p>
+      <div className="share-card-achieve-stats">
+        <div className="share-card-achieve-stat">
+          <strong>{draft.totalVolume.toFixed(0)}</strong>
+          <span>kg lifted</span>
+        </div>
+        <div className="share-card-achieve-stat">
+          <strong>{draft.totalSets}</strong>
+          <span>sets done</span>
+        </div>
+        <div className="share-card-achieve-stat">
+          <strong>{draft.loggedExerciseCount}</strong>
+          <span>exercises</span>
+        </div>
+        {draft.rewardSummary.total > 0 && (
+          <div className="share-card-achieve-stat">
+            <strong>{draft.rewardSummary.total}</strong>
+            <span>rewards</span>
+          </div>
+        )}
+      </div>
+      <RepIQWatermark />
+    </div>
+  );
+}
+
+const weightComparisons = [
+  { label: "bowling balls", kg: 7.26 },
+  { label: "golden retrievers", kg: 30 },
+  { label: "mountain bikes", kg: 14 },
+  { label: "office chairs", kg: 20 },
+  { label: "car tyres", kg: 12 },
+  { label: "suitcases", kg: 25 },
+  { label: "watermelons", kg: 9 },
+  { label: "bags of cement", kg: 50 },
+  { label: "microwave ovens", kg: 13 },
+  { label: "small cars", kg: 1200 },
+  { label: "grand pianos", kg: 450 },
+  { label: "horses", kg: 500 },
+  { label: "polar bears", kg: 450 },
+];
+
+function getBestComparison(totalKg: number) {
+  let best = weightComparisons[0];
+  let bestCount = 0;
+  for (const c of weightComparisons) {
+    const count = totalKg / c.kg;
+    if (count >= 1 && (bestCount === 0 || Math.abs(count - 5) < Math.abs(bestCount - 5))) {
+      best = c;
+      bestCount = count;
+    }
+  }
+  return { label: best.label, count: Math.round(totalKg / best.kg) };
+}
+
+function FunWeightCard({ draft }: { draft: FinishWorkoutDraft }) {
+  const { label, count } = getBestComparison(draft.totalVolume);
+  return (
+    <div className="share-card share-card-funweight">
+      <span className="share-card-eyebrow">💪 Did You Know?</span>
+      <h2 className="share-card-title">You lifted</h2>
+      <div className="share-card-funweight-big">
+        <strong>{draft.totalVolume.toFixed(0)}<em>kg</em></strong>
+      </div>
+      <p className="share-card-funweight-compare">
+        That's like lifting <strong>{count} {label}</strong>!
+      </p>
+      <p className="share-card-funweight-sub">across {draft.totalSets} sets in {draft.duration}</p>
+      <RepIQWatermark />
+    </div>
+  );
+}
+
+function ShareCardsStrip({ draft }: { draft: FinishWorkoutDraft }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const cards = useMemo<string[]>(() => {
+    const list: string[] = ["summary"];
+    if (draft.rewardSummary.total > 0) list.push("rewards");
+    if (draft.exercises.some((e) => e.primaryMuscle) && draft.exercises.length > 0) list.push("muscles");
+    if (draft.exercises.length > 0) list.push("exercises");
+    if (draft.totalVolume > 10) list.push("funweight");
+    list.push("achievements");
+    return list;
+  }, [draft]);
+
+  function handleScroll() {
+    if (!scrollRef.current) return;
+    const sl = scrollRef.current.scrollLeft;
+    const cw = scrollRef.current.offsetWidth;
+    setActiveIndex(Math.round(sl / cw));
+  }
+
+  function goToCard(index: number) {
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollTo({ left: index * scrollRef.current.offsetWidth, behavior: "smooth" });
+  }
+
+  async function handleShare(cardType: string) {
+    const title = `${draft.sessionName} — ${cardType}`;
+    const text = `Check out my workout: ${draft.sessionName} on ${formatSessionDate(draft.date)} — ${draft.totalVolume.toFixed(0)}kg across ${draft.totalSets} sets.`;
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title, text });
+      } catch {
+        // user dismissed
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(text);
+        alert("Copied to clipboard!");
+      } catch {
+        // clipboard not available
+      }
+    }
+  }
+
+  return (
+    <section className="finish-workout-card share-cards-section">
+      <div className="share-cards-header">
+        <p className="label">Share</p>
+        {cards.length > 1 && <span className="share-cards-hint">{activeIndex + 1} / {cards.length}</span>}
+      </div>
+      <div ref={scrollRef} className="share-cards-scroll" onScroll={handleScroll}>
+        {cards.map((cardType) => (
+          <div key={cardType} className="share-card-slide">
+            {cardType === "summary" && <SummaryShareCard draft={draft} />}
+            {cardType === "rewards" && <RewardsShareCard draft={draft} />}
+            {cardType === "muscles" && <MusclesShareCard draft={draft} />}
+            {cardType === "exercises" && <ExercisesShareCard draft={draft} />}
+            {cardType === "funweight" && <FunWeightCard draft={draft} />}
+            {cardType === "achievements" && <AchievementsShareCard draft={draft} />}
+            <button type="button" className="share-card-action-btn" onClick={() => handleShare(cardType)}>↗ Share</button>
+          </div>
+        ))}
+      </div>
+      {cards.length > 1 && (
+        <div className="share-cards-dots" aria-hidden="true">
+          {cards.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`share-cards-dot${i === activeIndex ? " is-active" : ""}`}
+              onClick={() => goToCard(i)}
+              aria-label={`Go to card ${i + 1}`}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PostSaveShareScreen({
+  data,
+  onDone
+}: {
+  data: SavedWorkoutData;
+  onDone: () => void;
+}) {
+  return (
+    <main className="detail-page post-save-screen">
+      <div className="post-save-hero">
+        <div className="post-save-topbar">
+          <span className="post-save-eyebrow">Saved!</span>
+          <button type="button" className="post-save-done-btn" onClick={onDone}>Done</button>
+        </div>
+        <h1 className="post-save-title">{data.sessionName}</h1>
+        <p className="post-save-subtitle">{formatSessionDate(data.date)}</p>
+      </div>
+      <section className="detail-section post-save-section">
+        <ShareCardsStrip draft={data} />
+      </section>
+    </main>
+  );
+}
+
+type CropMode = "crop" | "fit-width" | "fit-height";
+type CropFill = "blank" | "blur" | "fill";
+
+function CropTool({
+  imageUrl,
+  onCrop,
+  onCancel
+}: {
+  imageUrl: string;
+  onCrop: (croppedUrl: string) => void;
+  onCancel: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 });
+  const [containerSize, setContainerSize] = useState(0);
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [confirming, setConfirming] = useState(false);
+  const [mode, setMode] = useState<CropMode>("crop");
+  const [fill, setFill] = useState<CropFill>("blank");
+  const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+
+  function clampOffset(x: number, y: number, s: number, cSize: number, nw: number, nh: number) {
+    return {
+      x: Math.min(0, Math.max(cSize - nw * s, x)),
+      y: Math.min(0, Math.max(cSize - nh * s, y))
+    };
+  }
+
+  function handleImageLoad(e: React.SyntheticEvent<HTMLImageElement>) {
+    const img = e.currentTarget;
+    const cSize = containerRef.current?.offsetWidth ?? 300;
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    const s = Math.max(cSize / nw, cSize / nh);
+    setNaturalSize({ w: nw, h: nh });
+    setContainerSize(cSize);
+    setScale(s);
+    setOffset({ x: (cSize - nw * s) / 2, y: (cSize - nh * s) / 2 });
+  }
+
+  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (mode !== "crop") return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: offset.x, oy: offset.y };
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.sx;
+    const dy = e.clientY - dragRef.current.sy;
+    setOffset(clampOffset(dragRef.current.ox + dx, dragRef.current.oy + dy, scale, containerSize, naturalSize.w, naturalSize.h));
+  }
+
+  function handlePointerUp() { dragRef.current = null; }
+
+  // Fit mode image display dimensions (within the square container)
+  const fitStyle = useMemo((): React.CSSProperties => {
+    if (containerSize === 0 || naturalSize.w === 0) return { position: "absolute" };
+    if (mode === "fit-width") {
+      const w = containerSize;
+      const h = (naturalSize.h / naturalSize.w) * containerSize;
+      return { position: "absolute", left: 0, top: (containerSize - h) / 2, width: w, height: h };
+    }
+    // fit-height
+    const h = containerSize;
+    const w = (naturalSize.w / naturalSize.h) * containerSize;
+    return { position: "absolute", left: (containerSize - w) / 2, top: 0, width: w, height: h };
+  }, [mode, containerSize, naturalSize]);
+
+  const frameBg = mode === "crop" || fill !== "blank" ? "transparent" : "rgba(255,255,255,0.07)";
+
+  async function handleConfirm() {
+    if (confirming || containerSize === 0) return;
+    setConfirming(true);
+    const O = CROP_OUTPUT_PX;
+    const canvas = document.createElement("canvas");
+    canvas.width = O; canvas.height = O;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) { setConfirming(false); return; }
+
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = reject; img.src = imageUrl; });
+
+    const drawFit = (drawW: number, drawH: number) => {
+      const x = (O - drawW) / 2;
+      const y = (O - drawH) / 2;
+      ctx.drawImage(img, x, y, drawW, drawH);
+    };
+
+    let mimeType: string = "image/jpeg";
+    let quality: number | undefined = 0.92;
+
+    const fitW = mode === "fit-width" ? O : (img.naturalWidth / img.naturalHeight) * O;
+    const fitH = mode === "fit-width" ? (img.naturalHeight / img.naturalWidth) * O : O;
+
+    if (mode === "crop") {
+      ctx.drawImage(img, -offset.x / scale, -offset.y / scale, containerSize / scale, containerSize / scale, 0, 0, O, O);
+      mimeType = "image/jpeg";
+      quality = 0.92;
+    } else if (fill === "blank") {
+      // Transparent PNG — empty space is truly transparent, adapts to any display context
+      drawFit(fitW, fitH);
+      mimeType = "image/png";
+    } else if (fill === "blur" || fill === "fill") {
+      // Draw cover-scaled background first
+      const bgScale = Math.max(O / img.naturalWidth, O / img.naturalHeight);
+      const bgW = img.naturalWidth * bgScale;
+      const bgH = img.naturalHeight * bgScale;
+      const bgX = (O - bgW) / 2;
+      const bgY = (O - bgH) / 2;
+      if (fill === "blur") {
+        const bgCanvas = document.createElement("canvas");
+        bgCanvas.width = O; bgCanvas.height = O;
+        const bgCtx = bgCanvas.getContext("2d")!;
+        bgCtx.filter = "blur(22px) saturate(1.2) brightness(0.82)";
+        bgCtx.drawImage(img, bgX, bgY, bgW, bgH);
+        ctx.drawImage(bgCanvas, 0, 0);
+      } else {
+        ctx.drawImage(img, bgX, bgY, bgW, bgH);
+      }
+      drawFit(fitW, fitH);
+      mimeType = "image/jpeg";
+      quality = 0.92;
+    }
+
+    canvas.toBlob((blob) => {
+      setConfirming(false);
+      if (blob) onCrop(URL.createObjectURL(blob));
+    }, mimeType, quality);
+  }
+
+  return (
+    <div className="crop-overlay">
+      <div className="crop-topbar">
+        <button type="button" className="crop-cancel-btn" onClick={onCancel}>Cancel</button>
+        <span className="crop-title">Adjust Photo</span>
+        <button type="button" className="crop-done-btn" onClick={handleConfirm} disabled={confirming}>
+          {confirming ? "…" : "Done"}
+        </button>
+      </div>
+
+      <div className="crop-stage">
+        <div
+          ref={containerRef}
+          className="crop-frame"
+          style={{ background: frameBg, cursor: mode === "crop" ? undefined : "default" }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+        >
+          {/* Blur / fill background layer (fit modes only) */}
+          {mode !== "crop" && (fill === "blur" || fill === "fill") && naturalSize.w > 0 && (
+            <img
+              src={imageUrl}
+              style={{
+                position: "absolute",
+                inset: "-12%",
+                width: "124%",
+                height: "124%",
+                objectFit: "cover",
+                filter: fill === "blur" ? "blur(18px) saturate(1.2) brightness(0.82)" : "none",
+                pointerEvents: "none",
+                userSelect: "none"
+              }}
+              draggable={false}
+              alt=""
+            />
+          )}
+          {/* Main image */}
+          <img
+            src={imageUrl}
+            onLoad={handleImageLoad}
+            style={mode === "crop" ? {
+              position: "absolute",
+              left: offset.x, top: offset.y,
+              width: naturalSize.w * scale, height: naturalSize.h * scale,
+              opacity: naturalSize.w > 0 ? 1 : 0,
+              userSelect: "none", touchAction: "none", pointerEvents: "none"
+            } : { ...fitStyle, opacity: naturalSize.w > 0 ? 1 : 0, userSelect: "none", pointerEvents: "none" }}
+            draggable={false}
+            alt=""
+          />
+          {mode === "crop" && <div className="crop-frame-grid" aria-hidden="true" />}
+          <div className="crop-frame-corners" aria-hidden="true" />
+        </div>
+      </div>
+
+      {mode === "crop" && <p className="crop-hint">Drag to reposition · 1:1</p>}
+
+      <div className="crop-mode-bar">
+        {(["crop", "fit-width", "fit-height"] as CropMode[]).map((m) => (
+          <button
+            key={m}
+            type="button"
+            className={`crop-mode-btn${mode === m ? " is-active" : ""}`}
+            onClick={() => setMode(m)}
+          >
+            {m === "crop" ? "Crop" : m === "fit-width" ? "Fit Width" : "Fit Height"}
+          </button>
+        ))}
+      </div>
+
+      {mode !== "crop" && (
+        <div className="crop-fill-bar">
+          <span className="crop-fill-label">Fill</span>
+          {(["blank", "blur", "fill"] as CropFill[]).map((f) => (
+            <button
+              key={f}
+              type="button"
+              className={`crop-fill-btn${fill === f ? " is-active" : ""}`}
+              onClick={() => setFill(f)}
+            >
+              {f === "blank" ? "Blank" : f === "blur" ? "Blur" : "Fill"}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FinishWorkoutPage({
+  draft,
+  onTitleChange,
+  onNoteChange,
+  onBack,
+  onSave
+}: {
+  draft: FinishWorkoutDraft;
+  onTitleChange: (value: string) => void;
+  onNoteChange: (value: string) => void;
+  onBack: () => void;
+  onSave: (images: WorkoutMediaAsset[]) => Promise<void>;
+}) {
+  // V1 decision: keep photo support visible for progress/self-reference.
+  // Video stays parked behind a disabled flag until we design its real
+  // persistence model for social/feed use cases.
+  const finishPhotosEnabled = true;
+  const finishVideoEnabled = false;
+  const [exercisesExpanded, setExercisesExpanded] = useState(false);
+  // Each photo stores the original src (for re-editing) and the adjusted display URL
+  const [photos, setPhotos] = useState<{ name: string; src: string; display: string }[]>([]);
+  const [pendingCrop, setPendingCrop] = useState<{ name: string; src: string; index: number | null } | null>(null);
+  const [video, setVideo] = useState<File | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(0);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [videoConfirmed, setVideoConfirmed] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const trimTrackRef = useRef<HTMLDivElement | null>(null);
+  const trimDragRef = useRef<{
+    type: "start" | "end" | "range";
+    startX: number;
+    startTrimStart: number;
+    startTrimEnd: number;
+    duration: number;
+  } | null>(null);
+  const playIntervalRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      photos.forEach((p) => { URL.revokeObjectURL(p.src); URL.revokeObjectURL(p.display); });
+      if (videoUrl) URL.revokeObjectURL(videoUrl);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => { if (playIntervalRef.current !== null) clearInterval(playIntervalRef.current); };
+  }, []);
+
+  function handlePhotoChange(event: React.ChangeEvent<HTMLInputElement>) {
+    setMediaError(null);
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (photos.length >= MEDIA_MAX_PHOTOS) {
+      setMediaError(`Maximum ${MEDIA_MAX_PHOTOS} photos allowed.`);
+      return;
+    }
+    if (file.size > MEDIA_MAX_PHOTO_MB * 1024 * 1024) {
+      setMediaError(`Photo must be under ${MEDIA_MAX_PHOTO_MB} MB.`);
+      return;
+    }
+    setPendingCrop({ name: file.name, src: URL.createObjectURL(file), index: null });
+  }
+
+  function openPhotoEdit(index: number) {
+    setPendingCrop({ name: photos[index].name, src: photos[index].src, index });
+  }
+
+  function handleCropDone(outputUrl: string) {
+    if (!pendingCrop) return;
+    if (pendingCrop.index === null) {
+      // New photo
+      setPhotos((prev) => [...prev, { name: pendingCrop.name, src: pendingCrop.src, display: outputUrl }]);
+    } else {
+      // Re-edit: replace display URL only, keep original src
+      setPhotos((prev) => {
+        const next = [...prev];
+        URL.revokeObjectURL(next[pendingCrop.index!].display);
+        next[pendingCrop.index!] = { ...next[pendingCrop.index!], display: outputUrl };
+        return next;
+      });
+    }
+    setPendingCrop(null);
+  }
+
+  function handleCropCancel() {
+    // If new photo (not re-edit), revoke the src we created
+    if (pendingCrop?.index === null) URL.revokeObjectURL(pendingCrop.src);
+    setPendingCrop(null);
+  }
+
+  function removePhoto(index: number) {
+    const p = photos[index];
+    URL.revokeObjectURL(p.src);
+    URL.revokeObjectURL(p.display);
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
+    setMediaError(null);
+  }
+
+  function handleVideoChange(event: React.ChangeEvent<HTMLInputElement>) {
+    setMediaError(null);
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > MEDIA_MAX_VIDEO_MB * 1024 * 1024) {
+      setMediaError(`Video must be under ${MEDIA_MAX_VIDEO_MB} MB.`);
+      event.target.value = "";
+      return;
+    }
+    if (videoUrl) URL.revokeObjectURL(videoUrl);
+    const url = URL.createObjectURL(file);
+    setVideo(file);
+    setVideoUrl(url);
+    setTrimStart(0);
+    setTrimEnd(0);
+    setVideoDuration(0);
+    event.target.value = "";
+  }
+
+  function handleVideoMetadata() {
+    if (!videoRef.current) return;
+    const dur = videoRef.current.duration;
+    setVideoDuration(dur);
+    setTrimEnd(Math.min(dur, MEDIA_MAX_VIDEO_SECONDS));
+  }
+
+  function removeVideo() {
+    if (videoUrl) URL.revokeObjectURL(videoUrl);
+    stopPlayback();
+    setVideo(null);
+    setVideoUrl(null);
+    setVideoDuration(0);
+    setTrimStart(0);
+    setTrimEnd(0);
+    setVideoConfirmed(false);
+    setMediaError(null);
+  }
+
+  function stopPlayback() {
+    if (playIntervalRef.current !== null) {
+      clearInterval(playIntervalRef.current);
+      playIntervalRef.current = null;
+    }
+    if (videoRef.current) videoRef.current.pause();
+    setIsPlaying(false);
+  }
+
+  function togglePlay() {
+    const vid = videoRef.current;
+    if (!vid || videoDuration === 0) return;
+    if (isPlaying) {
+      stopPlayback();
+      return;
+    }
+    vid.currentTime = trimStart;
+    vid.play().catch(() => {});
+    setIsPlaying(true);
+    playIntervalRef.current = window.setInterval(() => {
+      if (!videoRef.current) return;
+      if (videoRef.current.currentTime >= trimEnd) {
+        videoRef.current.pause();
+        videoRef.current.currentTime = trimStart;
+        setIsPlaying(false);
+        if (playIntervalRef.current !== null) clearInterval(playIntervalRef.current);
+        playIntervalRef.current = null;
+      }
+    }, 100);
+  }
+
+  function confirmVideoTrim() {
+    stopPlayback();
+    setVideoConfirmed(true);
+  }
+
+  function reopenVideoTrim() {
+    setVideoConfirmed(false);
+  }
+
+  function startTrimDrag(type: "start" | "end" | "range", e: React.PointerEvent) {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    trimDragRef.current = {
+      type,
+      startX: e.clientX,
+      startTrimStart: trimStart,
+      startTrimEnd: trimEnd,
+      duration: videoDuration
+    };
+  }
+
+  function handleTrimPointerMove(e: React.PointerEvent) {
+    if (isPlaying) stopPlayback();
+    const drag = trimDragRef.current;
+    if (!drag || !trimTrackRef.current) return;
+    const trackW = trimTrackRef.current.offsetWidth;
+    const dSec = ((e.clientX - drag.startX) / trackW) * drag.duration;
+    const len = drag.startTrimEnd - drag.startTrimStart;
+
+    if (drag.type === "range") {
+      let s = drag.startTrimStart + dSec;
+      let en = drag.startTrimEnd + dSec;
+      if (s < 0) { s = 0; en = len; }
+      if (en > drag.duration) { en = drag.duration; s = drag.duration - len; }
+      setTrimStart(s);
+      setTrimEnd(en);
+    } else if (drag.type === "start") {
+      // Floor: can't go below 0, and can't make range exceed 30s (start can't go more than 30s before end)
+      const minStart = Math.max(0, drag.startTrimEnd - MEDIA_MAX_VIDEO_SECONDS);
+      const s = Math.max(minStart, Math.min(drag.startTrimStart + dSec, drag.startTrimEnd - 1));
+      setTrimStart(s);
+    } else {
+      const maxEnd = Math.min(drag.duration, drag.startTrimStart + MEDIA_MAX_VIDEO_SECONDS);
+      const en = Math.max(drag.startTrimStart + 1, Math.min(drag.startTrimEnd + dSec, maxEnd));
+      setTrimEnd(en);
+    }
+  }
+
+  function stopTrimDrag() {
+    trimDragRef.current = null;
+  }
+
+  const trimLength = trimEnd - trimStart;
+  const needsTrim = videoDuration > MEDIA_MAX_VIDEO_SECONDS;
+
+  async function uploadPhotoAssets(): Promise<WorkoutMediaAsset[]> {
+    if (!finishPhotosEnabled || photos.length === 0) {
+      return [];
+    }
+
+    const mediaConfigResponse = await fetch(`${apiBaseUrl}/v1/media/config`);
+    if (!mediaConfigResponse.ok) {
+      throw new Error("RepIQ could not load media settings.");
+    }
+
+    const mediaConfigJson = await mediaConfigResponse.json();
+    const mediaConfig = mediaConfigSchema.parse(mediaConfigJson.constraints);
+
+    if (!mediaConfig.image_enabled) {
+      throw new Error("Image uploads are currently disabled.");
+    }
+
+    if (photos.length > mediaConfig.max_images_per_workout) {
+      throw new Error(`You can upload up to ${mediaConfig.max_images_per_workout} images.`);
+    }
+
+    const uploadedAssets: WorkoutMediaAsset[] = [];
+
+    for (const [index, photo] of photos.entries()) {
+      const blobResponse = await fetch(photo.display);
+      const blob = await blobResponse.blob();
+
+      const prepareResponse = await fetch(`${apiBaseUrl}/v1/media/prepare`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "image",
+          file_name: photo.name || `workout-photo-${index + 1}.jpg`,
+          mime_type: blob.type || "image/jpeg",
+          byte_size: blob.size,
+          workout_id: draft.sessionName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-") || "workout"
+        })
+      });
+
+      if (!prepareResponse.ok) {
+        throw new Error("RepIQ could not prepare an image upload.");
+      }
+
+      const preparedJson = await prepareResponse.json();
+      const prepared = mediaPrepareUploadResponseSchema.parse(preparedJson);
+
+      if (!prepared.asset.upload_url) {
+        throw new Error("RepIQ did not return a valid upload target.");
+      }
+
+      const uploadResponse = await fetch(`${apiBaseUrl}${prepared.asset.upload_url}`, {
+        method: "POST",
+        headers: {
+          "content-type": prepared.asset.mime_type
+        },
+        body: blob
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("RepIQ could not save one of the selected images.");
+      }
+
+      const uploadJson = await uploadResponse.json();
+      uploadedAssets.push(workoutMediaAssetSchema.parse(uploadJson.asset));
+    }
+
+    return uploadedAssets;
+  }
+
+  async function handleSaveClick() {
+    if (isSaving) return;
+    setMediaError(null);
+    setIsSaving(true);
+    try {
+      const uploadedImages = await uploadPhotoAssets();
+      await onSave(uploadedImages);
+    } catch (error) {
+      setMediaError(error instanceof Error ? error.message : "RepIQ could not save this workout.");
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <main className="detail-page finish-workout-page">
+      <div className="finish-hero">
+        <div className="finish-hero-topbar">
+          <button
+            className="finish-hero-back"
+            type="button"
+            onClick={onBack}
+            aria-label="Back to logger"
+          >
+            ←
+          </button>
+          <span className="finish-hero-eyebrow">Workout Complete</span>
+          <span style={{ width: 32 }} aria-hidden="true" />
+        </div>
+        <h1 className="finish-hero-title">{draft.sessionName || "Today's Workout"}</h1>
+        <p className="finish-hero-date">{formatSessionDate(draft.date)}</p>
+        <div className="finish-hero-stats">
+          <div className="finish-hero-stat">
+            <strong>{draft.duration}</strong>
+            <span>Duration</span>
+          </div>
+          <div className="finish-hero-stat">
+            <strong>{draft.totalVolume.toFixed(0)} kg</strong>
+            <span>Volume</span>
+          </div>
+          <div className="finish-hero-stat">
+            <strong>{draft.totalSets}</strong>
+            <span>Sets</span>
+          </div>
+          <div className="finish-hero-stat">
+            <strong>{draft.loggedExerciseCount}</strong>
+            <span>Exercises</span>
+          </div>
+        </div>
+      </div>
+
+      <section className="detail-section finish-workout-section">
+        {draft.rewardSummary.total > 0 && (
+          <section className="finish-workout-card">
+            <div className="finish-workout-heading">
+              <p className="label">Rewards</p>
+              <span className="finish-workout-heading-meta">
+                {draft.rewardSummary.total} {draft.rewardSummary.total === 1 ? "reward" : "rewards"}
+              </span>
+            </div>
+            <div className="reward-sheet-summary finish-workout-reward-summary">
+              {draft.rewardSummary.exercise > 0 && (
+                <span className="reward-summary-chip reward-summary-chip-exercise">
+                  {rewardLevelIcon.exercise} {draft.rewardSummary.exercise}
+                </span>
+              )}
+              {draft.rewardSummary.set > 0 && (
+                <span className="reward-summary-chip reward-summary-chip-set">
+                  {rewardLevelIcon.set} {draft.rewardSummary.set}
+                </span>
+              )}
+              {draft.rewardSummary.session > 0 && (
+                <span className="reward-summary-chip reward-summary-chip-session">
+                  {rewardLevelIcon.session} {draft.rewardSummary.session}
+                </span>
+              )}
+            </div>
+            <div className="reward-sheet-list finish-workout-reward-list">
+              {draft.rewards.map((reward) => (
+                <article key={reward.id} className="reward-sheet-item">
+                  <div className={`reward-sheet-icon reward-sheet-icon-${reward.level}`} aria-hidden="true">
+                    {rewardLevelIcon[reward.level]}
+                  </div>
+                  <div>
+                    <strong>{reward.shortLabel}</strong>
+                    <p>{reward.detail}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="finish-workout-card finish-takeaway-card">
+          <p className="label">RepIQ Takeaway</p>
+          <h3 className="finish-workout-takeaway-title">{draft.takeawayTitle}</h3>
+          <p className="settings-note finish-workout-takeaway-body">{draft.takeawayBody}</p>
+        </section>
+
+        <section className="finish-workout-card">
+          <p className="label">Save Details</p>
+          <label className="finish-title-row">
+            <span className="finish-title-label">Workout title</span>
+            <input
+              className="finish-title-input"
+              type="text"
+              value={draft.sessionName}
+              onChange={(event) => onTitleChange(event.target.value)}
+            />
+          </label>
+          {(finishPhotosEnabled || finishVideoEnabled) && (
+            <div className="finish-media-strip">
+              <div className="finish-media-btns">
+                {finishPhotosEnabled && (
+                  <button
+                    type="button"
+                    className={`finish-media-add-btn${photos.length >= MEDIA_MAX_PHOTOS ? " is-maxed" : ""}`}
+                    onClick={() => photos.length < MEDIA_MAX_PHOTOS && photoInputRef.current?.click()}
+                    aria-disabled={photos.length >= MEDIA_MAX_PHOTOS}
+                  >
+                    📷 Photo
+                    <span className="finish-media-count">{photos.length}/{MEDIA_MAX_PHOTOS}</span>
+                  </button>
+                )}
+                {finishVideoEnabled && (
+                  <button
+                    type="button"
+                    className={`finish-media-add-btn${video ? " is-maxed" : ""}`}
+                    onClick={() => !video && videoInputRef.current?.click()}
+                    aria-disabled={!!video}
+                  >
+                    🎬 Video
+                    <span className="finish-media-count">{video ? "1/1" : "0/1"}</span>
+                  </button>
+                )}
+              </div>
+              {finishPhotosEnabled && (
+                <input ref={photoInputRef} type="file" accept="image/*" hidden onChange={handlePhotoChange} />
+              )}
+              {finishVideoEnabled && (
+                <input ref={videoInputRef} type="file" accept="video/*" hidden onChange={handleVideoChange} />
+              )}
+
+              {mediaError && <p className="finish-media-error">{mediaError}</p>}
+
+              {finishPhotosEnabled && photos.length > 0 && (
+                <div className="finish-media-previews">
+                  {photos.map((photo, index) => (
+                    <div key={index} className="finish-media-thumb" onClick={() => openPhotoEdit(index)} role="button" aria-label="Edit photo">
+                      <img src={photo.display} alt="" />
+                      <div className="finish-media-edit-badge" aria-hidden="true">✎</div>
+                      <button type="button" className="finish-media-remove" onClick={(e) => { e.stopPropagation(); removePhoto(index); }} aria-label="Remove photo">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {finishVideoEnabled && video && videoUrl && (
+                <div className="finish-video-trimmer">
+                  <video
+                    ref={videoRef}
+                    src={videoUrl}
+                    className="finish-video-preview"
+                    onLoadedMetadata={handleVideoMetadata}
+                    controls={false}
+                    muted
+                    playsInline
+                  />
+                  {videoConfirmed ? (
+                    <div className="finish-video-confirmed-row">
+                      <div className="finish-video-confirmed-info">
+                        <span className="finish-video-confirmed-icon">🎬</span>
+                        <div>
+                          <span className="finish-video-confirmed-name">{video.name}</span>
+                          <span className="finish-video-confirmed-range">
+                            {formatTrimTime(trimStart)}–{formatTrimTime(trimEnd)} ({formatTrimTime(trimLength)})
+                          </span>
+                        </div>
+                      </div>
+                      <div className="finish-video-confirmed-actions">
+                        <button type="button" className="finish-video-edit-btn" onClick={reopenVideoTrim}>✎ Edit</button>
+                        <button type="button" className="finish-video-remove" onClick={removeVideo}>✕</button>
+                      </div>
+                    </div>
+                  ) : (
+                    videoDuration > 0 && (
+                      <>
+                        <div className="finish-video-header">
+                          <span className="finish-video-name">{video.name}</span>
+                          <button type="button" className="finish-video-remove" onClick={removeVideo}>Remove</button>
+                        </div>
+                        {needsTrim && (
+                          <p className="finish-trim-notice">Video is {formatTrimTime(videoDuration)} — trim to 30s max</p>
+                        )}
+                        <div className="finish-trim-wrapper">
+                          <div
+                            ref={trimTrackRef}
+                            className="finish-trim-track"
+                            onPointerMove={handleTrimPointerMove}
+                            onPointerUp={stopTrimDrag}
+                            onPointerCancel={stopTrimDrag}
+                          >
+                            <div
+                              className="finish-trim-fill"
+                              style={{
+                                left: `${(trimStart / videoDuration) * 100}%`,
+                                width: `${((trimEnd - trimStart) / videoDuration) * 100}%`
+                              }}
+                              onPointerDown={(e) => startTrimDrag("range", e)}
+                            />
+                            <div
+                              className="finish-trim-handle"
+                              style={{ left: `${(trimStart / videoDuration) * 100}%` }}
+                              onPointerDown={(e) => { e.stopPropagation(); startTrimDrag("start", e); }}
+                            />
+                            <div
+                              className="finish-trim-handle"
+                              style={{ left: `${(trimEnd / videoDuration) * 100}%` }}
+                              onPointerDown={(e) => { e.stopPropagation(); startTrimDrag("end", e); }}
+                            />
+                          </div>
+                          <div className="finish-trim-labels">
+                            <span>{formatTrimTime(trimStart)}</span>
+                            <span className="finish-trim-length">{formatTrimTime(trimLength)} selected</span>
+                            <span>{formatTrimTime(trimEnd)}</span>
+                          </div>
+                        </div>
+                        <div className="finish-trim-actions">
+                          <button
+                            type="button"
+                            className={`finish-trim-play-btn${isPlaying ? " is-playing" : ""}`}
+                            onClick={togglePlay}
+                            aria-label={isPlaying ? "Pause preview" : "Play trim preview"}
+                          >
+                            {isPlaying ? "⏸" : "▶"}
+                          </button>
+                          <button
+                            type="button"
+                            className="finish-trim-confirm-fab"
+                            onClick={confirmVideoTrim}
+                            aria-label="Confirm trim and add to tray"
+                          >
+                            ✓
+                          </button>
+                        </div>
+                      </>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          <textarea
+            className="notes-textarea finish-workout-notes"
+            placeholder="Add a note about this workout"
+            value={draft.note}
+            onChange={(event) => onNoteChange(event.target.value)}
+          />
+          <p className="settings-note">
+            {formatSessionDate(draft.date)} • {draft.loggedExerciseCount} logged{" "}
+            {draft.loggedExerciseCount === 1 ? "exercise" : "exercises"}
+          </p>
+        </section>
+
+        <section className="finish-workout-card">
+          <button
+            type="button"
+            className="finish-exercises-toggle"
+            onClick={() => setExercisesExpanded((e) => !e)}
+          >
+            <p className="label">Logged Exercises</p>
+            <span className="finish-exercises-toggle-meta">
+              {draft.loggedExerciseCount}{" "}
+              {draft.loggedExerciseCount === 1 ? "exercise" : "exercises"}
+              <span className="finish-exercises-chevron">{exercisesExpanded ? "⌄" : "›"}</span>
+            </span>
+          </button>
+          {exercisesExpanded && (
+            <div className="finish-workout-exercise-list">
+              {draft.exercises.length === 0 ? (
+                <p className="settings-note">No completed exercise data is ready to save yet.</p>
+              ) : (
+                draft.exercises.map((exercise) => (
+                  <article key={exercise.id} className="finish-workout-exercise-item">
+                    <div>
+                      <strong>{exercise.name}</strong>
+                      <p>
+                        {exercise.loggedSets} logged {exercise.loggedSets === 1 ? "set" : "sets"}
+                      </p>
+                    </div>
+                    <span>{exercise.loggedVolume.toFixed(0)} kg</span>
+                  </article>
+                ))
+              )}
+            </div>
+          )}
+        </section>
+
+        {draft.ignoredIncompleteSets > 0 && (
+          <section className="finish-workout-card finish-workout-note-card">
+            <p className="label">Incomplete Rows</p>
+            <p className="settings-note finish-workout-note-text">
+              {draft.ignoredIncompleteSets} unfinished{" "}
+              {draft.ignoredIncompleteSets === 1 ? "set was" : "sets were"} not included in this saved workout.
+            </p>
+          </section>
+        )}
+
+        <div className="finish-workout-actions">
+          <button className="primary-button logger-finish-button" type="button" onClick={() => void handleSaveClick()} disabled={isSaving}>
+            {isSaving ? "Saving..." : "Save Workout"}
+          </button>
+          <button className="finish-back-link" type="button" onClick={onBack}>
+            ← Back to Logger
+          </button>
+        </div>
+      </section>
+
+      {finishPhotosEnabled && pendingCrop && (
+        <CropTool
+          imageUrl={pendingCrop.src}
+          onCrop={handleCropDone}
+          onCancel={handleCropCancel}
+        />
+      )}
     </main>
   );
 }
@@ -2151,36 +4331,76 @@ function AddExercisePage({
   existingExerciseNames,
   onBack,
   onAddSelected,
-  onCreateCustom
+  onCreateCustom,
+  onOpenDetails,
+  editorExercise,
+  onUpdateCustom
 }: {
   templates: ExerciseDraft[];
   existingExerciseNames: string[];
   onBack: () => void;
   onAddSelected: (templateIds: string[]) => void;
-  onCreateCustom: (draft: {
-    name: string;
-    primaryMuscle: string;
-    secondaryMuscles: string[];
-    restTimer: string;
-    howTo: string[];
-  }) => void;
+  onCreateCustom: (draft: CustomExerciseInput) => string | null;
+  onOpenDetails: (exerciseId: string) => void;
+  editorExercise?: ExerciseDraft | null;
+  onUpdateCustom?: (exerciseId: string, draft: CustomExerciseInput) => string | null;
 }) {
-  const [mode, setMode] = useState<AddExerciseMode>("browse");
+  const isEditingCustomExercise = Boolean(editorExercise);
+  const [mode, setMode] = useState<AddExerciseMode>(editorExercise ? "create" : "browse");
+  const [createStep, setCreateStep] = useState<CreateExerciseStep>(1);
   const [browseTab, setBrowseTab] = useState<"all" | "muscle" | "type">("all");
   const [expandedMuscleKeys, setExpandedMuscleKeys] = useState<string[] | null>(null);
   const [expandedTypeKeys, setExpandedTypeKeys] = useState<string[]>([]);
-  const [sortMode, setSortMode] = useState<"alphabetical" | "frequency">("alphabetical");
+  const [sortMode, setSortMode] = useState<"alphabetical" | "frequency" | "library">("alphabetical");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [filterOpen, setFilterOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
   const [showInWorkoutOnly, setShowInWorkoutOnly] = useState(false);
   const [showSelectedOnly, setShowSelectedOnly] = useState(false);
-  const [customName, setCustomName] = useState("");
-  const [customPrimaryMuscle, setCustomPrimaryMuscle] = useState("");
-  const [customSecondaryMuscles, setCustomSecondaryMuscles] = useState("");
-  const [customRestTimer, setCustomRestTimer] = useState("01:00");
-  const [customHowTo, setCustomHowTo] = useState("");
+  const [customName, setCustomName] = useState(editorExercise?.name ?? "");
+  const [customImageSrc, setCustomImageSrc] = useState(editorExercise?.imageSrc ?? "");
+  const [customPrimaryMuscles, setCustomPrimaryMuscles] = useState<string[]>(
+    editorExercise?.primaryMuscles ?? (editorExercise ? [editorExercise.primaryMuscle] : [])
+  );
+  const [customSecondaryMuscles, setCustomSecondaryMuscles] = useState<string[]>(
+    editorExercise?.secondaryMuscles ?? []
+  );
+  const [customExerciseType, setCustomExerciseType] = useState<CustomExerciseType | null>(
+    editorExercise?.exerciseType ?? (editorExercise ? inferExerciseType(editorExercise) : null)
+  );
+  const [customMeasurementType, setCustomMeasurementType] = useState<MeasurementType | null>(
+    editorExercise ? getExerciseMeasurementType(editorExercise) : null
+  );
+  const [customMovementSide, setCustomMovementSide] = useState<MovementSide | null>(
+    editorExercise?.movementSide ?? null
+  );
+  const [duplicateNamePrompt, setDuplicateNamePrompt] = useState<{
+    requestedName: string;
+    suggestedName: string;
+  } | null>(null);
+  const [primarySelectorOpen, setPrimarySelectorOpen] = useState(false);
+  const [secondarySelectorOpen, setSecondarySelectorOpen] = useState(false);
   const resultsRef = useRef<HTMLDivElement | null>(null);
+  const previousPrimaryCountRef = useRef(customPrimaryMuscles.length);
+
+  useEffect(() => {
+    if (!editorExercise) {
+      return;
+    }
+
+    setMode("create");
+    setCreateStep(1);
+    setCustomName(editorExercise.name);
+    setCustomImageSrc(editorExercise.imageSrc);
+    setCustomPrimaryMuscles(editorExercise.primaryMuscles ?? [editorExercise.primaryMuscle]);
+    setCustomSecondaryMuscles(editorExercise.secondaryMuscles);
+    setCustomExerciseType(editorExercise.exerciseType ?? inferExerciseType(editorExercise));
+    setCustomMeasurementType(getExerciseMeasurementType(editorExercise));
+    setCustomMovementSide(editorExercise.movementSide ?? null);
+    setDuplicateNamePrompt(null);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [editorExercise]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -2194,24 +4414,35 @@ function AddExercisePage({
       return "Added by me";
     }
 
-    const name = exercise.name.toLowerCase();
-    if (/(run|bike|cycle|walk|elliptical|rower|stair)/.test(name)) {
+    const inferredType = inferExerciseType(exercise);
+    if (inferredType === "bodyweight_weighted") {
+      return "Weighted Bodyweight";
+    }
+    if (inferredType === "freestyle_cardio") {
       return "Cardio";
     }
-    if (/(stretch|mobility|yoga)/.test(name)) {
+    if (/(stretch|mobility|yoga)/.test(exercise.name.toLowerCase())) {
       return "Stretching";
     }
-    if (/(push-up|pull-up|chin-up|dip|plank|crunch|sit-up|bodyweight)/.test(name)) {
+    if (inferredType === "bodyweight_only") {
       return "Bodyweight";
     }
     return "Weighted";
   };
 
+  const templateOrder = useMemo(() => {
+    const order = new Map<string, number>();
+    templates.forEach((template, index) => {
+      order.set(template.id, index);
+    });
+    return order;
+  }, [templates]);
+
   const filteredTemplates = useMemo(() => {
     const searched = templates.filter((template) => {
       return matchesSearchTokens(query, [
         template.name,
-        template.primaryMuscle,
+        ...getPrimaryMuscles(template),
         template.secondaryMuscles.join(" "),
         template.goal,
         getExerciseType(template)
@@ -2234,22 +4465,41 @@ function AddExercisePage({
     });
 
     const sorted = [...narrowed].sort((left, right) => {
+      if (sortMode === "library") {
+        const orderDelta = (templateOrder.get(left.id) ?? 0) - (templateOrder.get(right.id) ?? 0);
+        return sortDirection === "asc" ? orderDelta : -orderDelta;
+      }
+
       if (sortMode === "frequency") {
-        const frequencyDelta = right.history.length - left.history.length;
+        const frequencyDelta =
+          sortDirection === "asc"
+            ? left.history.length - right.history.length
+            : right.history.length - left.history.length;
         if (frequencyDelta !== 0) {
           return frequencyDelta;
         }
       }
 
-      return left.name.localeCompare(right.name);
+      const nameDelta = left.name.localeCompare(right.name);
+      return sortDirection === "asc" ? nameDelta : -nameDelta;
     });
 
     return sorted;
-  }, [existingExerciseNames, query, selectedTemplateIds, showInWorkoutOnly, showSelectedOnly, sortMode, templates]);
+  }, [existingExerciseNames, query, selectedTemplateIds, showInWorkoutOnly, showSelectedOnly, sortDirection, sortMode, templateOrder, templates]);
+
+  function selectSortMode(nextMode: "alphabetical" | "frequency" | "library") {
+    if (nextMode === sortMode) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+    } else {
+      setSortMode(nextMode);
+      setSortDirection(nextMode === "frequency" ? "desc" : "asc");
+    }
+    setFilterOpen(false);
+  }
 
   const groupedByMuscle = useMemo(() => {
     return filteredTemplates.reduce<Record<string, ExerciseDraft[]>>((groups, template) => {
-      const key = template.primaryMuscle;
+      const key = getPrimaryMuscles(template)[0];
       if (!groups[key]) {
         groups[key] = [];
       }
@@ -2318,7 +4568,170 @@ function AddExercisePage({
   }
 
   const canCreateCustom =
-    customName.trim().length > 1 && customPrimaryMuscle.trim().length > 1;
+    customName.trim().length > 1 &&
+    customPrimaryMuscles.length > 0 &&
+    customExerciseType !== null &&
+    customMeasurementType !== null &&
+    customMovementSide !== null;
+  const canContinueToStepTwo =
+    customName.trim().length > 1 && customPrimaryMuscles.length > 0;
+
+  const hasSearchQuery = query.trim().length > 0;
+  const existingTemplateNames = useMemo(() => templates.map((template) => template.name), [templates]);
+
+  function openCreateMode(prefilledName?: string) {
+    if (isEditingCustomExercise) {
+      return;
+    }
+    setMode("create");
+    setCreateStep(1);
+    setCustomName(prefilledName?.trim() ?? "");
+    setCustomImageSrc("");
+    setCustomPrimaryMuscles([]);
+    setCustomSecondaryMuscles([]);
+    setCustomExerciseType(null);
+    setCustomMeasurementType(null);
+    setCustomMovementSide(null);
+  }
+
+  function togglePrimaryMuscle(muscle: string) {
+    setCustomPrimaryMuscles((current) =>
+      current.includes(muscle)
+        ? current.filter((entry) => entry !== muscle)
+        : [...current, muscle]
+    );
+  }
+
+  function toggleSecondaryMuscle(muscle: string) {
+    setCustomSecondaryMuscles((current) =>
+      current.includes(muscle)
+        ? current.filter((entry) => entry !== muscle)
+        : [...current, muscle]
+    );
+  }
+
+  function continueToCreateStepTwo() {
+    if (!canContinueToStepTwo) {
+      return;
+    }
+
+    setCreateStep(2);
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "auto" });
+      resultsRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    });
+  }
+
+  function submitCustomExercise(nameOverride?: string) {
+    const finalName = (nameOverride ?? customName).trim();
+    if (!finalName || !customExerciseType || !customMeasurementType || !customMovementSide) {
+      return;
+    }
+
+    const exerciseInput: CustomExerciseInput = {
+      name: finalName,
+      imageSrc: customImageSrc || undefined,
+      primaryMuscles: customPrimaryMuscles,
+      secondaryMuscles: customSecondaryMuscles,
+      exerciseType: customExerciseType,
+      measurementType: customMeasurementType,
+      movementSide: customMovementSide
+    };
+
+    const createdId =
+      isEditingCustomExercise && editorExercise && onUpdateCustom
+        ? onUpdateCustom(editorExercise.id, exerciseInput)
+        : onCreateCustom(exerciseInput);
+
+    if (createdId) {
+      setDuplicateNamePrompt(null);
+      if (isEditingCustomExercise) {
+        onBack();
+      } else {
+        setMode("browse");
+        setCreateStep(1);
+      }
+    }
+  }
+
+  function handleCreateCustomSubmit() {
+    const requestedName = customName.trim();
+    if (!requestedName) {
+      return;
+    }
+
+    const comparableTemplateNames = isEditingCustomExercise && editorExercise
+      ? existingTemplateNames.filter(
+          (name) => name.trim().toLowerCase() !== editorExercise.name.trim().toLowerCase()
+        )
+      : existingTemplateNames;
+
+    const hasExactDuplicate = comparableTemplateNames.some(
+      (name) => name.trim().toLowerCase() === requestedName.toLowerCase()
+    );
+
+    if (hasExactDuplicate) {
+      setDuplicateNamePrompt({
+        requestedName,
+        suggestedName: ensureUniqueExerciseName(requestedName, comparableTemplateNames)
+      });
+      return;
+    }
+
+    submitCustomExercise();
+  }
+
+  useEffect(() => {
+    if (customPrimaryMuscles.length === 0) {
+      return;
+    }
+
+    setCustomSecondaryMuscles((current) =>
+      current.filter((muscle) => !customPrimaryMuscles.includes(muscle))
+    );
+  }, [customPrimaryMuscles]);
+
+  const secondaryMuscleOptions = useMemo(
+    () => secondaryMuscleLibrary.filter((muscle) => !customPrimaryMuscles.includes(muscle)),
+    [customPrimaryMuscles]
+  );
+
+  useEffect(() => {
+    if (!customExerciseType) {
+      return;
+    }
+
+    if (customExerciseType === "freestyle_cardio") {
+      setCustomMeasurementType("timed");
+      return;
+    }
+
+    setCustomMeasurementType((current) => current ?? "reps_volume");
+  }, [customExerciseType]);
+
+  useEffect(() => {
+    const previousCount = previousPrimaryCountRef.current;
+    if (previousCount === 0 && customPrimaryMuscles.length > 0) {
+      setSecondarySelectorOpen(true);
+    }
+    previousPrimaryCountRef.current = customPrimaryMuscles.length;
+  }, [customPrimaryMuscles.length]);
+
+  function handleCustomImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setCustomImageSrc(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+    event.target.value = "";
+  }
 
   const toggleTemplateSelection = (templateId: string) => {
     setSelectedTemplateIds((current) =>
@@ -2341,37 +4754,50 @@ function AddExercisePage({
     const selectionIndex = selectedTemplateIds.indexOf(template.id);
 
     return (
-      <button
+      <article
         key={template.id}
-        type="button"
         className={`template-card ${selectionIndex >= 0 ? "is-selected" : ""}`}
-        title={template.name}
-        onClick={() => toggleTemplateSelection(template.id)}
       >
-        <img src={template.imageSrc} alt={template.name} className="template-thumb" />
-        <div className="template-card-copy">
-          <div className="template-card-top">
-            <strong>{template.name}</strong>
-            <div className="template-card-statuses">
-              {alreadyInWorkout && <span className="session-status-pill">In workout</span>}
-              {selectionIndex >= 0 && (
-                <span className="template-select-badge" aria-label={`Selected ${selectionIndex + 1}`}>
-                  ✓ {selectionIndex + 1}
-                </span>
-              )}
+        <button
+          type="button"
+          className="template-card-main"
+          title={template.name}
+          onClick={() => toggleTemplateSelection(template.id)}
+        >
+          <img src={template.imageSrc} alt={template.name} className="template-thumb" />
+          <div className="template-card-copy">
+            <div className="template-card-top">
+              <strong>{template.name}</strong>
+              <div className="template-card-statuses">
+                {alreadyInWorkout && <span className="session-status-pill">In workout</span>}
+                {selectionIndex >= 0 && (
+                  <span className="template-select-badge" aria-label={`Selected ${selectionIndex + 1}`}>
+                    ✓ {selectionIndex + 1}
+                  </span>
+                )}
+              </div>
             </div>
+            <p className="template-card-meta">
+              <strong>{formatPrimaryMuscles(template)}</strong>
+              {template.secondaryMuscles.length > 0 ? (
+                <>
+                  {" · "}
+                  <span>{template.secondaryMuscles.join(", ")}</span>
+                </>
+              ) : null}
+            </p>
           </div>
-          <p className="template-card-meta">
-            <strong>{template.primaryMuscle}</strong>
-            {template.secondaryMuscles.length > 0 ? (
-              <>
-                {" · "}
-                <span>{template.secondaryMuscles.join(", ")}</span>
-              </>
-            ) : null}
-          </p>
-        </div>
-      </button>
+        </button>
+        <button
+          type="button"
+          className="template-card-info-button"
+          aria-label={`View details for ${template.name}`}
+          title={`View details for ${template.name}`}
+          onClick={() => onOpenDetails(template.id)}
+        >
+          i
+        </button>
+      </article>
     );
   };
 
@@ -2383,6 +4809,14 @@ function AddExercisePage({
           type="button"
           onClick={() => {
             if (mode === "create") {
+              if (createStep === 2) {
+                setCreateStep(1);
+                return;
+              }
+              if (isEditingCustomExercise) {
+                onBack();
+                return;
+              }
               setMode("browse");
               return;
             }
@@ -2394,7 +4828,13 @@ function AddExercisePage({
         </button>
         <div className="detail-topbar-copy">
           <p className="label">{mode === "create" ? "Custom Exercise" : "Exercise Selector"}</p>
-          <h1>{mode === "create" ? "Create Exercise" : "Add Exercise"}</h1>
+          <h1>
+            {mode === "create"
+              ? isEditingCustomExercise
+                ? "Edit Exercise"
+                : "Create Exercise"
+              : "Add Exercise"}
+          </h1>
         </div>
         <div className="detail-topbar-actions">
           {mode === "browse" ? (
@@ -2512,7 +4952,18 @@ function AddExercisePage({
                 {filteredTemplates.length === 0 ? (
                   <article className="empty-state-card">
                     <strong>No matching exercise yet</strong>
-                    <p>Try a broader search or use the + button below to create a custom exercise.</p>
+                    <p>
+                      Try a broader search or create this as your own exercise instead.
+                    </p>
+                    {hasSearchQuery && (
+                      <button
+                        type="button"
+                        className="empty-state-create-button"
+                        onClick={() => openCreateMode(query)}
+                      >
+                        Create &quot;{query.trim()}&quot;
+                      </button>
+                    )}
                   </article>
                 ) : (
                   <>
@@ -2590,113 +5041,341 @@ function AddExercisePage({
               )}
             </div>
 
-            <button
-              className={`icon-button add-exercise-create-fab ${
-                selectedTemplateIds.length > 0 ? "is-raised" : ""
-              } ${filterOpen ? "is-hidden" : ""}`}
-              type="button"
-              aria-label="Create custom exercise"
-              title="Create custom exercise"
-              onClick={() => setMode("create")}
-            >
-              +
-            </button>
+              <button
+                className={`icon-button add-exercise-create-fab ${
+                  selectedTemplateIds.length > 0 ? "is-raised" : ""
+                } ${filterOpen ? "is-hidden" : ""}`}
+                type="button"
+                aria-label="Create custom exercise"
+                title="Create custom exercise"
+                onClick={() => openCreateMode(query)}
+              >
+                +
+              </button>
           </>
         ) : (
           <div className="custom-exercise-form">
-            <p className="settings-note">
-              Create a custom exercise once, then reuse it from the library later.
-            </p>
+            <div className="custom-form-intro">
+              <p className="custom-form-step">Step {createStep} of 2</p>
+              <div className="custom-progress-strip" aria-label="Create exercise progress">
+                <span
+                  className={`custom-progress-chip ${
+                    createStep === 1 ? "is-page-active" : ""
+                  } ${customName.trim().length > 1 ? "is-complete" : "is-active"}`}
+                >
+                  1. Name
+                </span>
+                <span
+                  className={`custom-progress-chip ${
+                    createStep === 1 ? "is-page-active" : ""
+                  } ${customPrimaryMuscles.length > 0 ? "is-complete" : ""}`}
+                >
+                  2. Primary
+                </span>
+                <span
+                  className={`custom-progress-chip ${
+                    createStep === 1 ? "is-page-active" : ""
+                  } ${
+                    customPrimaryMuscles.length > 0 && customSecondaryMuscles.length === 0 ? "is-active" : ""
+                  } ${customSecondaryMuscles.length > 0 ? "is-complete" : ""}`}
+                >
+                  3. Secondary
+                </span>
+                <span
+                  className={`custom-progress-chip ${
+                    createStep === 2 ? "is-page-active" : ""
+                  } ${
+                    createStep === 2 && customExerciseType === null ? "is-active" : ""
+                  } ${customExerciseType ? "is-complete" : ""}`}
+                >
+                  4. Type
+                </span>
+                <span
+                  className={`custom-progress-chip ${
+                    createStep === 2 ? "is-page-active" : ""
+                  } ${
+                    createStep === 2 && (customMeasurementType === null || customMovementSide === null) ? "is-active" : ""
+                  } ${customMeasurementType && customMovementSide ? "is-complete" : ""}`}
+                >
+                  5. Tracking
+                </span>
+              </div>
+              <h2 className="custom-form-title">
+                {createStep === 1 ? "Basics" : "How RepIQ should log it"}
+              </h2>
+              <p className="custom-form-copy">
+                {createStep === 1
+                  ? "Set up the exercise identity first. You can define how it should be logged in the next step."
+                  : "These choices tell RepIQ how to show and interpret this exercise inside the logger."}
+              </p>
+            </div>
 
-            <label className="settings-row">
-              <span>Exercise name</span>
-              <input
-                type="text"
-                value={customName}
-                placeholder="e.g. Machine Chest Press"
-                onChange={(event) => setCustomName(event.target.value)}
-              />
-            </label>
+            {createStep === 1 ? (
+              <>
+                <label className="custom-form-field">
+                  <span className="custom-form-label">Exercise name</span>
+                  <input
+                    className="custom-form-input"
+                    type="text"
+                    value={customName}
+                    placeholder="e.g. Machine Chest Press"
+                    onChange={(event) => setCustomName(event.target.value)}
+                  />
+                </label>
 
-            <label className="settings-row">
-              <span>Primary muscle</span>
-              <input
-                type="text"
-                list="primary-muscle-options"
-                value={customPrimaryMuscle}
-                placeholder="Choose or type"
-                onChange={(event) => setCustomPrimaryMuscle(event.target.value)}
-              />
-            </label>
-            <datalist id="primary-muscle-options">
-              {commonPrimaryMuscles.map((muscle) => (
-                <option key={muscle} value={muscle} />
-              ))}
-            </datalist>
+                <div className="custom-form-field">
+                  <span className="custom-form-label">Image</span>
+                  <div className="custom-image-picker">
+                    <div className="custom-image-preview">
+                      {customImageSrc ? (
+                        <img src={customImageSrc} alt="Custom exercise preview" />
+                      ) : (
+                        <img src={genericExerciseImage} alt="" aria-hidden="true" />
+                      )}
+                    </div>
+                    <div className="custom-image-actions">
+                      <label className="custom-image-button" htmlFor="custom-exercise-image">
+                        {customImageSrc ? "Change image" : "Add image"}
+                      </label>
+                      <input
+                        id="custom-exercise-image"
+                        className="custom-image-input"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleCustomImageChange}
+                      />
+                      {customImageSrc && (
+                        <button
+                          type="button"
+                          className="custom-image-remove"
+                          onClick={() => setCustomImageSrc("")}
+                        >
+                          Remove image
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-            <label className="settings-row">
-              <span>Secondary muscles</span>
-              <input
-                type="text"
-                value={customSecondaryMuscles}
-                placeholder="Comma separated, e.g. Triceps, Front Delts"
-                onChange={(event) => setCustomSecondaryMuscles(event.target.value)}
-              />
-            </label>
+                <div className="custom-form-field">
+                  <span className="custom-form-label">2. Primary muscles</span>
+                  <details
+                    className="custom-multi-select"
+                    open={primarySelectorOpen}
+                    onToggle={(event) => setPrimarySelectorOpen((event.currentTarget as HTMLDetailsElement).open)}
+                  >
+                    <summary className="custom-multi-select-summary">
+                      {customPrimaryMuscles.length > 0
+                        ? customPrimaryMuscles.join(", ")
+                        : "Choose primary muscles"}
+                    </summary>
+                    <div className="custom-option-grid custom-option-grid-muscles">
+                      {primaryMuscleOptions.map((muscle) => (
+                        <button
+                          key={muscle}
+                          type="button"
+                          className={`custom-choice-button ${
+                            customPrimaryMuscles.includes(muscle) ? "is-active" : ""
+                          }`}
+                          onClick={() => togglePrimaryMuscle(muscle)}
+                        >
+                          {muscle}
+                        </button>
+                      ))}
+                    </div>
+                  </details>
+                </div>
 
-            <label className="settings-row">
-              <span>Default rest timer</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={customRestTimer}
-                onChange={(event) =>
-                  setCustomRestTimer(formatMinutesSecondsInput(event.target.value))
-                }
-              />
-            </label>
+                {customPrimaryMuscles.length > 0 ? (
+                  <div className="custom-form-field">
+                    <div className="custom-form-label-row">
+                      <span className="custom-form-label">3. Secondary muscles</span>
+                      <span className="custom-form-label-optional">Optional</span>
+                    </div>
+                    <details
+                      className={`custom-multi-select ${customSecondaryMuscles.length === 0 ? "is-prompted" : ""}`}
+                      open={secondarySelectorOpen}
+                      onToggle={(event) => setSecondarySelectorOpen((event.currentTarget as HTMLDetailsElement).open)}
+                    >
+                      <summary className="custom-multi-select-summary">
+                        {customSecondaryMuscles.length > 0
+                          ? customSecondaryMuscles.join(", ")
+                          : "Choose secondary muscles"}
+                      </summary>
+                      <div className="custom-option-grid custom-option-grid-muscles">
+                        {secondaryMuscleOptions.map((muscle) => (
+                          <button
+                            key={muscle}
+                            type="button"
+                            className={`custom-choice-button ${
+                              customSecondaryMuscles.includes(muscle) ? "is-active" : ""
+                            }`}
+                            onClick={() => toggleSecondaryMuscle(muscle)}
+                          >
+                            {muscle}
+                          </button>
+                        ))}
+                      </div>
+                    </details>
+                    {customSecondaryMuscles.length === 0 && (
+                      <p className="custom-next-hint">
+                        Next: add secondary muscles if this movement meaningfully hits support muscles too.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="custom-field-hint">
+                    Choose the primary muscle first, then you can add secondary muscles.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="custom-form-field">
+                  <span className="custom-form-label">Type</span>
+                  <div className="custom-option-grid">
+                    {customExerciseTypeOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`custom-choice-button ${
+                          customExerciseType === option.value ? "is-active" : ""
+                        }`}
+                        onClick={() => setCustomExerciseType(option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            <label className="settings-stack-row">
-              <span>How to perform</span>
-              <textarea
-                className="notes-textarea"
-                rows={5}
-                value={customHowTo}
-                placeholder={"One cue per line\nSet up position\nControl the lowering phase\nDrive through the target muscle"}
-                onChange={(event) => setCustomHowTo(event.target.value)}
-              />
-            </label>
+                <div className="custom-form-field">
+                  <span className="custom-form-label">How it is calculated</span>
+                  <div className="custom-option-grid custom-option-grid-tight">
+                    {customMeasurementOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`custom-choice-button ${
+                          customMeasurementType === option.value ? "is-active" : ""
+                        }`}
+                        onClick={() => setCustomMeasurementType(option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            <div className="sheet-actions">
-              <button className="secondary-button" type="button" onClick={() => setMode("browse")}>
-                Back to Library
-              </button>
-              <button
-                className="primary-button"
-                type="button"
-                disabled={!canCreateCustom}
-                onClick={() =>
-                  onCreateCustom({
-                    name: customName.trim(),
-                    primaryMuscle: customPrimaryMuscle.trim(),
-                    secondaryMuscles: customSecondaryMuscles
-                      .split(",")
-                      .map((value) => value.trim())
-                      .filter(Boolean),
-                    restTimer: customRestTimer,
-                    howTo: customHowTo
-                      .split("\n")
-                      .map((step) => step.trim())
-                      .filter(Boolean)
-                  })
-                }
-              >
-                Create and Add
-              </button>
+                <div className="custom-form-field">
+                  <span className="custom-form-label">Movement side</span>
+                  <div className="custom-option-grid custom-option-grid-tight">
+                    {customMovementSideOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`custom-choice-button ${
+                          customMovementSide === option.value ? "is-active" : ""
+                        }`}
+                        onClick={() => setCustomMovementSide(option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="sheet-actions custom-form-actions">
+              {createStep === 1 ? (
+                <>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => {
+                      if (isEditingCustomExercise) {
+                        onBack();
+                        return;
+                      }
+                      setMode("browse");
+                    }}
+                  >
+                    {isEditingCustomExercise ? "Cancel" : "Back to Library"}
+                  </button>
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={!canContinueToStepTwo}
+                    onClick={continueToCreateStepTwo}
+                  >
+                    Continue
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className="secondary-button" type="button" onClick={() => setCreateStep(1)}>
+                    Back
+                  </button>
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={!canCreateCustom}
+                    onClick={handleCreateCustomSubmit}
+                  >
+                    {isEditingCustomExercise ? "Save Changes" : "Save Exercise"}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
       </section>
+
+      {duplicateNamePrompt && (
+        <section
+          className="sheet-overlay leave-center-overlay"
+          onClick={() => setDuplicateNamePrompt(null)}
+        >
+          <div className="leave-center-card" onClick={(event) => event.stopPropagation()}>
+            <div className="sheet-head">
+              <div>
+                <p className="label">Exercise Name Exists</p>
+                <h3>{duplicateNamePrompt.requestedName} is already in the library</h3>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => setDuplicateNamePrompt(null)}
+              >
+                ×
+              </button>
+            </div>
+            <p className="settings-note">
+              You can rename it yourself, or save it as{" "}
+              <strong>{duplicateNamePrompt.suggestedName}</strong>.
+            </p>
+            <div className="finish-confirm-actions">
+              <div className="finish-confirm-actions-row">
+                <button
+                  className="logger-action-button"
+                  type="button"
+                  onClick={() => setDuplicateNamePrompt(null)}
+                >
+                  Rename It
+                </button>
+              </div>
+              <button
+                className="primary-button logger-finish-button"
+                type="button"
+                onClick={() => submitCustomExercise(duplicateNamePrompt.suggestedName)}
+              >
+                Save As {duplicateNamePrompt.suggestedName}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {filterOpen && (
         <section className="sheet-overlay bottom-sheet-overlay" onClick={() => setFilterOpen(false)}>
@@ -2715,21 +5394,21 @@ function AddExercisePage({
             <div className="action-sheet-list">
               <button
                 type="button"
-                onClick={() => {
-                  setSortMode("alphabetical");
-                  setFilterOpen(false);
-                }}
+                onClick={() => selectSortMode("library")}
               >
-                Alphabetical {sortMode === "alphabetical" ? "✓" : ""}
+                Library order {sortMode === "library" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setSortMode("frequency");
-                  setFilterOpen(false);
-                }}
+                onClick={() => selectSortMode("alphabetical")}
               >
-                Most Logged {sortMode === "frequency" ? "✓" : ""}
+                Alphabetical {sortMode === "alphabetical" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+              </button>
+              <button
+                type="button"
+                onClick={() => selectSortMode("frequency")}
+              >
+                Most Logged {sortMode === "frequency" ? (sortDirection === "desc" ? "↓" : "↑") : ""}
               </button>
             </div>
           </div>
@@ -2958,10 +5637,13 @@ export function App() {
   const [leavePromptOpen, setLeavePromptOpen] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
+  const [finishWorkoutDraft, setFinishWorkoutDraft] = useState<FinishWorkoutDraft | null>(null);
+  const [savedWorkoutData, setSavedWorkoutData] = useState<SavedWorkoutData | null>(null);
   const [supersetSheetExerciseId, setSupersetSheetExerciseId] = useState<string | null>(null);
   const [supersetSelectionIds, setSupersetSelectionIds] = useState<string[]>([]);
   const [exerciseRestDefaults, setExerciseRestDefaults] = useState<ExerciseRestDefaults>({});
   const [customExercises, setCustomExercises] = useState<ExerciseDraft[]>(getStoredCustomExercises);
+  const [editingCustomExerciseId, setEditingCustomExerciseId] = useState<string | null>(null);
   const [noteEditorExerciseId, setNoteEditorExerciseId] = useState<string | null>(null);
   const [noteEditorValue, setNoteEditorValue] = useState("");
   const [restTimerEditorExerciseId, setRestTimerEditorExerciseId] = useState<string | null>(null);
@@ -3009,8 +5691,23 @@ export function App() {
   const activeExerciseIndex = resolvedActiveExerciseId
     ? exercises.findIndex((exercise) => exercise.id === resolvedActiveExerciseId)
     : -1;
+  const activeCustomExercises = useMemo(
+    () => customExercises.filter((exercise) => exercise.libraryStatus !== "archived"),
+    [customExercises]
+  );
+  const availableExerciseTemplates = useMemo(
+    () => [...exerciseTemplates, ...activeCustomExercises],
+    [activeCustomExercises]
+  );
+  const editingCustomExercise =
+    customExercises.find((exercise) => exercise.id === editingCustomExerciseId) ?? null;
+  const detailsCustomExercise =
+    customExercises.find((exercise) => exercise.id === detailsExerciseId) ?? null;
   const detailsExercise =
-    exercises.find((exercise) => exercise.id === detailsExerciseId) ?? null;
+    exercises.find((exercise) => exercise.id === detailsExerciseId) ??
+    customExercises.find((exercise) => exercise.id === detailsExerciseId) ??
+    availableExerciseTemplates.find((exercise) => exercise.id === detailsExerciseId) ??
+    null;
   const musclesExercise =
     exercises.find((exercise) => exercise.id === musclesExerciseId) ?? null;
   const supersetSheetExercise =
@@ -3062,7 +5759,8 @@ export function App() {
         const completed = buildCompletedSets(
           exercise.draftSets,
           lastSession,
-          settings.carryForwardDefaults
+          settings.carryForwardDefaults,
+          getExerciseMeasurementType(exercise)
         ).resolvedSets;
         return {
           sets: summary.sets + completed.length,
@@ -3084,6 +5782,15 @@ export function App() {
     [exercises]
   );
 
+  const completedSetCount = useMemo(
+    () =>
+      exercises.reduce(
+        (count, exercise) => count + exercise.draftSets.filter((set) => set.done).length,
+        0
+      ),
+    [exercises]
+  );
+
   const rewardSummary = useMemo(() => {
     return loggerRewards.reduce(
       (summary, reward) => {
@@ -3095,15 +5802,75 @@ export function App() {
     );
   }, [loggerRewards]);
 
-  const availableExerciseTemplates = useMemo(
-    () => [...exerciseTemplates, ...customExercises],
-    [customExercises]
-  );
-
   const derivedDuration = useMemo(
     () => formatElapsedDuration(workoutMeta.date, workoutMeta.startTime),
     [clockTick, workoutMeta.date, workoutMeta.startTime, workoutMeta.startedMinutesAgo]
   );
+
+  function buildFinishWorkoutDraft(ignoredIncompleteSets: number): FinishWorkoutDraft {
+    const exerciseSummaries = exercises
+      .map((exercise) => {
+        const lastSession = exercise.history[exercise.history.length - 1];
+        const completedSets = buildCompletedSets(
+          exercise.draftSets,
+          lastSession,
+          settings.carryForwardDefaults,
+          getExerciseMeasurementType(exercise)
+        ).resolvedSets;
+
+        return {
+          id: exercise.id,
+          name: exercise.name,
+          primaryMuscle: exercise.primaryMuscle,
+          loggedSets: completedSets.length,
+          loggedVolume: sumSessionVolume(completedSets)
+        };
+      })
+      .filter((exercise) => exercise.loggedSets > 0);
+
+    const rewardSnapshot = [...loggerRewards];
+    const rewardSnapshotSummary = summarizeRewards(rewardSnapshot);
+
+    let takeawayTitle = "Workout ready to save";
+    let takeawayBody =
+      "RepIQ has captured this workout review. Save it now, and richer report generation can build on top of this clean log.";
+
+    if (rewardSnapshotSummary.total > 0) {
+      takeawayTitle =
+        rewardSnapshotSummary.total === 1
+          ? "One clear progress signal"
+          : `${rewardSnapshotSummary.total} progress wins spotted`;
+      takeawayBody =
+        rewardSnapshotSummary.exercise > 0
+          ? `You earned ${rewardSnapshotSummary.exercise} exercise-level and ${rewardSnapshotSummary.set} set-level rewards in this workout.`
+          : `You earned ${rewardSnapshotSummary.set} set-level ${rewardSnapshotSummary.set === 1 ? "reward" : "rewards"} in this workout.`;
+    } else if (exerciseSummaries.length > 0) {
+      takeawayTitle = "Clean workout log";
+      takeawayBody = `${exerciseSummaries.length} ${
+        exerciseSummaries.length === 1 ? "exercise was" : "exercises were"
+      } logged with ${workoutSummary.sets} completed ${
+        workoutSummary.sets === 1 ? "set" : "sets"
+      } ready to save.`;
+    }
+
+    return {
+      sessionName: workoutMeta.sessionName.trim() || generateWorkoutName(exercises),
+      note: "",
+      date: workoutMeta.date,
+      duration: derivedDuration,
+      totalVolume: workoutSummary.volume,
+      totalSets: workoutSummary.sets,
+      exerciseCount: exercises.length,
+      loggedExerciseCount: exerciseSummaries.length,
+      ignoredIncompleteSets,
+      exercises: exerciseSummaries,
+      rewards: rewardSnapshot,
+      rewardSummary: rewardSnapshotSummary,
+      takeawayTitle,
+      takeawayBody,
+      images: []
+    };
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -3488,6 +6255,7 @@ export function App() {
     if (!exercise) {
       return;
     }
+    const measurementType = getExerciseMeasurementType(exercise);
 
     const previousSet = getPreviousReferenceSet(
       exercise.draftSets,
@@ -3502,7 +6270,9 @@ export function App() {
     setInteractedExerciseActive(exerciseId);
 
     applyResolvedValuesToDraftSet(exerciseId, setIndex, {
-      weightInput: String(previousSet.weight),
+      weightInput: usesWeightInputForMeasurement(measurementType)
+        ? String(previousSet.weight)
+        : "",
       repsInput: String(previousSet.reps),
       rpeInput:
         typeof previousSet.rpe === "number" && Number.isFinite(previousSet.rpe)
@@ -3516,6 +6286,7 @@ export function App() {
     if (!exercise) {
       return;
     }
+    const measurementType = getExerciseMeasurementType(exercise);
 
     const previousSet = getPreviousReferenceSet(
       exercise.draftSets,
@@ -3523,12 +6294,13 @@ export function App() {
       exercise.history[exercise.history.length - 1]
     );
     const draftSet = exercise.draftSets[setIndex];
-    const resolvedWeightInput =
-      settings.carryForwardDefaults &&
-      previousSet &&
-      draftSet.weightInput.trim().length === 0
-        ? String(previousSet.weight)
-        : draftSet.weightInput;
+    const resolvedWeightInput = usesWeightInputForMeasurement(measurementType)
+      ? settings.carryForwardDefaults &&
+        previousSet &&
+        draftSet.weightInput.trim().length === 0
+          ? String(previousSet.weight)
+          : draftSet.weightInput
+      : "";
     const resolvedRepsInput =
       settings.carryForwardDefaults &&
       previousSet &&
@@ -3839,6 +6611,8 @@ export function App() {
     setReorderOpen(false);
     setTimingOpen(false);
     setLeavePromptOpen(false);
+    setFinishConfirmOpen(false);
+    setFinishWorkoutDraft(null);
     setSupersetSheetExerciseId(null);
     setSupersetSelectionIds([]);
     setSetTypePickerRowId(null);
@@ -4001,24 +6775,46 @@ export function App() {
     setWorkoutMenuOpen(false);
   }
 
-  function createCustomExercise(draft: {
-    name: string;
-    primaryMuscle: string;
-    secondaryMuscles: string[];
-    restTimer: string;
-    howTo: string[];
-  }) {
-    const normalizedName = draft.name.trim();
-    if (!normalizedName) {
-      return;
+  function buildDefaultHowTo(measurementType: MeasurementType) {
+    return measurementType === "timed"
+      ? [
+          "Set up in a stable position before the timer starts.",
+          "Keep each rep controlled so the full interval stays clean.",
+          "Stop the set when technique drops instead of chasing extra time."
+        ]
+      : [
+          "Set up with a controlled starting position before the first rep.",
+          "Move through the target muscle with a steady tempo.",
+          "Finish the range with control and keep tension on the working muscle."
+        ];
+  }
+
+  function createCustomExercise(draft: CustomExerciseInput) {
+    const requestedName = draft.name.trim();
+    if (!requestedName) {
+      return null;
     }
+    const normalizedName = ensureUniqueExerciseName(
+      requestedName,
+      availableExerciseTemplates.map((exercise) => exercise.name)
+    );
 
     const customIdBase = normalizedName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
     const customId = `custom-${customIdBase || "exercise"}-${Date.now()}`;
-    const restSeconds = Math.max(1, parseMinutesSecondsToSeconds(draft.restTimer));
+    const normalizedPrimaryMuscles = draft.primaryMuscles
+      .map((muscle) => muscle.trim())
+      .filter(Boolean);
+    if (normalizedPrimaryMuscles.length === 0) {
+      return null;
+    }
+    const normalizedSecondaryMuscles = draft.secondaryMuscles.filter(
+      (muscle) => !normalizedPrimaryMuscles.includes(muscle)
+    );
+    const restSeconds = Math.max(1, Number(settings.defaultRestSeconds) || 60);
+    const defaultHowTo = buildDefaultHowTo(draft.measurementType);
     const normalizedTemplate: ExerciseDraft = {
       id: customId,
       name: normalizedName,
@@ -4026,17 +6822,16 @@ export function App() {
       stickyNoteEnabled: false,
       restTimer: formatRestTimer(String(restSeconds)),
       goal: "hypertrophy",
-      imageSrc: genericExerciseImage,
-      primaryMuscle: draft.primaryMuscle.trim(),
-      secondaryMuscles: draft.secondaryMuscles,
-      howTo:
-        draft.howTo.length > 0
-          ? draft.howTo
-          : [
-              "Set up with a controlled starting position before the first rep.",
-              "Move through the target muscle with a steady tempo.",
-              "Finish the range with control and keep tension on the working muscle."
-            ],
+      imageSrc: draft.imageSrc || genericExerciseImage,
+      primaryMuscle: normalizedPrimaryMuscles[0],
+      primaryMuscles: normalizedPrimaryMuscles,
+      secondaryMuscles: normalizedSecondaryMuscles,
+      exerciseType: draft.exerciseType,
+      measurementType: draft.measurementType,
+      movementSide: draft.movementSide,
+      isCustom: true,
+      libraryStatus: "active",
+      howTo: defaultHowTo,
       history: [],
       draftSets: [
         {
@@ -4083,18 +6878,118 @@ export function App() {
       ...current,
       [normalizedTemplate.name]: normalizedTemplate.restTimer
     }));
+    return normalizedTemplate.id;
+  }
 
-    const nextExercise = cloneExerciseTemplate(
-      normalizedTemplate,
-      String(restSeconds),
-      `${Date.now()}`
+  function updateCustomExercise(exerciseId: string, draft: CustomExerciseInput) {
+    const existing = customExercises.find((exercise) => exercise.id === exerciseId);
+    const requestedName = draft.name.trim();
+    if (!existing || !requestedName) {
+      return null;
+    }
+
+    const normalizedPrimaryMuscles = draft.primaryMuscles
+      .map((muscle) => muscle.trim())
+      .filter(Boolean);
+    if (normalizedPrimaryMuscles.length === 0) {
+      return null;
+    }
+
+    const normalizedSecondaryMuscles = draft.secondaryMuscles.filter(
+      (muscle) => !normalizedPrimaryMuscles.includes(muscle)
     );
-    setExercises((current) => [...current, nextExercise]);
-    setUserActiveExerciseId(nextExercise.id);
-    setActiveExerciseId(nextExercise.id);
-    setCollapsedExerciseIds((current) => current.filter((id) => id !== nextExercise.id));
-    setAddExerciseOpen(false);
-    setWorkoutMenuOpen(false);
+    const normalizedName = ensureUniqueExerciseName(
+      requestedName,
+      availableExerciseTemplates
+        .filter((exercise) => exercise.id !== exerciseId)
+        .map((exercise) => exercise.name)
+    );
+
+    setCustomExercises((current) =>
+      current.map((exercise) =>
+        exercise.id === exerciseId
+          ? cloneExerciseDraft(exercise, {
+              name: normalizedName,
+              imageSrc: draft.imageSrc || genericExerciseImage,
+              primaryMuscle: normalizedPrimaryMuscles[0],
+              primaryMuscles: normalizedPrimaryMuscles,
+              secondaryMuscles: normalizedSecondaryMuscles,
+              exerciseType: draft.exerciseType,
+              measurementType: draft.measurementType,
+              movementSide: draft.movementSide,
+              isCustom: true,
+              libraryStatus: "active",
+              howTo: exercise.howTo.length > 0 ? exercise.howTo : buildDefaultHowTo(draft.measurementType)
+            })
+          : exercise
+      )
+    );
+    setExerciseRestDefaults((current) => {
+      const next = { ...current };
+      const resolvedRestTimer = next[existing.name] ?? existing.restTimer;
+      if (existing.name !== normalizedName) {
+        delete next[existing.name];
+      }
+      next[normalizedName] = resolvedRestTimer;
+      return next;
+    });
+
+    return exerciseId;
+  }
+
+  function archiveCustomExercise(exerciseId: string) {
+    setCustomExercises((current) =>
+      current.map((exercise) =>
+        exercise.id === exerciseId
+          ? cloneExerciseDraft(exercise, { libraryStatus: "archived", isCustom: true })
+          : exercise
+      )
+    );
+    setEditingCustomExerciseId((current) => (current === exerciseId ? null : current));
+    setDetailsExerciseId((current) => (current === exerciseId ? null : current));
+  }
+
+  function deleteCustomExercise(exerciseId: string) {
+    const customExercise = customExercises.find((exercise) => exercise.id === exerciseId);
+    setCustomExercises((current) => current.filter((exercise) => exercise.id !== exerciseId));
+    if (customExercise) {
+      setExerciseRestDefaults((current) => {
+        if (!(customExercise.name in current)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[customExercise.name];
+        return next;
+      });
+    }
+    setEditingCustomExerciseId((current) => (current === exerciseId ? null : current));
+    setDetailsExerciseId((current) => (current === exerciseId ? null : current));
+  }
+
+  function importCustomExercises(importedExercises: CustomExerciseInput[]) {
+    if (importedExercises.length === 0) {
+      return [];
+    }
+
+    const existingNames = availableExerciseTemplates.map((exercise) => exercise.name);
+    const createdIds: string[] = [];
+
+    importedExercises.forEach((draft) => {
+      const uniqueName = ensureUniqueExerciseName(draft.name.trim(), existingNames);
+      if (uniqueName.trim().length === 0) {
+        return;
+      }
+      existingNames.push(uniqueName);
+      const createdId = createCustomExercise({
+        ...draft,
+        name: uniqueName
+      });
+      if (createdId) {
+        createdIds.push(createdId);
+      }
+    });
+
+    return createdIds;
   }
 
   function moveExerciseByIds(sourceId: string, targetId: string) {
@@ -4448,7 +7343,8 @@ export function App() {
     const { resolvedSets, issues } = buildCompletedSets(
       activeExercise.draftSets,
       lastSession,
-      settings.carryForwardDefaults
+      settings.carryForwardDefaults,
+      getExerciseMeasurementType(activeExercise)
     );
 
     if (resolvedSets.length === 0) {
@@ -4530,18 +7426,113 @@ export function App() {
     }
   }
 
+  function openFinishWorkoutPage(ignoredIncompleteSets: number) {
+    setFinishConfirmOpen(false);
+    setWorkoutMenuOpen(false);
+    setRewardSheetOpen(false);
+    setInlineGuidanceOpen(false);
+    setTopGuidanceExpanded(false);
+    stopRestTimer();
+    setFinishWorkoutDraft(buildFinishWorkoutDraft(ignoredIncompleteSets));
+    setAppView("finish");
+    requestAnimationFrame(() => window.scrollTo(0, 0));
+  }
+
   async function finishWorkout() {
+    if (completedSetCount === 0) {
+      return; // button is disabled — guard in case of direct call
+    }
     if (incompleteSetCount > 0) {
       setFinishConfirmOpen(true);
       return;
     }
 
-    await performFinishWorkout();
+    openFinishWorkoutPage(0);
   }
 
-  async function finishWorkoutAnyway() {
-    setFinishConfirmOpen(false);
-    await performFinishWorkout();
+  function finishWorkoutAnyway() {
+    openFinishWorkoutPage(incompleteSetCount);
+  }
+
+  async function saveFinishedWorkout(images: WorkoutMediaAsset[]) {
+    if (!finishWorkoutDraft) return;
+    const completedCustomSessions = exercises.flatMap((exercise) => {
+      const matchingTemplate = customExercises.find(
+        (template) => exercise.id === template.id || exercise.id.startsWith(`${template.id}-`)
+      );
+      if (!matchingTemplate) {
+        return [];
+      }
+
+      const lastSession = exercise.history[exercise.history.length - 1];
+      const completedSets = buildCompletedSets(
+        exercise.draftSets,
+        lastSession,
+        settings.carryForwardDefaults,
+        getExerciseMeasurementType(exercise)
+      ).resolvedSets;
+
+      if (completedSets.length === 0) {
+        return [];
+      }
+
+      return [
+        {
+          templateId: matchingTemplate.id,
+          session: {
+            date: workoutMeta.date,
+            exercise: matchingTemplate.name,
+            session_key: `${matchingTemplate.id}-${Date.now()}-${exercise.id}`,
+            sets: completedSets
+          } satisfies ExerciseHistorySession
+        }
+      ];
+    });
+
+    if (completedCustomSessions.length > 0) {
+      setCustomExercises((current) =>
+        current.map((exercise) => {
+          const matchingSessions = completedCustomSessions.filter(
+            (entry) => entry.templateId === exercise.id
+          );
+          if (matchingSessions.length === 0) {
+            return exercise;
+          }
+
+          return cloneExerciseDraft(exercise, {
+            history: [...exercise.history, ...matchingSessions.map((entry) => entry.session)]
+          });
+        })
+      );
+    }
+
+    const saved: SavedWorkoutData = {
+      ...finishWorkoutDraft,
+      images,
+      savedAt: new Date().toISOString()
+    };
+    persistSavedWorkout(saved);
+    setSavedWorkoutData(saved);
+    resetWorkout();
+    setHasActiveWorkout(false);
+    setAppView("share");
+  }
+
+  if (editingCustomExercise) {
+    return (
+      <div data-theme={resolvedTheme}>
+        <AddExercisePage
+          templates={availableExerciseTemplates}
+          existingExerciseNames={exercises.map((exercise) => exercise.name)}
+          onBack={() => setEditingCustomExerciseId(null)}
+          onAddSelected={addExercisesFromTemplates}
+          onCreateCustom={createCustomExercise}
+          onOpenDetails={(exerciseId) => openDetails(exerciseId)}
+          editorExercise={editingCustomExercise}
+          onUpdateCustom={updateCustomExercise}
+        />
+      </div>
+    );
   }
 
   if (detailsExercise) {
@@ -4553,6 +7544,21 @@ export function App() {
           initialScrollTarget={detailsScrollTarget}
           onTabChange={setDetailsTab}
           onBack={() => setDetailsExerciseId(null)}
+          customActions={
+            detailsCustomExercise
+              ? {
+                  deleteMode: detailsCustomExercise.history.length > 0 ? "archive" : "delete",
+                  onEdit: () => setEditingCustomExerciseId(detailsCustomExercise.id),
+                  onDeleteOrArchive: () => {
+                    if (detailsCustomExercise.history.length > 0) {
+                      archiveCustomExercise(detailsCustomExercise.id);
+                      return;
+                    }
+                    deleteCustomExercise(detailsCustomExercise.id);
+                  }
+                }
+              : null
+          }
         />
       </div>
     );
@@ -4583,6 +7589,51 @@ export function App() {
           onBack={() => setAddExerciseOpen(false)}
           onAddSelected={addExercisesFromTemplates}
           onCreateCustom={createCustomExercise}
+          onOpenDetails={(exerciseId) => openDetails(exerciseId)}
+          onUpdateCustom={updateCustomExercise}
+        />
+      </div>
+    );
+  }
+
+  if (appView === "share" && savedWorkoutData) {
+    return (
+      <div data-theme={resolvedTheme}>
+        <PostSaveShareScreen
+          data={savedWorkoutData}
+          onDone={() => { setSavedWorkoutData(null); setAppView("selector"); }}
+        />
+      </div>
+    );
+  }
+
+  if (appView === "finish" && finishWorkoutDraft) {
+    return (
+      <div data-theme={resolvedTheme}>
+        <FinishWorkoutPage
+          draft={finishWorkoutDraft}
+          onTitleChange={(value) =>
+            setFinishWorkoutDraft((current) =>
+              current
+                ? {
+                    ...current,
+                    sessionName: value
+                  }
+                : current
+            )
+          }
+          onNoteChange={(value) =>
+            setFinishWorkoutDraft((current) =>
+              current
+                ? {
+                    ...current,
+                    note: value
+                  }
+                : current
+            )
+          }
+          onBack={() => setAppView("logger")}
+          onSave={saveFinishedWorkout}
         />
       </div>
     );
@@ -4842,11 +7893,15 @@ export function App() {
           </div>
           {exercises.map((exercise, exerciseIndex) => {
             const lastSession = exercise.history[exercise.history.length - 1];
+            const measurementType = getExerciseMeasurementType(exercise);
+            const measurementLabels = getMeasurementColumnLabels(measurementType);
+            const hasWeightInput = usesWeightInputForMeasurement(measurementType);
             const isCollapsed = collapsedExerciseIds.includes(exercise.id);
             const completedExerciseSets = buildCompletedSets(
               exercise.draftSets,
               lastSession,
-              settings.carryForwardDefaults
+              settings.carryForwardDefaults,
+              measurementType
             ).resolvedSets;
             const isComplete = exercise.draftSets.length > 0 && exercise.draftSets.every((set) => set.done);
             const loggedSetCount = completedExerciseSets.length;
@@ -5166,8 +8221,8 @@ export function App() {
                 <div className={`set-grid-header ${settings.showRpe ? "has-rpe" : "no-rpe"}`}>
                   <span>Set</span>
                   <span>Previous</span>
-                  <span>Kg</span>
-                  <span>Reps</span>
+                  <span>{measurementLabels.first}</span>
+                  <span>{measurementLabels.second}</span>
                   {settings.showRpe && <span>RPE</span>}
                   <span>Done</span>
                 </div>
@@ -5277,18 +8332,20 @@ export function App() {
                             disabled={!previousSet}
                             title={previousSet ? "Use previous values" : undefined}
                           >
-                            {formatPreviousSet(previousSet)}
+                            {formatPreviousSet(previousSet, measurementType)}
                           </button>
                           <input
-                            className="cell-input"
+                            className={`cell-input ${!hasWeightInput ? "cell-input-disabled" : ""}`}
                             type="text"
                             inputMode="decimal"
                             placeholder={
-                              settings.carryForwardDefaults && previousSet
+                              hasWeightInput && settings.carryForwardDefaults && previousSet
                                 ? String(previousSet.weight)
                                 : ""
                             }
-                            value={draftSet.weightInput}
+                            value={hasWeightInput ? draftSet.weightInput : ""}
+                            disabled={!hasWeightInput}
+                            readOnly={!hasWeightInput}
                             onClick={(event) => event.stopPropagation()}
                             onChange={(event) =>
                               updateDraftSet(exercise.id, index, "weightInput", event.target.value)
@@ -5300,7 +8357,7 @@ export function App() {
                             inputMode="numeric"
                             placeholder={
                               settings.carryForwardDefaults && previousSet
-                                ? String(previousSet.reps)
+                                ? formatMeasurementValue(previousSet.reps, measurementType)
                                 : ""
                             }
                             value={draftSet.repsInput}
@@ -5436,7 +8493,9 @@ export function App() {
                             </span>
                           </div>
                           <p className="history-detail">
-                            {session.sets.map((set) => formatPreviousSet(set)).join(" • ")}
+                            {session.sets
+                              .map((set) => formatPreviousSet(set, measurementType))
+                              .join(" • ")}
                           </p>
                         </article>
                       ))}
@@ -5582,9 +8641,18 @@ export function App() {
               Discard
             </button>
           </div>
-          <button className="primary-button logger-finish-button" type="button" onClick={() => void finishWorkout()}>
+          <button
+            className="primary-button logger-finish-button"
+            type="button"
+            onClick={() => void finishWorkout()}
+            disabled={completedSetCount === 0}
+            title={completedSetCount === 0 ? "Complete at least one set to finish" : undefined}
+          >
             Finish Workout
           </button>
+          {completedSetCount === 0 && (
+            <p className="finish-blocked-hint">Complete at least 1 set to finish</p>
+          )}
         </div>
 
         {showStickyRestDock && activeRestExercise && (

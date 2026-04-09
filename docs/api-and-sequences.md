@@ -72,6 +72,10 @@ These are important current behaviors in the web app even when they do not yet m
   - ordered multi-select with fixed bottom add-action bar
   - group expand / collapse for `By Muscle` and `Types`
   - token-based search matching across exercise and muscle text
+  - repeated sort selection reverses direction
+  - explicit exercise-detail opening from the selector through an info action
+  - custom exercise create/edit as a guided 2-step client flow
+  - custom exercise library management via detail page actions
 - Finish-workout confirmation currently supports:
   - go back and finish
   - finish anyway
@@ -356,6 +360,102 @@ Validation failure `400`:
 ```json
 {
   "error": "Invalid session completion payload",
+  "issues": []
+}
+```
+
+### `GET /v1/media/config`
+
+Used for:
+- client-side media capability checks
+- image/video limits for finish-workout flows
+- discovering the active storage target
+
+Used in:
+- upcoming finish-workout media persistence work
+- future native/mobile client handshake
+
+Response `200`:
+
+```json
+{
+  "status": "ok",
+  "uploadDir": "apps/api/uploads",
+  "constraints": {
+    "target": "local_uploads",
+    "max_images_per_workout": 3,
+    "image_enabled": true,
+    "video_enabled": false,
+    "max_photo_mb": 10,
+    "max_video_mb": 100,
+    "max_video_seconds": 30
+  }
+}
+```
+
+Notes:
+- `uploadDir` is the intended backend-managed local beta target
+- clients should treat the API as the storage owner rather than writing directly to disk
+
+### `POST /v1/media/prepare`
+
+Used for:
+- reserving a backend-managed media asset id
+- returning a stable storage key before upload
+- keeping the client contract stable across local uploads and future cloud storage
+
+Used in:
+- planned finish-workout image persistence
+- future mobile client media uploads
+
+Headers:
+- `Content-Type: application/json`
+
+Request body:
+
+```json
+{
+  "kind": "image",
+  "file_name": "progress-front.jpg",
+  "mime_type": "image/jpeg",
+  "byte_size": 2400180,
+  "workout_id": "workout-2026-04-09-upper-push"
+}
+```
+
+Success response `200`:
+
+```json
+{
+  "status": "ready",
+  "target": "local_uploads",
+  "asset": {
+    "id": "media_a12b34c5",
+    "kind": "image",
+    "storage_key": "workouts/2026-04-09/media_a12b34c5.jpg",
+    "original_name": "progress-front.jpg",
+    "mime_type": "image/jpeg",
+    "byte_size": 2400180,
+    "upload_url": null,
+    "public_url": null
+  },
+  "constraints": {
+    "target": "local_uploads",
+    "max_images_per_workout": 3,
+    "image_enabled": true,
+    "video_enabled": false,
+    "max_photo_mb": 10,
+    "max_video_mb": 100,
+    "max_video_seconds": 30
+  }
+}
+```
+
+Validation failure `400`:
+
+```json
+{
+  "error": "Invalid media prepare payload",
   "issues": []
 }
 ```

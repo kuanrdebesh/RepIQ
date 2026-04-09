@@ -101,6 +101,31 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - reward summary is better as a centered modal than as a bottom sheet
 - session-level rewards should be reserved for completion and summary pages
 
+### Finish Workout V1 Boundary
+
+- the finish-workout flow should stay lean:
+  - review
+  - reward
+  - save
+  - share/report handoff
+- the logger session name should be preserved into the finish flow
+- a generated workout name should only be used when no session name exists yet
+- whatever title the user leaves in the finish `Save Details` section is the title that gets saved
+- finish-flow media is intentionally limited in V1
+- up to 3 images are allowed in the finish flow for progress/self-reference
+- video remains parked in code and hidden from the V1 UI
+- media should return when RepIQ has a real persistence model for:
+  - social/feed posting
+  - or durable self-reference
+- app-only temporary media state is not a trustworthy long-term model
+- preferred future direction:
+  - user selects from phone media
+  - RepIQ stores its own managed copy
+  - in local/dev environments, that now goes through the API media boundary into backend-managed local uploads
+  - later syncs to app/cloud storage as needed
+- current limitation:
+  - images are supported, but video stays parked until the persistence/social path is worth shipping
+
 ### Add Exercise Optimization
 
 - the selector should support fast browsing, not only search
@@ -117,6 +142,20 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - grouped tabs should support expand / collapse consistently
 - row controls should not jump when `Expand all / Collapse all` changes text
 - search should behave like keyword intent, not strict continuous substring matching
+- selector rows should support both:
+  - direct selection
+  - explicit detail inspection through a dedicated info action
+- custom exercise creation should feel guided, not form-heavy:
+  - 2-step flow
+  - visible progress chips
+  - stronger discoverability for secondary muscles once primary muscles are chosen
+- custom exercises should be manageable from the exercise detail page:
+  - edit existing custom exercise
+  - delete if unused
+  - hide/archive from library once history exists
+- duplicate exercise names should not be silently accepted:
+  - during direct creation, the user should choose to rename or save as `_1`
+  - future import flows should reuse the same unique-name helper automatically
 
 ## Optimizations Made During Logger Refinement
 

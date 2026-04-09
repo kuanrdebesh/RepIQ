@@ -1,18 +1,33 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
   coachingSuggestionSchema,
-  exerciseEvaluationRequestSchema
+  exerciseEvaluationRequestSchema,
+  mediaConfigSchema,
+  mediaPrepareUploadRequestSchema,
+  mediaPrepareUploadResponseSchema,
+  workoutMediaAssetSchema,
+  type WorkoutMediaAsset
 } from "@repiq/shared";
 
 const app = express();
 const port = Number(process.env.API_PORT ?? 4000);
 const engineBaseUrl = process.env.ENGINE_BASE_URL ?? "http://127.0.0.1:8000";
+const apiRootDir = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+const configuredMediaUploadDir = process.env.MEDIA_UPLOAD_DIR ?? "uploads";
+const mediaUploadDir = path.isAbsolute(configuredMediaUploadDir)
+  ? configuredMediaUploadDir
+  : path.resolve(apiRootDir, configuredMediaUploadDir);
+const preparedMediaAssets = new Map<string, WorkoutMediaAsset>();
 
 app.use(cors());
 app.use(express.json());
+app.use("/uploads", express.static(mediaUploadDir));
 
 const programRequestSchema = z.object({
   goal: z.enum(["strength", "hypertrophy", "general_fitness"]),
@@ -98,6 +113,39 @@ const demoEvaluationPayload = exerciseEvaluationRequestSchema.parse({
   ]
 });
 
+const mediaConfig = mediaConfigSchema.parse({
+  target: "local_uploads",
+  max_images_per_workout: 3,
+  image_enabled: true,
+  video_enabled: false,
+  max_photo_mb: 10,
+  max_video_mb: 100,
+  max_video_seconds: 30
+});
+
+function buildPublicUploadUrl(storageKey: string) {
+  return `/uploads/${storageKey.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function resolveStoragePath(storageKey: string) {
+  const normalizedKey = path.posix.normalize(storageKey).replace(/^(\.\.(\/|\\|$))+/, "");
+  if (!normalizedKey || normalizedKey.startsWith("/") || normalizedKey.includes("..")) {
+    throw new Error("Invalid storage key");
+  }
+
+  const resolvedPath = path.resolve(mediaUploadDir, normalizedKey);
+  const uploadRoot = path.resolve(mediaUploadDir);
+
+  if (!resolvedPath.startsWith(uploadRoot)) {
+    throw new Error("Storage path escapes upload root");
+  }
+
+  return {
+    normalizedKey,
+    resolvedPath
+  };
+}
+
 async function requestEngineSuggestion(payload: z.infer<typeof exerciseEvaluationRequestSchema>) {
   const response = await fetch(`${engineBaseUrl}/v1/evaluate`, {
     method: "POST",
@@ -141,6 +189,120 @@ app.get("/v1/architecture", (_req, res) => {
     }
   });
 });
+
+app.get("/v1/media/config", (_req, res) => {
+  res.json({
+    status: "ok",
+    uploadDir: "apps/api/uploads",
+    constraints: mediaConfig
+  });
+});
+
+app.post("/v1/media/prepare", (req, res) => {
+  const parsed = mediaPrepareUploadRequestSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "Invalid media prepare payload",
+      issues: parsed.error.issues
+    });
+  }
+
+  const { kind, file_name, mime_type, byte_size } = parsed.data;
+  const extensionFromName = file_name.includes(".") ? file_name.split(".").pop() : undefined;
+  const extensionFromMime = mime_type.split("/")[1];
+  const extension = extensionFromName || extensionFromMime || "bin";
+  const assetId = `media_${crypto.randomUUID()}`;
+  const storageKey = `workouts/${new Date().toISOString().slice(0, 10)}/${assetId}.${extension}`;
+
+  const response = mediaPrepareUploadResponseSchema.parse({
+    status: "ready",
+    target: mediaConfig.target,
+    asset: {
+      id: assetId,
+      kind,
+      storage_key: storageKey,
+      original_name: file_name,
+      mime_type,
+      byte_size,
+      upload_url: `/v1/media/${assetId}/upload`,
+      public_url: null
+    },
+    constraints: mediaConfig
+  });
+
+  preparedMediaAssets.set(assetId, response.asset);
+
+  return res.status(200).json({
+    ...response,
+    message:
+      "RepIQ is using a backend-managed media boundary. Local uploads can be implemented behind this contract first, then swapped to cloud storage later."
+  });
+});
+
+app.post(
+  "/v1/media/:assetId/upload",
+  express.raw({
+    type: () => true,
+    limit: `${Math.ceil(mediaConfig.max_photo_mb + 2)}mb`
+  }),
+  (req, res) => {
+    void (async () => {
+      const prepared = preparedMediaAssets.get(req.params.assetId);
+
+      if (!prepared) {
+        return res.status(404).json({
+          error: "Unknown media asset",
+          message: "Prepare the media asset before uploading content."
+        });
+      }
+
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({
+          error: "Empty upload body"
+        });
+      }
+
+      if (req.body.length !== prepared.byte_size) {
+        return res.status(400).json({
+          error: "Upload size mismatch",
+          expected: prepared.byte_size,
+          received: req.body.length
+        });
+      }
+
+      if (prepared.kind === "image" && !prepared.mime_type.startsWith("image/")) {
+        return res.status(400).json({
+          error: "Prepared asset is not an image"
+        });
+      }
+
+      try {
+        const { normalizedKey, resolvedPath } = resolveStoragePath(prepared.storage_key);
+        await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
+        await fs.writeFile(resolvedPath, req.body);
+
+        const uploadedAsset = workoutMediaAssetSchema.parse({
+          ...prepared,
+          storage_key: normalizedKey,
+          public_url: buildPublicUploadUrl(normalizedKey)
+        });
+
+        preparedMediaAssets.set(req.params.assetId, uploadedAsset);
+
+        return res.status(201).json({
+          status: "stored",
+          asset: uploadedAsset
+        });
+      } catch (error) {
+        return res.status(500).json({
+          error: "Upload failed",
+          message: error instanceof Error ? error.message : "The media upload could not be saved."
+        });
+      }
+    })();
+  }
+);
 
 app.post("/v1/programs/generate", (req, res) => {
   const result = programRequestSchema.safeParse(req.body);
