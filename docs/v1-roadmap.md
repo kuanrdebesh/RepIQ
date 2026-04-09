@@ -56,6 +56,20 @@
   - ordered multi-select
   - fixed bottom add-action bar
   - direct custom-exercise creation entry
+  - grouped expand / collapse for both `By Muscle` and `Types`
+  - token-based search that matches words in any order
+  - stable toolbar positioning while grouped controls change state
+- Sticky bottom rest dock:
+  - full-width timer tray
+  - minimize to compact timer FAB
+  - between-exercise timer handling
+  - quick `-5 / +5` timer adjustments
+- Finish-with-incomplete confirmation:
+  - go back and finish
+  - finish anyway and ignore unfinished rows
+- Logger active-flow cleanup:
+  - no stale active exercise once all exercises are complete by the current last-set rule
+  - expanded-card drag reorder in the logger itself
 
 ## Phase 4
 

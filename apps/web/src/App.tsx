@@ -104,6 +104,8 @@ type ActiveRestTimer = {
   exerciseId: string;
   endAt: number | null;
   pausedRemainingSeconds: number | null;
+  totalSeconds: number;
+  kind: "exercise" | "transition";
 } | null;
 
 type MuscleRegion =
@@ -203,6 +205,24 @@ const commonPrimaryMuscles = [
   "Lower Back",
   "Calves"
 ];
+
+function normalizeSearchText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function matchesSearchTokens(query: string, values: string[]) {
+  const queryTokens = normalizeSearchText(query).split(" ").filter(Boolean);
+  if (queryTokens.length === 0) {
+    return true;
+  }
+
+  const haystack = normalizeSearchText(values.join(" "));
+  return queryTokens.every((token) => haystack.includes(token));
+}
 
 function createTemplateExercise({
   id,
@@ -1098,21 +1118,6 @@ const initialWorkoutExercises: ExerciseDraft[] = [
     exerciseTemplates.find((exercise) => exercise.id === "shoulder-press")!,
     defaultWorkoutSettings.defaultRestSeconds,
     "seed-3"
-  ),
-  cloneExerciseTemplate(
-    exerciseTemplates.find((exercise) => exercise.id === "leg-press")!,
-    defaultWorkoutSettings.defaultRestSeconds,
-    "seed-4"
-  ),
-  cloneExerciseTemplate(
-    exerciseTemplates.find((exercise) => exercise.id === "romanian-deadlift")!,
-    defaultWorkoutSettings.defaultRestSeconds,
-    "seed-5"
-  ),
-  cloneExerciseTemplate(
-    exerciseTemplates.find((exercise) => exercise.id === "cable-lateral-raise")!,
-    defaultWorkoutSettings.defaultRestSeconds,
-    "seed-6"
   )
 ];
 const defaultWorkoutMeta: WorkoutMeta = {
@@ -1354,6 +1359,65 @@ function formatRemainingSeconds(totalSeconds: number) {
   return `${padTimeSegment(minutes)}:${padTimeSegment(seconds)}`;
 }
 
+function shiftIsoDateByDays(date: string, deltaDays: number) {
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return date;
+  }
+  parsed.setDate(parsed.getDate() + deltaDays);
+  return parsed.toISOString().slice(0, 10);
+}
+
+function createDerivedHistorySession(
+  session: ExerciseHistorySession,
+  exerciseName: string,
+  sessionKey: string,
+  date: string
+): ExerciseHistorySession {
+  return {
+    ...session,
+    date,
+    exercise: exerciseName,
+    session_key: sessionKey,
+    sets: session.sets.map((set) => ({
+      ...set,
+      weight: Number((set.weight * 0.9).toFixed(1)),
+      reps: Math.max(1, set.reps - 1),
+      rpe: typeof set.rpe === "number" ? Math.max(5, set.rpe - 0.5) : set.rpe
+    }))
+  };
+}
+
+function normalizeExerciseHistory(
+  history: ExerciseHistorySession[],
+  exerciseName: string,
+  historyKeyBase: string
+) {
+  const clonedHistory: ExerciseHistorySession[] = history.map((session) => ({
+    ...session,
+    exercise: exerciseName,
+    sets: session.sets.map((set) => ({ ...set }))
+  }));
+
+  if (clonedHistory.length === 0 || clonedHistory.length >= 3) {
+    return clonedHistory;
+  }
+
+  while (clonedHistory.length < 3) {
+    const earliestSession = clonedHistory[0];
+    clonedHistory.unshift(
+      createDerivedHistorySession(
+        earliestSession,
+        exerciseName,
+        `${historyKeyBase}-history-${clonedHistory.length + 1}`,
+        shiftIsoDateByDays(earliestSession.date, -7)
+      )
+    );
+  }
+
+  return clonedHistory;
+}
+
 function cloneExerciseTemplate(template: ExerciseDraft, restSeconds: string, suffix: string): ExerciseDraft {
   return {
     ...template,
@@ -1364,10 +1428,7 @@ function cloneExerciseTemplate(template: ExerciseDraft, restSeconds: string, suf
     supersetGroupId: null,
     secondaryMuscles: [...template.secondaryMuscles],
     howTo: [...template.howTo],
-    history: template.history.map((session) => ({
-      ...session,
-      sets: session.sets.map((set) => ({ ...set }))
-    })),
+    history: normalizeExerciseHistory(template.history, template.name, template.id),
     draftSets: template.draftSets.map((set, index) => ({
       ...set,
       id: `${template.id}-${suffix}-set-${index + 1}`,
@@ -1390,10 +1451,11 @@ function cloneExerciseDraft(
     stickyNoteEnabled: overrides?.stickyNoteEnabled ?? exercise.stickyNoteEnabled ?? false,
     secondaryMuscles: [...exercise.secondaryMuscles],
     howTo: [...exercise.howTo],
-    history: exercise.history.map((session) => ({
-      ...session,
-      sets: session.sets.map((set) => ({ ...set }))
-    })),
+    history: normalizeExerciseHistory(
+      exercise.history,
+      overrides?.name ?? exercise.name,
+      overrides?.id ?? exercise.id
+    ),
     draftSets: exercise.draftSets.map((set) => ({ ...set }))
   };
 }
@@ -1524,7 +1586,7 @@ function buildCompletedSets(
 }
 
 function isExerciseComplete(exercise: ExerciseDraft) {
-  return exercise.draftSets.length > 0 && exercise.draftSets.every((set) => set.done);
+  return exercise.draftSets.length > 0 && exercise.draftSets[exercise.draftSets.length - 1]?.done === true;
 }
 
 function isExerciseStarted(exercise: ExerciseDraft) {
@@ -2105,6 +2167,7 @@ function AddExercisePage({
 }) {
   const [mode, setMode] = useState<AddExerciseMode>("browse");
   const [browseTab, setBrowseTab] = useState<"all" | "muscle" | "type">("all");
+  const [expandedMuscleKeys, setExpandedMuscleKeys] = useState<string[] | null>(null);
   const [expandedTypeKeys, setExpandedTypeKeys] = useState<string[]>([]);
   const [sortMode, setSortMode] = useState<"alphabetical" | "frequency">("alphabetical");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -2145,23 +2208,14 @@ function AddExercisePage({
   };
 
   const filteredTemplates = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
     const searched = templates.filter((template) => {
-      if (!normalized) {
-        return true;
-      }
-
-      const haystack = [
+      return matchesSearchTokens(query, [
         template.name,
         template.primaryMuscle,
         template.secondaryMuscles.join(" "),
         template.goal,
         getExerciseType(template)
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return haystack.includes(normalized);
+      ]);
     });
 
     const narrowed = searched.filter((template) => {
@@ -2204,6 +2258,11 @@ function AddExercisePage({
     }, {});
   }, [filteredTemplates]);
 
+  const muscleGroupKeys = useMemo(
+    () => Object.keys(groupedByMuscle).sort((left, right) => left.localeCompare(right)),
+    [groupedByMuscle]
+  );
+
   const groupedByType = useMemo(() => {
     return filteredTemplates.reduce<Record<string, ExerciseDraft[]>>((groups, template) => {
       const key = getExerciseType(template);
@@ -2219,6 +2278,32 @@ function AddExercisePage({
     () => Object.keys(groupedByType).sort((left, right) => left.localeCompare(right)),
     [groupedByType]
   );
+
+  useEffect(() => {
+    setExpandedMuscleKeys((current) => {
+      if (current === null) {
+        return [...muscleGroupKeys];
+      }
+
+      return current.filter((key) => muscleGroupKeys.includes(key));
+    });
+  }, [muscleGroupKeys]);
+
+  function toggleMuscleGroup(muscle: string) {
+    setExpandedMuscleKeys((current) => {
+      const resolved = current ?? muscleGroupKeys;
+      return resolved.includes(muscle)
+        ? resolved.filter((entry) => entry !== muscle)
+        : [...resolved, muscle];
+    });
+  }
+
+  function toggleAllMuscleGroups() {
+    setExpandedMuscleKeys((current) => {
+      const resolved = current ?? muscleGroupKeys;
+      return resolved.length === muscleGroupKeys.length ? [] : [...muscleGroupKeys];
+    });
+  }
 
   function toggleTypeGroup(type: string) {
     setExpandedTypeKeys((current) =>
@@ -2369,25 +2454,33 @@ function AddExercisePage({
                           className={`quick-filter-chip ${showInWorkoutOnly ? "is-active" : ""}`}
                           onClick={() => setShowInWorkoutOnly((current) => !current)}
                         >
-                          In workout
+                          <span>In workout</span>
                         </button>
                         <button
                           type="button"
                           className={`quick-filter-chip ${showSelectedOnly ? "is-active" : ""}`}
                           onClick={() => setShowSelectedOnly((current) => !current)}
                         >
-                          Selected
+                          <span>Selected</span>
                         </button>
                       </div>
                     </div>
                     <div className="search-shell-head-right">
-                      {browseTab === "type" && (
+                      {(browseTab === "type" || browseTab === "muscle") && (
                         <button
                           type="button"
                           className="template-group-toolbar-button"
-                          onClick={toggleAllTypeGroups}
+                          onClick={
+                            browseTab === "type" ? toggleAllTypeGroups : toggleAllMuscleGroups
+                          }
                         >
-                          {expandedTypeKeys.length === typeGroupKeys.length ? "Collapse all" : "Expand all"}
+                          {browseTab === "type"
+                            ? expandedTypeKeys.length === typeGroupKeys.length
+                              ? "Collapse all"
+                              : "Expand all"
+                            : (expandedMuscleKeys ?? muscleGroupKeys).length === muscleGroupKeys.length
+                              ? "Collapse all"
+                              : "Expand all"}
                         </button>
                       )}
                     </div>
@@ -2429,17 +2522,26 @@ function AddExercisePage({
 
                     {browseTab === "muscle" && (
                       <div className="template-group-list">
-                        {Object.keys(groupedByMuscle)
-                          .sort((left, right) => left.localeCompare(right))
-                          .map((muscle) => (
+                        {muscleGroupKeys.map((muscle) => (
                             <section key={muscle} className="template-group-section">
-                              <div className="template-group-heading">
+                              <button
+                                type="button"
+                                className={`template-group-heading template-group-heading-button ${
+                                  (expandedMuscleKeys ?? muscleGroupKeys).includes(muscle) ? "is-expanded" : ""
+                                }`}
+                                onClick={() => toggleMuscleGroup(muscle)}
+                              >
                                 <strong>{muscle}</strong>
                                 <span>{groupedByMuscle[muscle].length}</span>
-                              </div>
-                              <div className="template-list">
-                                {groupedByMuscle[muscle].map(renderTemplateCard)}
-                              </div>
+                                <span className="template-group-chevron" aria-hidden="true">
+                                  {(expandedMuscleKeys ?? muscleGroupKeys).includes(muscle) ? "⌃" : "⌄"}
+                                </span>
+                              </button>
+                              {(expandedMuscleKeys ?? muscleGroupKeys).includes(muscle) && (
+                                <div className="template-list">
+                                  {groupedByMuscle[muscle].map(renderTemplateCard)}
+                                </div>
+                              )}
                             </section>
                           ))}
                       </div>
@@ -2837,7 +2939,7 @@ export function App() {
   const [themePreference, setThemePreference] = useState<ThemePreference>(getStoredThemePreference);
   const [systemTheme, setSystemTheme] = useState<"light" | "dark">(getSystemTheme);
   const [exercises, setExercises] = useState<ExerciseDraft[]>(initialWorkoutExercises);
-  const [activeExerciseId, setActiveExerciseId] = useState<string>(initialWorkoutExercises[0].id);
+  const [activeExerciseId, setActiveExerciseId] = useState<string | null>(initialWorkoutExercises[0].id);
   const [userActiveExerciseId, setUserActiveExerciseId] = useState<string | null>(null);
   const [detailsExerciseId, setDetailsExerciseId] = useState<string | null>(null);
   const [detailsScrollTarget, setDetailsScrollTarget] = useState<"top" | "bottom">("top");
@@ -2855,6 +2957,7 @@ export function App() {
   const [timingOpen, setTimingOpen] = useState(false);
   const [leavePromptOpen, setLeavePromptOpen] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
   const [supersetSheetExerciseId, setSupersetSheetExerciseId] = useState<string | null>(null);
   const [supersetSelectionIds, setSupersetSelectionIds] = useState<string[]>([]);
   const [exerciseRestDefaults, setExerciseRestDefaults] = useState<ExerciseRestDefaults>({});
@@ -2876,6 +2979,7 @@ export function App() {
   const [topGuidanceExpanded, setTopGuidanceExpanded] = useState(false);
   const [topGuidancePullDistance, setTopGuidancePullDistance] = useState(0);
   const [activeRestTimer, setActiveRestTimer] = useState<ActiveRestTimer>(null);
+  const [restDockMinimized, setRestDockMinimized] = useState(false);
   const [loggerRewards, setLoggerRewards] = useState<LoggerReward[]>([]);
   const [rewardSheetOpen, setRewardSheetOpen] = useState(false);
   const titleHoldTimer = useRef<number | null>(null);
@@ -2895,9 +2999,16 @@ export function App() {
     setSwipeState(resolvedState);
   }
 
+  const allExercisesComplete = getFirstIncompleteExerciseId(exercises) === null;
+  const resolvedActiveExerciseId =
+    allExercisesComplete ? null : activeExerciseId ?? getDefaultActiveExerciseId(exercises);
   const activeExercise =
-    exercises.find((exercise) => exercise.id === activeExerciseId) ?? exercises[0];
-  const activeExerciseIndex = exercises.findIndex((exercise) => exercise.id === activeExercise.id);
+    (resolvedActiveExerciseId
+      ? exercises.find((exercise) => exercise.id === resolvedActiveExerciseId)
+      : null) ?? exercises[0];
+  const activeExerciseIndex = resolvedActiveExerciseId
+    ? exercises.findIndex((exercise) => exercise.id === resolvedActiveExerciseId)
+    : -1;
   const detailsExercise =
     exercises.find((exercise) => exercise.id === detailsExerciseId) ?? null;
   const musclesExercise =
@@ -2908,6 +3019,8 @@ export function App() {
     exercises.find((exercise) => exercise.id === restTimerEditorExerciseId) ?? null;
   const activeMenuExercise =
     exercises.find((exercise) => exercise.id === menuExerciseId) ?? null;
+  const activeRestExercise =
+    activeRestTimer ? exercises.find((exercise) => exercise.id === activeRestTimer.exerciseId) ?? null : null;
   const resolvedTheme = themePreference === "system" ? systemTheme : themePreference;
   const hasGuidance = state.status !== "idle" || state.suggestion || state.message;
   const guidanceTip =
@@ -2918,8 +3031,6 @@ export function App() {
     state.status === "loading"
       ? "RepIQ is checking your completed sets against recent sessions so the next prompt reflects your actual workout pattern, not just the plan on paper."
       : state.suggestion?.why ?? state.message ?? fallbackGuidanceWhy;
-  const allExercisesComplete =
-    exercises.length > 0 && exercises.every((exercise) => exercise.draftSets.every((set) => set.done));
   const hasStartedExercise = exercises.some((exercise) => isExerciseStarted(exercise));
   const showTopGuidanceSurface =
     settings.guidanceTopStrip && showTopGuidance && !allExercisesComplete;
@@ -2929,6 +3040,20 @@ export function App() {
       ? activeRestTimer.pausedRemainingSeconds ??
         Math.max(0, Math.ceil(((activeRestTimer.endAt ?? 0) - clockTick) / 1000))
       : 0;
+  const stickyRestProgressPercent =
+    activeRestTimer && activeRestTimer.totalSeconds > 0
+      ? Math.max(0, Math.min(100, (activeRestSeconds / activeRestTimer.totalSeconds) * 100))
+      : 0;
+  const stickyRestLabel =
+    activeRestTimer?.kind === "transition"
+      ? activeRestTimer?.pausedRemainingSeconds !== null
+        ? "Between exercises paused"
+        : "Between exercises"
+      : activeRestTimer?.pausedRemainingSeconds !== null
+        ? "Rest paused"
+        : "Rest timer";
+  const showStickyRestDock =
+    activeRestTimer !== null && activeRestSeconds > 0;
 
   const workoutSummary = useMemo(() => {
     return exercises.reduce(
@@ -2949,6 +3074,15 @@ export function App() {
       { sets: 0, volume: 0 }
     );
   }, [exercises, settings.carryForwardDefaults]);
+
+  const incompleteSetCount = useMemo(
+    () =>
+      exercises.reduce(
+        (count, exercise) => count + exercise.draftSets.filter((set) => !set.done).length,
+        0
+      ),
+    [exercises]
+  );
 
   const rewardSummary = useMemo(() => {
     return loggerRewards.reduce(
@@ -3008,6 +3142,16 @@ export function App() {
       setActiveRestTimer(null);
     }
   }, [activeRestSeconds, activeRestTimer]);
+
+  useEffect(() => {
+    setRestDockMinimized(false);
+  }, [activeRestTimer?.exerciseId]);
+
+  useEffect(() => {
+    if (!showStickyRestDock) {
+      setRestDockMinimized(false);
+    }
+  }, [showStickyRestDock]);
 
   useEffect(() => {
     if (typeof document === "undefined" || typeof window === "undefined") {
@@ -3111,7 +3255,7 @@ export function App() {
     const nextActiveExerciseId =
       validUserActiveExerciseId ?? getDefaultActiveExerciseId(exercises);
 
-    if (nextActiveExerciseId && nextActiveExerciseId !== activeExerciseId) {
+    if (nextActiveExerciseId !== activeExerciseId) {
       setActiveExerciseId(nextActiveExerciseId);
     }
   }, [activeExerciseId, exercises, userActiveExerciseId]);
@@ -3132,18 +3276,25 @@ export function App() {
   }
 
   function getDefaultActiveExerciseId(exerciseList: ExerciseDraft[]) {
-    return (
-      getFirstNotStartedExerciseId(exerciseList) ??
-      exerciseList.find((exercise) => !isExerciseComplete(exercise))?.id ??
-      exerciseList[0]?.id ??
-      null
+    const firstIncompleteExerciseId = getFirstIncompleteExerciseId(exerciseList);
+
+    if (!firstIncompleteExerciseId) {
+      return null;
+    }
+
+    const firstIncompleteExercise = exerciseList.find(
+      (exercise) => exercise.id === firstIncompleteExerciseId
     );
+
+    if (firstIncompleteExercise && isExerciseStarted(firstIncompleteExercise)) {
+      return firstIncompleteExerciseId;
+    }
+
+    return getFirstNotStartedExerciseId(exerciseList) ?? firstIncompleteExerciseId;
   }
 
   function getFirstIncompleteExerciseId(exerciseList: ExerciseDraft[]) {
-    return (
-      exerciseList.find((exercise) => exercise.draftSets.some((set) => !set.done))?.id ?? null
-    );
+    return exerciseList.find((exercise) => !isExerciseComplete(exercise))?.id ?? null;
   }
 
   function getNextActiveExerciseIdFromProgress(
@@ -3416,29 +3567,32 @@ export function App() {
 
     setExercises(nextExercises);
 
-    const nextExerciseState = nextExercises.find((entry) => entry.id === exerciseId);
-    if (nextExerciseState && !isExerciseComplete(nextExerciseState)) {
-      setUserActiveExerciseId(exerciseId);
-      setCollapsedExerciseIds((current) => current.filter((id) => id !== exerciseId));
-    } else {
-      setUserActiveExerciseId(null);
+    const didCompleteExerciseBoundary = setIndex === exercise.draftSets.length - 1;
+    const nextActiveExerciseId = didCompleteExerciseBoundary
+      ? getFirstIncompleteExerciseId(nextExercises)
+      : exerciseId;
+
+    if (nextActiveExerciseId) {
+      setActiveExerciseId(nextActiveExerciseId);
+      setCollapsedExerciseIds((current) =>
+        current.filter((id) => id !== nextActiveExerciseId)
+      );
     }
 
-    const nextExerciseStateIndex = nextExercises.findIndex((entry) => entry.id === exerciseId);
-    const nextExerciseStateForTimer =
-      nextExerciseStateIndex >= 0 ? nextExercises[nextExerciseStateIndex] : null;
-    const didCompleteExercise =
-      nextExerciseStateForTimer !== null && isExerciseComplete(nextExerciseStateForTimer);
-    const nextTransitionExerciseId = getNextIncompleteExerciseIdAfter(nextExercises, exerciseId);
-    if (didCompleteExercise && nextTransitionExerciseId) {
-      setCollapsedExerciseIds((current) =>
-        current.filter((id) => id !== nextTransitionExerciseId)
-      );
-      startRestTimer(nextTransitionExerciseId, settings.transitionRestSeconds);
+    if (!didCompleteExerciseBoundary) {
+      setUserActiveExerciseId(exerciseId);
+      startRestTimer(nextActiveExerciseId ?? exerciseId, undefined, "exercise");
       return;
     }
 
-    startRestTimer(exerciseId);
+    setUserActiveExerciseId(null);
+
+    if (nextActiveExerciseId) {
+      startRestTimer(nextActiveExerciseId, settings.transitionRestSeconds, "transition");
+      return;
+    }
+
+    stopRestTimer();
   }
 
   function markSetUndone(exerciseId: string, setIndex: number) {
@@ -3560,7 +3714,11 @@ export function App() {
     closeRestTimerEditor();
   }
 
-  function startRestTimer(exerciseId: string, overrideRestSeconds?: string) {
+  function startRestTimer(
+    exerciseId: string,
+    overrideRestSeconds?: string,
+    kind: "exercise" | "transition" = "exercise"
+  ) {
     const exercise = exercises.find((entry) => entry.id === exerciseId);
     if (!exercise) {
       return;
@@ -3579,7 +3737,9 @@ export function App() {
     setActiveRestTimer({
       exerciseId,
       endAt: now + restSeconds * 1000,
-      pausedRemainingSeconds: null
+      pausedRemainingSeconds: null,
+      totalSeconds: restSeconds,
+      kind
     });
   }
 
@@ -3607,7 +3767,9 @@ export function App() {
         return {
           exerciseId,
           endAt: now + current.pausedRemainingSeconds * 1000,
-          pausedRemainingSeconds: null
+          pausedRemainingSeconds: null,
+          totalSeconds: current.totalSeconds,
+          kind: current.kind
         };
       }
 
@@ -3619,7 +3781,39 @@ export function App() {
       return {
         exerciseId,
         endAt: null,
-        pausedRemainingSeconds: remainingSeconds
+        pausedRemainingSeconds: remainingSeconds,
+        totalSeconds: current.totalSeconds,
+        kind: current.kind
+      };
+    });
+  }
+
+  function adjustActiveRestTimer(deltaSeconds: number) {
+    setActiveRestTimer((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const currentSeconds =
+        current.pausedRemainingSeconds ??
+        Math.max(0, Math.ceil(((current.endAt ?? Date.now()) - Date.now()) / 1000));
+      const nextSeconds = Math.max(1, currentSeconds + deltaSeconds);
+      const nextTotalSeconds = Math.max(1, current.totalSeconds + deltaSeconds);
+
+      if (current.pausedRemainingSeconds !== null) {
+        return {
+          ...current,
+          pausedRemainingSeconds: nextSeconds,
+          totalSeconds: Math.max(nextSeconds, nextTotalSeconds)
+        };
+      }
+
+      const now = Date.now();
+      setClockTick(now);
+      return {
+        ...current,
+        endAt: now + nextSeconds * 1000,
+        totalSeconds: Math.max(nextSeconds, nextTotalSeconds)
       };
     });
   }
@@ -4249,7 +4443,7 @@ export function App() {
     resetSwipeState();
   }
 
-  async function finishWorkout() {
+  async function performFinishWorkout() {
     const lastSession = activeExercise.history[activeExercise.history.length - 1];
     const { resolvedSets, issues } = buildCompletedSets(
       activeExercise.draftSets,
@@ -4334,6 +4528,20 @@ export function App() {
         engineSource: "unavailable"
       });
     }
+  }
+
+  async function finishWorkout() {
+    if (incompleteSetCount > 0) {
+      setFinishConfirmOpen(true);
+      return;
+    }
+
+    await performFinishWorkout();
+  }
+
+  async function finishWorkoutAnyway() {
+    setFinishConfirmOpen(false);
+    await performFinishWorkout();
   }
 
   if (detailsExercise) {
@@ -4469,7 +4677,12 @@ export function App() {
   }
 
   return (
-    <main className="shell" data-theme={resolvedTheme}>
+    <main
+      className={`shell ${showStickyRestDock ? "has-active-rest-dock" : ""} ${
+        showStickyRestDock && restDockMinimized ? "has-minimized-rest-dock" : ""
+      }`}
+      data-theme={resolvedTheme}
+    >
       <section className="app-shell">
         {showTopGuidanceSurface && (
           <section
@@ -4514,9 +4727,14 @@ export function App() {
               >
                 ←
               </button>
-              <p className="session-name" title={workoutMeta.sessionName}>
-                {workoutMeta.sessionName}
-              </p>
+              <div className="topbar-session-copy">
+                <p className="session-name" title={workoutMeta.sessionName}>
+                  {workoutMeta.sessionName}
+                </p>
+                <p className="session-name-meta">
+                  {exercises.length} {exercises.length === 1 ? "exercise" : "exercises"}
+                </p>
+              </div>
             </div>
             <div className="topbar-actions">
               <button
@@ -4644,11 +4862,12 @@ export function App() {
               <article
                 key={exercise.id}
                 className={`exercise-card ${
-                  exercise.id === activeExerciseId ? "is-active" : ""
+                  exercise.id === resolvedActiveExerciseId ? "is-active" : ""
                 } ${isComplete ? "is-complete" : ""} ${
                   isComplete && isCollapsed ? "is-complete-collapsed" : ""
                 } ${exercise.supersetGroupId ? "has-superset" : ""} ${
                   isCollapsed ? "is-collapsed" : ""
+                } ${reorderDragId === exercise.id ? "is-dragging" : ""
                 }`}
                 style={
                   exercise.supersetGroupId
@@ -4657,6 +4876,20 @@ export function App() {
                       } as CSSProperties)
                     : undefined
                 }
+                onDragOver={(event) => {
+                  if (!reorderDragId || reorderDragId === exercise.id) {
+                    return;
+                  }
+                  event.preventDefault();
+                }}
+                onDrop={(event) => {
+                  if (!reorderDragId || reorderDragId === exercise.id) {
+                    return;
+                  }
+                  event.preventDefault();
+                  moveExerciseByIds(reorderDragId, exercise.id);
+                  setReorderDragId(null);
+                }}
                 onClick={() => {
                   if (isCollapsed) {
                     if (!hasStartedExercise) {
@@ -4671,6 +4904,13 @@ export function App() {
                 >
                 <div
                   className="exercise-title-row"
+                  draggable
+                  onDragStart={(event) => {
+                    setReorderDragId(exercise.id);
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", exercise.id);
+                  }}
+                  onDragEnd={() => setReorderDragId(null)}
                   onClick={(event) => {
                     event.stopPropagation();
                     if (!hasStartedExercise) {
@@ -4696,10 +4936,10 @@ export function App() {
                   <div className="exercise-title-copy">
                     <div className="exercise-title-heading">
                       <button
-                        className={`exercise-link ${exercise.id === activeExerciseId ? "is-active" : ""}`}
+                        className={`exercise-link ${exercise.id === resolvedActiveExerciseId ? "is-active" : ""}`}
                         type="button"
                         title={exercise.name}
-                        style={exercise.id === activeExerciseId ? { color: "var(--accent)" } : undefined}
+                        style={exercise.id === resolvedActiveExerciseId ? { color: "var(--accent)" } : undefined}
                         onPointerDown={() => beginTitleHold(exercise.id)}
                         onPointerUp={endTitleHold}
                         onPointerCancel={endTitleHold}
@@ -4715,7 +4955,7 @@ export function App() {
                       >
                         {exercise.name}
                       </button>
-                      {exercise.id === activeExerciseId && (
+                      {exercise.id === resolvedActiveExerciseId && (
                         <span className="exercise-active-indicator" aria-hidden="true" />
                       )}
                     </div>
@@ -5347,6 +5587,79 @@ export function App() {
           </button>
         </div>
 
+        {showStickyRestDock && activeRestExercise && (
+          restDockMinimized ? (
+            <button
+              className="sticky-rest-dock-minimized"
+              type="button"
+              onClick={() => setRestDockMinimized(false)}
+              aria-label={`Expand active rest timer for ${activeRestExercise.name}`}
+            >
+              <span className="sticky-rest-dock-minimized-icon" aria-hidden="true">◷</span>
+              <span className="sticky-rest-dock-minimized-time">{formatRemainingSeconds(activeRestSeconds)}</span>
+            </button>
+          ) : (
+            <section className="sticky-rest-dock" aria-label="Active rest timer">
+              <div className="sticky-rest-dock-progress" aria-hidden="true">
+                <span
+                  className="sticky-rest-dock-progress-fill"
+                  style={{ width: `${stickyRestProgressPercent}%` }}
+                />
+              </div>
+              <div className="sticky-rest-dock-copy">
+                <strong>{stickyRestLabel}</strong>
+              </div>
+              <div className="sticky-rest-dock-controls">
+                <button
+                  className="sticky-rest-adjust-button"
+                  type="button"
+                  onClick={() => adjustActiveRestTimer(-5)}
+                  aria-label="Reduce rest timer by 5 seconds"
+                >
+                  -5
+                </button>
+                <span className="sticky-rest-dock-time">{formatRemainingSeconds(activeRestSeconds)}</span>
+                <button
+                  className="sticky-rest-adjust-button"
+                  type="button"
+                  onClick={() => adjustActiveRestTimer(5)}
+                  aria-label="Increase rest timer by 5 seconds"
+                >
+                  +5
+                </button>
+                <button
+                  className="rest-timer-icon-button"
+                  type="button"
+                  aria-label={
+                    activeRestTimer?.pausedRemainingSeconds !== null
+                      ? "Resume rest timer"
+                      : "Pause rest timer"
+                  }
+                  onClick={() => togglePauseRestTimer(activeRestExercise.id)}
+                >
+                  {activeRestTimer?.pausedRemainingSeconds !== null ? "▶" : "⏸"}
+                </button>
+                <button
+                  className="rest-timer-icon-button rest-timer-stop-button"
+                  type="button"
+                  aria-label="Skip rest timer"
+                  onClick={() => stopRestTimer(activeRestExercise.id)}
+                >
+                  <span className="rest-timer-stop-glyph" aria-hidden="true">■</span>
+                </button>
+                <button
+                  className="sticky-rest-dock-minimize"
+                  type="button"
+                  aria-label="Minimize active rest timer"
+                  onClick={() => setRestDockMinimized(true)}
+                >
+                  <span className="sticky-rest-dock-minimize-glyph" aria-hidden="true" />
+                </button>
+              </div>
+            </section>
+          )
+        )}
+
         {leavePromptOpen && (
           <section className="sheet-overlay leave-center-overlay" onClick={() => setLeavePromptOpen(false)}>
             <div className="leave-center-card" onClick={(event) => event.stopPropagation()}>
@@ -5390,6 +5703,40 @@ export function App() {
                 </button>
                 <button className="primary-button" type="button" onClick={returnToWorkoutSelector}>
                   Come back later
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {finishConfirmOpen && (
+          <section className="sheet-overlay leave-center-overlay" onClick={() => setFinishConfirmOpen(false)}>
+            <div className="leave-center-card" onClick={(event) => event.stopPropagation()}>
+              <div className="sheet-head">
+                <div>
+                  <p className="label">Finish Workout</p>
+                  <h3>Some sets are still incomplete</h3>
+                </div>
+                <button className="icon-button" type="button" onClick={() => setFinishConfirmOpen(false)}>
+                  ×
+                </button>
+              </div>
+              <p className="settings-note">
+                You still have {incompleteSetCount} incomplete {incompleteSetCount === 1 ? "set" : "sets"} in this
+                workout. You can go back and finish them, or finish the workout anyway and ignore the unfinished rows.
+              </p>
+              <div className="logger-end-actions finish-confirm-actions">
+                <div className="logger-end-actions-row finish-confirm-actions-row">
+                  <button
+                    className="secondary-button logger-action-button logger-add-button"
+                    type="button"
+                    onClick={() => setFinishConfirmOpen(false)}
+                  >
+                    Go Back And Finish
+                  </button>
+                </div>
+                <button className="primary-button logger-finish-button" type="button" onClick={() => void finishWorkoutAnyway()}>
+                  Finish Anyway
                 </button>
               </div>
             </div>

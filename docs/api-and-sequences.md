@@ -39,6 +39,7 @@ These are important current behaviors in the web app even when they do not yet m
   - collapse-all / expand-all
   - collapsed summaries with logged volume, reward summary, and superset visibility
   - title-led active exercise indication
+  - drag-reorder directly from logger exercise headers
 - The `Muscles Worked` page is currently a web-only surface with:
   - overall workout mode
   - exercise-focused mode
@@ -53,11 +54,26 @@ These are important current behaviors in the web app even when they do not yet m
   - user preference can enable top strip, inline, both, or neither
   - inline guidance opens a centered modal on demand
   - bottom guidance remains the stable fallback surface
+- Active workout flow is currently client-side and follows:
+  - exercise completion = last set done
+  - next active exercise = first exercise in the list whose last set is not done
+  - no active exercise when none remain incomplete by that rule
+- Rest timing behavior is currently client-side:
+  - non-last set completion starts normal rest timer
+  - actual last-set completion starts workout-level between-exercises timer
+  - sticky full-width bottom timer tray appears only while a timer is active
+  - tray can minimize into a timer FAB
 - `Add Exercise` client flow now includes:
   - always-visible search
   - tabbed browsing for all exercises, muscle groups, and exercise types
   - thin quick filters for `In workout` and `Selected`
   - ordered multi-select with fixed bottom add-action bar
+  - group expand / collapse for `By Muscle` and `Types`
+  - token-based search matching across exercise and muscle text
+- Finish-workout confirmation currently supports:
+  - go back and finish
+  - finish anyway
+  - unfinished rows are ignored when finishing anyway
 
 ## Shared Contracts
 

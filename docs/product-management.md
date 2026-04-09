@@ -64,6 +64,7 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - active indication is now title-led:
   - blue exercise name
   - green status dot
+- when all exercises are complete by the current rule, there should be no stale active highlight
 
 ### Collapsed Logger Pattern
 
@@ -88,6 +89,9 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - tapping inline guidance opens a centered modal for more context
 - collapsed guidance should show exercise/workout context plus tip preview
 - experimental auto-pop-up guidance after exercise completion was removed
+- guidance card should stay content-led:
+  - exercise/workout context is secondary
+  - main tip is the primary emphasis
 
 ### Reward Presentation
 
@@ -110,6 +114,9 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
   - selected exercises
 - multi-select order matters and should determine add order
 - custom exercise creation should remain easy to reach from the selector
+- grouped tabs should support expand / collapse consistently
+- row controls should not jump when `Expand all / Collapse all` changes text
+- search should behave like keyword intent, not strict continuous substring matching
 
 ## Optimizations Made During Logger Refinement
 
@@ -121,6 +128,24 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - made previous-set values tappable to fill the current row
 - refined collapsed-row height and spacing significantly
 - tuned title weight and darkness to reduce visual heaviness
+- simplified the finish-with-incomplete prompt so it does not offer a misleading reset path
+- reduced default logger seed size to 5 exercises for a lighter starting state
+- added drag-reorder directly from expanded exercise headers
+- added a sticky bottom rest dock with:
+  - full-width tray treatment
+  - minimize-to-FAB behavior
+  - progress line
+  - quick timer adjustment controls
+
+## Timer Decision Log
+
+- the app currently treats an exercise as complete when its last set is marked done
+- that rule should drive:
+  - active exercise resolution
+  - between-exercise timer handoff
+  - end-of-workout state
+- only clicking the actual last set row should count as the exercise-boundary completion event
+- completing some earlier set later should still behave like an intra-exercise completion and start normal rest timing
 
 ## Current Known Future Work
 

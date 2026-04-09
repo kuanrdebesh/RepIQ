@@ -50,6 +50,7 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
   - total logged volume
   - set count
   - muscles entry
+- Logger header now also shows a subtle exercise count under the session name
 - Exercise logging includes:
   - optional sticky note per exercise
   - editable rest timer
@@ -63,6 +64,7 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
   - add set / remove set behavior
   - manual collapse / expand per exercise
   - collapse-all / expand-all control
+  - drag-reorder from the exercise header, even while expanded
 - logger footer actions:
   - `+ Exercise`
   - `Discard`
@@ -87,6 +89,10 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
   - top strip shows only set and exercise reward counts
   - session-level rewards are reserved for completion / summary surfaces, not the logger top strip
 - Reward summary now opens as a centered modal rather than a bottom sheet
+- Finishing a workout with incomplete rows now uses a simpler centered confirmation:
+  - `Go Back And Finish`
+  - `Finish Anyway`
+  - unfinished rows are ignored when finishing anyway
 - Collapsed exercise cards now summarize:
   - logged set count
   - logged volume
@@ -97,6 +103,7 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
 - Active workout indication is now title-led:
   - blue exercise name
   - green status dot after the name
+- Active exercise can now resolve to none when all exercises are complete by the current product rule
 
 ## Exercise Flows
 
@@ -149,6 +156,9 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
   - fixed bottom add-action bar when one or more exercises are selected
   - floating custom-exercise creation entry
   - `Types` groups with collapse / expand behavior
+  - `By Muscle` groups with collapse / expand behavior
+  - `Expand all / Collapse all` for grouped tabs
+- Search now tokenizes by words, ignores numbers/special characters, and matches terms in any order across exercise and muscle metadata
 - A simple workout resume/selector shell exists to support leaving and returning to an active workout
 - A dedicated post-finish workout screen is planned for workout naming, notes, attachments, and save/share summary flow
 - Reward UX is intentionally planned around the post-finish workout screen first, with only subtle in-logger reward signals later if they prove helpful
@@ -175,6 +185,31 @@ RepIQ has a working project foundation across the web app, API, engine, shared t
 - Inline rewards can still appear during logging, but only as quiet progress confirmations
 - Session-level rewards should not crowd the logger top strip
 - Any colored reward or highlight treatment should lean toward gradient / slightly shiny emphasis rather than flat loud color blocks
+- Sticky rest timing should feel like a dock, not a floating card:
+  - full-width bottom tray
+  - minimize to a FAB-style timer icon
+  - progress indication
+  - quick time adjustments
+
+## Timer And Completion Rules
+
+- Exercise completion is currently determined by the last set being marked done
+- When a non-last set is completed:
+  - the same exercise remains the timer target
+  - normal rest timer starts
+- When the actual last set row is completed:
+  - that counts as the exercise-boundary completion event
+  - active exercise moves to the first exercise in the list whose last set is still not done
+  - `Between exercises` timer starts
+- If no exercise remains incomplete by that rule:
+  - no timer runs
+  - no active exercise highlight is required
+- Going back later and completing a non-last set should still trigger normal rest timing again
+
+## Seed And Testing State
+
+- Default logger seed now starts with 5 exercises instead of 8
+- Logger exercise history is normalized back to 3 sessions when history exists but seeded data is shorter
 
 ## Captured Follow-On Features
 
