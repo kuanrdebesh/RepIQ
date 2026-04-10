@@ -28,7 +28,20 @@ Update this document whenever:
 
 These are important current behaviors in the web app even when they do not yet map to backend APIs.
 
+- The app now launches into `Home` rather than directly into the logger
+- Planner is now a real client-side surface with:
+  - `My Workouts`
+  - `Library`
+  - `Generate Session`
+  - template preview
+  - workout builder/edit
+- Generated sessions currently follow:
+  - generate inputs
+  - generated review/builder
+  - explicit save or start
+- New workout-builder drafts can persist client-side until they are saved
 - The active workout timer is client-derived from the workout start time and now updates live while the logger stays open
+- Fresh starts now use a precise `startInstant` timestamp so quick sessions and plan starts begin from `0`
 - Logger set types currently supported in the client:
   - `warmup`
   - `normal`
@@ -65,6 +78,7 @@ These are important current behaviors in the web app even when they do not yet m
   - actual last-set completion starts workout-level between-exercises timer
   - sticky full-width bottom timer tray appears only while a timer is active
   - tray can minimize into a timer FAB
+  - tray visibility can be hidden/restored at the session level from workout actions
 - `Add Exercise` client flow now includes:
   - always-visible search
   - tabbed browsing for all exercises, muscle groups, and exercise types
@@ -80,6 +94,9 @@ These are important current behaviors in the web app even when they do not yet m
   - go back and finish
   - finish anyway
   - unfinished rows are ignored when finishing anyway
+- Psychological/readiness architecture is currently client-side design/stub work only:
+  - documented in `docs/psych-layer.md`
+  - not yet exposed as API-backed capture flows
 
 ## Shared Contracts
 

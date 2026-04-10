@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
 import {
   coachingSuggestionSchema,
   mediaConfigSchema,
@@ -56,7 +56,242 @@ type ExerciseDraft = {
 type DetailTab = "summary" | "history" | "howto";
 type ThemePreference = "light" | "dark" | "system";
 type DraftSetType = "warmup" | "normal" | "drop" | "restpause" | "failure";
-type AppView = "selector" | "logger" | "finish" | "share";
+type AppView = "home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "profile";
+
+// ── Psychological Data Layer ──────────────────────────────────────────────────
+// V1: types and storage stubs defined now so data is captured from day one.
+// V2: intelligence (skip prediction, deload triggers, motivation style) ships later.
+// See docs/psych-layer.md for the full design specification.
+
+type MotivationalWhy =
+  | "inconsistent"        // "I've been inconsistent and want to fix that"
+  | "plateau"             // "I've hit a plateau and need structure"
+  | "look_feel_stronger"  // "I want to look and feel stronger"
+  | "fresh_start"         // "I'm starting fresh"
+  | "feel_good";          // "I just want to feel good"
+
+type TrainingGoal = "muscle_strength" | "fat_loss" | "endurance" | "general_fitness";
+type ExperienceLevel = "beginner" | "intermediate" | "advanced";
+type EquipmentAccess = "full_gym" | "home_gym" | "bodyweight";
+type ScheduleCommitment = 2 | 3 | 4 | 5 | 6;
+
+// 1–5 scales for mood and energy capture
+type MoodRating = 1 | 2 | 3 | 4 | 5;
+type EnergyRating = 1 | 2 | 3 | 4 | 5;
+// Standard Borg RPE — session-level perceived exertion (distinct from per-set RPE in logger)
+type RPERating = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+// 3-point scale for daily readiness (sleep/stress/energy)
+type ThreePointScale = 1 | 2 | 3;
+
+type TimeOfDay = "early_morning" | "morning" | "afternoon" | "evening" | "night";
+// 04–07 / 07–11 / 11–17 / 17–21 / 21–04
+
+type SessionSource = "plan" | "template" | "generated" | "goal_planner" | "quick" | "resume";
+
+type Trend = "improving" | "stable" | "declining";
+
+type MotivationStyle =
+  | "accountability"  // streak-driven; hurt by skips
+  | "achievement"     // PR-driven; volume milestones
+  | "social"          // responds to community activity
+  | "intrinsic"       // self-directed; data-rich; low notification preference
+  | "irregular";      // long gaps; emotional re-starts
+
+// ── UserPsychProfile — stored as singleton, captured at onboarding ────────────
+interface UserPsychProfile {
+  schemaVersion: 1;
+  motivationalWhy: MotivationalWhy | null;
+  primaryGoal: TrainingGoal | null;
+  experienceLevel: ExperienceLevel | null;
+  equipmentAccess: EquipmentAccess | null;
+  scheduleCommitment: ScheduleCommitment | null;
+  onboardingCompletedAt: string | null;   // ISO timestamp
+  lastGoalCheckAt: string | null;          // ISO timestamp — 90-day re-check prompt
+  // Consent flags — each capture dimension can be individually disabled
+  capturePostWorkoutMood: boolean;
+  capturePostWorkoutEnergy: boolean;
+  captureSessionRPE: boolean;
+  captureDailyReadiness: boolean;
+  capturePassiveBehavior: boolean;
+}
+
+// ── PostWorkoutPsych — one per completed session, optional capture ─────────────
+interface PostWorkoutPsych {
+  schemaVersion: 1;
+  sessionId: string;        // = SavedWorkoutData.savedAt
+  capturedAt: string;       // ISO timestamp
+  postMood: MoodRating | null;
+  postEnergy: EnergyRating | null;
+  sessionRPE: RPERating | null;
+  psychNote: string | null; // optional reflection, max 280 chars
+}
+
+// ── DailyReadiness — one per calendar day, optional Home card capture ──────────
+interface DailyReadiness {
+  schemaVersion: 1;
+  date: string;             // YYYY-MM-DD
+  capturedAt: string;       // ISO timestamp
+  sleepQuality: ThreePointScale | null;   // 1=poor 2=ok 3=great
+  stressLevel: ThreePointScale | null;    // 1=low 2=medium 3=high
+  energyLevel: ThreePointScale | null;    // 1=low 2=medium 3=high
+  followedBySessionId: string | null;     // populated post-session
+  skippedPlannedSession: boolean;         // had a plan, didn't start
+}
+
+// ── SessionBehaviorSignals — auto-captured at finalizeFinishedWorkoutSave ──────
+interface SessionBehaviorSignals {
+  schemaVersion: 1;
+  sessionId: string;                           // = SavedWorkoutData.savedAt
+  date: string;                                // YYYY-MM-DD
+  dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6;      // 0 = Sunday
+  timeOfDay: TimeOfDay;
+  startedAt: string;                           // ISO timestamp
+  actualDurationMinutes: number;
+  plannedDurationMinutes: number | null;
+  plannedExerciseCount: number | null;
+  actualExerciseCount: number;
+  plannedSetCount: number | null;
+  completedSetCount: number;
+  setCompletionRate: number | null;            // 0–1, null if no plan
+  sessionSource: SessionSource;
+  planId: string | null;
+  restTimerUseCount: number;
+  midSessionExercisesAdded: number;
+}
+
+// ── DerivedPsychProfile — V2 computed, schema reserved in V1 ──────────────────
+// Written by analytics, never by user action. Cached result of pattern analysis.
+interface DerivedPsychProfile {
+  schemaVersion: 1;
+  computedAt: string;
+  confidenceScore: number;                     // 0–1; don't surface insights below ~0.4
+  motivationStyle: MotivationStyle | null;
+  bestTrainingDays: (0 | 1 | 2 | 3 | 4 | 5 | 6)[];
+  skipRiskDays: (0 | 1 | 2 | 3 | 4 | 5 | 6)[];
+  bestTimeOfDay: TimeOfDay | null;
+  avgSessionsPerWeek: number | null;
+  avgReadinessScore: number | null;
+  avgPostMood: number | null;
+  avgPostEnergy: number | null;
+  avgSessionRPE: number | null;
+  avgSetCompletionRate: number | null;
+  moodTrend: Trend | null;
+  energyTrend: Trend | null;
+  consistencyTrend: Trend | null;
+  volumeTrend: Trend | null;
+  deloadRecommended: boolean;
+  deloadReason: string | null;
+  statedGoal: TrainingGoal | null;
+  behaviourAlignedWithGoal: boolean | null;
+  goalDriftDetectedAt: string | null;
+}
+
+const DEFAULT_PSYCH_PROFILE: UserPsychProfile = {
+  schemaVersion: 1,
+  motivationalWhy: null,
+  primaryGoal: null,
+  experienceLevel: null,
+  equipmentAccess: null,
+  scheduleCommitment: null,
+  onboardingCompletedAt: null,
+  lastGoalCheckAt: null,
+  capturePostWorkoutMood: true,
+  capturePostWorkoutEnergy: true,
+  captureSessionRPE: true,
+  captureDailyReadiness: true,
+  capturePassiveBehavior: true,
+};
+
+function deriveTimeOfDay(isoTimestamp: string): TimeOfDay {
+  const hour = new Date(isoTimestamp).getHours();
+  if (hour >= 4 && hour < 7) return "early_morning";
+  if (hour >= 7 && hour < 11) return "morning";
+  if (hour >= 11 && hour < 17) return "afternoon";
+  if (hour >= 17 && hour < 21) return "evening";
+  return "night";
+}
+
+function buildSessionBehaviorSignals(
+  savedAt: string,
+  session: {
+    date: string;
+    startInstant?: string;
+    duration: string;
+    exerciseCount: number;
+    totalSets: number;
+  },
+  plan: { id: string; exercises: { setCount: number }[] } | null,
+  source: SessionSource,
+  restTimerUseCount: number,
+  midSessionExercisesAdded: number,
+): SessionBehaviorSignals {
+  const startedAt = session.startInstant ?? savedAt;
+  const startDate = new Date(startedAt);
+  const durationMatch = session.duration.match(/(\d+)h?\s*(\d+)?m?/);
+  const actualMinutes = durationMatch
+    ? (parseInt(durationMatch[1] ?? "0") * (session.duration.includes("h") ? 60 : 1)) +
+      parseInt(durationMatch[2] ?? "0")
+    : 0;
+
+  const plannedSetCount = plan
+    ? plan.exercises.reduce((s, e) => s + e.setCount, 0)
+    : null;
+
+  return {
+    schemaVersion: 1,
+    sessionId: savedAt,
+    date: session.date.slice(0, 10),
+    dayOfWeek: startDate.getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+    timeOfDay: deriveTimeOfDay(startedAt),
+    startedAt,
+    actualDurationMinutes: actualMinutes,
+    plannedDurationMinutes: null,   // TODO: wire plan estimated duration when available
+    plannedExerciseCount: plan ? plan.exercises.length : null,
+    actualExerciseCount: session.exerciseCount,
+    plannedSetCount,
+    completedSetCount: session.totalSets,
+    setCompletionRate: plannedSetCount ? session.totalSets / plannedSetCount : null,
+    sessionSource: source,
+    planId: plan?.id ?? null,
+    restTimerUseCount,
+    midSessionExercisesAdded,
+  };
+}
+
+type PlannedExercise = {
+  exerciseId: string;
+  setCount: number;
+  setTypes?: DraftSetType[];
+  restTimer: string;
+  note?: string;
+};
+
+type WorkoutPlan = {
+  id: string;
+  name: string;
+  tag?: string;
+  userTags?: string[];
+  note?: string;
+  exercises: PlannedExercise[];
+  createdAt: string;
+  updatedAt: string;
+  // Template metadata (populated only on WORKOUT_PLAN_TEMPLATES entries)
+  level?: "Beginner" | "Intermediate" | "Advanced";
+  equipment?: "Full Gym" | "Dumbbells" | "Bodyweight";
+  goal?: "Hypertrophy" | "Strength" | "Endurance";
+  muscleGroups?: string[];
+  duration?: number;
+  category?: string;
+};
+
+type PlanBuilderMode = "create" | "edit" | "generate";
+type PlanSessionSource = "saved" | "library" | "generated" | "quick";
+
+type ActivePlanSession = {
+  source: PlanSessionSource;
+  planId: string | null;
+  originalPlan: WorkoutPlan | null;
+} | null;
 
 type WorkoutSettings = {
   defaultRestSeconds: string;
@@ -65,6 +300,9 @@ type WorkoutSettings = {
   showRpe: boolean;
   guidanceTopStrip: boolean;
   guidanceInline: boolean;
+  preferredGoal: string | null;
+  preferredLevel: string | null;
+  preferredEquipment: string | null;
 };
 
 type WorkoutMeta = {
@@ -72,6 +310,7 @@ type WorkoutMeta = {
   startTime: string;
   startedMinutesAgo: string;
   sessionName: string;
+  startInstant?: string;
 };
 
 type RewardCategory = "pr" | "volume" | "progress";
@@ -197,6 +436,14 @@ const themeStorageKey = "repiq-theme-preference";
 const workoutSettingsStorageKey = "repiq-workout-settings";
 const customExercisesStorageKey = "repiq-custom-exercises";
 const savedWorkoutsStorageKey = "repiq-saved-workouts";
+const workoutPlansStorageKey = "repiq-workout-plans";
+const planBuilderDraftStorageKey = "repiq-plan-builder-draft";
+// Psychological data layer (see docs/psych-layer.md)
+const psychProfileStorageKey     = "repiq-psych-profile";
+const postWorkoutPsychStorageKey  = "repiq-post-workout-psych";
+const dailyReadinessStorageKey   = "repiq-daily-readiness";
+const sessionBehaviorStorageKey  = "repiq-session-behavior";
+const derivedPsychStorageKey     = "repiq-derived-psych";
 
 const setTypeOptions: Array<{
   value: DraftSetType;
@@ -289,6 +536,21 @@ const primaryMuscleOptions = [
   "Abductors"
 ];
 
+const primaryMuscleGroups: Array<{ label: string; muscles: string[] }> = [
+  { label: "Chest & Push", muscles: ["Chest", "Front Shoulders", "Side Delts", "Triceps"] },
+  { label: "Back & Pull", muscles: ["Back", "Middle Back", "Traps", "Rear Delts", "Biceps", "Forearms"] },
+  { label: "Legs", muscles: ["Quads", "Hamstrings", "Glutes", "Hip Flexors", "Calves", "Abductors"] },
+  { label: "Core", muscles: ["Abs / Core", "Obliques", "Lower Back"] }
+];
+
+const secondaryMuscleGroups: Array<{ label: string; muscles: string[] }> = [
+  { label: "Chest & Shoulders", muscles: ["Chest", "Upper Chest", "Front Delts", "Front Shoulders", "Side Delts", "Rear Delts"] },
+  { label: "Back", muscles: ["Back", "Lats", "Middle Back", "Upper Back", "Lower Back", "Traps"] },
+  { label: "Arms", muscles: ["Biceps", "Triceps", "Forearms"] },
+  { label: "Legs", muscles: ["Quads", "Hamstrings", "Glutes", "Calves", "Adductors", "Abductors"] },
+  { label: "Core", muscles: ["Abs / Core", "Obliques"] }
+];
+
 const secondaryMuscleLibrary = [
   "Chest",
   "Upper Chest",
@@ -348,6 +610,26 @@ const customMovementSideOptions: Array<{
   { value: "unilateral", label: "Unilateral" },
   { value: "bilateral", label: "Bilateral" }
 ];
+
+const exerciseTypeDescriptions: Record<string, string> = {
+  bodyweight_only: "No equipment needed — push-ups, pull-ups, dips",
+  bodyweight_weighted: "Bodyweight base + optional load — weighted pull-ups",
+  free_weights_accessories: "Dumbbells, kettlebells, cables, bands",
+  barbell: "Barbell movements — bench, squat, deadlift",
+  machine: "Pin-loaded or plate-loaded machines",
+  freestyle_cardio: "Timed effort — runs, rows, bike intervals"
+};
+
+const measurementDescriptions: Record<string, string> = {
+  timed: "Log time and optional distance — plank, run, bike interval",
+  reps_volume: "Log reps and weight per set — bench press, curl, squat",
+  weight_timed: "Log weight held and duration — weighted wall sit, weighted plank"
+};
+
+const movementSideDescriptions: Record<string, string> = {
+  bilateral: "Both sides move together — bench press, squat",
+  unilateral: "One side at a time — dumbbell curl, single-leg press"
+};
 
 function normalizeSearchText(value: string) {
   return value
@@ -1880,8 +2162,11 @@ const defaultWorkoutSettings: WorkoutSettings = {
   transitionRestSeconds: "60",
   carryForwardDefaults: true,
   showRpe: true,
-  guidanceTopStrip: true,
-  guidanceInline: false
+  guidanceTopStrip: false,
+  guidanceInline: true,
+  preferredGoal: null,
+  preferredLevel: null,
+  preferredEquipment: null,
 };
 const initialWorkoutExercises: ExerciseDraft[] = [
   exerciseLibrary[0],
@@ -1903,10 +2188,11 @@ const initialWorkoutExercises: ExerciseDraft[] = [
   )
 ];
 const defaultWorkoutMeta: WorkoutMeta = {
-  date: new Date().toISOString().slice(0, 10),
-  startTime: formatTimeFromDate(new Date(Date.now() - 35 * 60 * 1000)),
-  startedMinutesAgo: "35",
-  sessionName: "Upper Push"
+  date: formatDateInputValue(new Date()),
+  startTime: formatTimeFromDate(new Date()),
+  startedMinutesAgo: "0",
+  sessionName: "Upper Push",
+  startInstant: new Date().toISOString()
 };
 
 function generateWorkoutName(exercises: ExerciseDraft[]): string {
@@ -1969,6 +2255,571 @@ function persistSavedWorkout(workout: SavedWorkoutData): void {
   }
 }
 
+// ── Psychological data storage ───────────────────────────────────────────────
+
+function getStoredPsychProfile(): UserPsychProfile {
+  try {
+    const raw = window.localStorage.getItem(psychProfileStorageKey);
+    if (!raw) return { ...DEFAULT_PSYCH_PROFILE };
+    return { ...DEFAULT_PSYCH_PROFILE, ...JSON.parse(raw) };
+  } catch { return { ...DEFAULT_PSYCH_PROFILE }; }
+}
+
+function persistPsychProfile(profile: UserPsychProfile): void {
+  try { window.localStorage.setItem(psychProfileStorageKey, JSON.stringify(profile)); } catch {}
+}
+
+function getStoredPostWorkoutPsych(): PostWorkoutPsych[] {
+  try {
+    const raw = window.localStorage.getItem(postWorkoutPsychStorageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+function persistPostWorkoutPsych(entry: PostWorkoutPsych): void {
+  try {
+    const existing = getStoredPostWorkoutPsych();
+    // Upsert: replace existing entry for same sessionId if re-capturing
+    const updated = [entry, ...existing.filter(e => e.sessionId !== entry.sessionId)].slice(0, 500);
+    window.localStorage.setItem(postWorkoutPsychStorageKey, JSON.stringify(updated));
+  } catch {}
+}
+
+function getStoredDailyReadiness(): DailyReadiness[] {
+  try {
+    const raw = window.localStorage.getItem(dailyReadinessStorageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+function persistDailyReadiness(entry: DailyReadiness): void {
+  try {
+    const existing = getStoredDailyReadiness();
+    // Upsert by date
+    const updated = [entry, ...existing.filter(e => e.date !== entry.date)].slice(0, 365);
+    window.localStorage.setItem(dailyReadinessStorageKey, JSON.stringify(updated));
+  } catch {}
+}
+
+function getTodayReadiness(): DailyReadiness | null {
+  const today = new Date().toISOString().slice(0, 10);
+  return getStoredDailyReadiness().find(e => e.date === today) ?? null;
+}
+
+function getStoredSessionBehavior(): SessionBehaviorSignals[] {
+  try {
+    const raw = window.localStorage.getItem(sessionBehaviorStorageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+function persistSessionBehavior(entry: SessionBehaviorSignals): void {
+  try {
+    const existing = getStoredSessionBehavior();
+    const updated = [entry, ...existing.filter(e => e.sessionId !== entry.sessionId)].slice(0, 500);
+    window.localStorage.setItem(sessionBehaviorStorageKey, JSON.stringify(updated));
+  } catch {}
+}
+
+// ── Workout plans storage ────────────────────────────────────────────────────
+
+const SAMPLE_WORKOUT_PLANS: WorkoutPlan[] = [
+  {
+    id: "sample-push",
+    name: "Push Day A",
+    tag: "Push",
+    userTags: ["PPL", "Heavy"],
+    note: "Chest, shoulders and triceps — heavy day",
+    exercises: [
+      { exerciseId: "bench-press", setCount: 4, restTimer: "120" },
+      { exerciseId: "incline-dumbbell-press", setCount: 3, restTimer: "90" },
+      { exerciseId: "shoulder-press", setCount: 3, restTimer: "90" },
+      { exerciseId: "cable-lateral-raise", setCount: 3, restTimer: "60" },
+      { exerciseId: "rope-pushdown", setCount: 3, restTimer: "60" }
+    ],
+    createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
+    updatedAt: new Date(Date.now() - 7 * 86400000).toISOString()
+  },
+  {
+    id: "sample-pull",
+    name: "Pull Day A",
+    tag: "Pull",
+    userTags: ["PPL"],
+    note: "Back and biceps",
+    exercises: [
+      { exerciseId: "lat-pulldown", setCount: 4, restTimer: "120" },
+      { exerciseId: "seated-cable-row", setCount: 3, restTimer: "90" },
+      { exerciseId: "ez-bar-curl", setCount: 3, restTimer: "60" }
+    ],
+    createdAt: new Date(Date.now() - 6 * 86400000).toISOString(),
+    updatedAt: new Date(Date.now() - 6 * 86400000).toISOString()
+  },
+  {
+    id: "sample-legs",
+    name: "Legs",
+    tag: "Legs",
+    userTags: ["PPL"],
+    note: "Quads, hamstrings and glutes",
+    exercises: [
+      { exerciseId: "barbell-squat", setCount: 4, restTimer: "180" },
+      { exerciseId: "romanian-deadlift", setCount: 3, restTimer: "120" },
+      { exerciseId: "leg-press", setCount: 3, restTimer: "120" },
+      { exerciseId: "hamstring-curl", setCount: 3, restTimer: "90" }
+    ],
+    createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+    updatedAt: new Date(Date.now() - 5 * 86400000).toISOString()
+  },
+  {
+    id: "sample-upper",
+    name: "Upper Body",
+    tag: "Upper",
+    userTags: ["Maintenance"],
+    note: "Balanced push/pull for maintenance days",
+    exercises: [
+      { exerciseId: "bench-press", setCount: 3, restTimer: "90" },
+      { exerciseId: "lat-pulldown", setCount: 3, restTimer: "90" },
+      { exerciseId: "shoulder-press", setCount: 3, restTimer: "90" }
+    ],
+    createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+    updatedAt: new Date(Date.now() - 3 * 86400000).toISOString()
+  }
+];
+
+const SAMPLE_PLAN_IDS = new Set(SAMPLE_WORKOUT_PLANS.map((p) => p.id));
+
+function getStoredWorkoutPlans(): WorkoutPlan[] {
+  if (typeof window === "undefined") return SAMPLE_WORKOUT_PLANS;
+  try {
+    const raw = window.localStorage.getItem(workoutPlansStorageKey);
+    if (!raw) return SAMPLE_WORKOUT_PLANS;
+    const parsed = JSON.parse(raw);
+    // Strip any sample plans that may have been accidentally mixed into stored data
+    const userPlans = Array.isArray(parsed) ? parsed.filter((p: WorkoutPlan) => !SAMPLE_PLAN_IDS.has(p.id)) : [];
+    return userPlans.length > 0 ? userPlans : SAMPLE_WORKOUT_PLANS;
+  } catch {
+    return SAMPLE_WORKOUT_PLANS;
+  }
+}
+
+function persistWorkoutPlans(plans: WorkoutPlan[]): void {
+  try {
+    // Never persist sample plans — they are always shown dynamically when no user plans exist
+    const userPlans = plans.filter((p) => !SAMPLE_PLAN_IDS.has(p.id));
+    window.localStorage.setItem(workoutPlansStorageKey, JSON.stringify(userPlans));
+  } catch {
+    // storage full or unavailable — ignore
+  }
+}
+
+function getStoredPlanBuilderDraft():
+  | {
+      draft: WorkoutPlan;
+      mode: PlanBuilderMode;
+    }
+  | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(planBuilderDraftStorageKey);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as { draft?: WorkoutPlan; mode?: PlanBuilderMode };
+    if (!parsed?.draft) {
+      return null;
+    }
+    return {
+      draft: parsed.draft,
+      mode: parsed.mode ?? "create"
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistPlanBuilderDraft(draft: WorkoutPlan | null, mode: PlanBuilderMode): void {
+  try {
+    if (!draft) {
+      window.localStorage.removeItem(planBuilderDraftStorageKey);
+      return;
+    }
+    window.localStorage.setItem(planBuilderDraftStorageKey, JSON.stringify({ draft, mode }));
+  } catch {
+    // storage full or unavailable — ignore
+  }
+}
+
+// ── Hardcoded starter templates ──────────────────────────────────────────────
+
+const WORKOUT_PLAN_TEMPLATES: WorkoutPlan[] = [
+  // ── PPL ──
+  {
+    id: "template-push",
+    name: "Push Day",
+    tag: "Push",
+    note: "Chest, shoulders and triceps",
+    category: "PPL", level: "Intermediate", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Chest", "Shoulders", "Triceps"], duration: 45,
+    exercises: [
+      { exerciseId: "bench-press", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "incline-dumbbell-press", setCount: 3, restTimer: "01:45" },
+      { exerciseId: "shoulder-press", setCount: 3, restTimer: "01:45" },
+      { exerciseId: "cable-lateral-raise", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "rope-pushdown", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-pull",
+    name: "Pull Day",
+    tag: "Pull",
+    note: "Back and biceps",
+    category: "PPL", level: "Intermediate", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Back", "Biceps"], duration: 40,
+    exercises: [
+      { exerciseId: "lat-pulldown", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "seated-cable-row", setCount: 3, restTimer: "01:45" },
+      { exerciseId: "chest-supported-row", setCount: 3, restTimer: "01:45" },
+      { exerciseId: "ez-bar-curl", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-legs",
+    name: "Leg Day",
+    tag: "Legs",
+    note: "Quads, hamstrings and glutes",
+    category: "PPL", level: "Intermediate", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Legs"], duration: 50,
+    exercises: [
+      { exerciseId: "barbell-squat", setCount: 4, restTimer: "02:30" },
+      { exerciseId: "romanian-deadlift", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "leg-press", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "hamstring-curl", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "standing-calf-raise", setCount: 4, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  // ── Upper / Lower ──
+  {
+    id: "template-upper-a",
+    name: "Upper Body A",
+    tag: "Upper",
+    note: "Chest, back and shoulders — press-focused",
+    category: "Upper/Lower", level: "Intermediate", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Chest", "Back", "Shoulders"], duration: 50,
+    exercises: [
+      { exerciseId: "bench-press", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "weighted-pull-up", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "shoulder-press", setCount: 3, restTimer: "01:45" },
+      { exerciseId: "seated-cable-row", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "cable-lateral-raise", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-upper-b",
+    name: "Upper Body B",
+    tag: "Upper",
+    note: "Back, chest and arms — row-focused",
+    category: "Upper/Lower", level: "Intermediate", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Back", "Chest", "Arms"], duration: 55,
+    exercises: [
+      { exerciseId: "lat-pulldown", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "bench-press", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "chest-supported-row", setCount: 3, restTimer: "01:45" },
+      { exerciseId: "incline-dumbbell-press", setCount: 3, restTimer: "01:45" },
+      { exerciseId: "ez-bar-curl", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "rope-pushdown", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-lower-a",
+    name: "Lower Body A",
+    tag: "Lower",
+    note: "Quad-dominant — squat pattern",
+    category: "Upper/Lower", level: "Intermediate", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Legs", "Core"], duration: 50,
+    exercises: [
+      { exerciseId: "barbell-squat", setCount: 4, restTimer: "02:30" },
+      { exerciseId: "leg-press", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "hamstring-curl", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "standing-calf-raise", setCount: 4, restTimer: "01:00" },
+      { exerciseId: "plank", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-lower-b",
+    name: "Lower Body B",
+    tag: "Lower",
+    note: "Hip-dominant — hinge and glute pattern",
+    category: "Upper/Lower", level: "Intermediate", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Legs", "Glutes"], duration: 50,
+    exercises: [
+      { exerciseId: "romanian-deadlift", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "barbell-hip-thrust", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "hamstring-curl", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "cable-hip-abduction", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "standing-calf-raise", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  // ── Full Body ──
+  {
+    id: "template-full-body-a",
+    name: "Full Body A",
+    tag: "Full Body",
+    note: "Compound movements covering all major groups",
+    category: "Full Body", level: "Intermediate", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Full Body"], duration: 45,
+    exercises: [
+      { exerciseId: "barbell-squat", setCount: 3, restTimer: "02:30" },
+      { exerciseId: "bench-press", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "lat-pulldown", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "shoulder-press", setCount: 3, restTimer: "01:45" },
+      { exerciseId: "plank", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-full-body-b",
+    name: "Full Body B",
+    tag: "Full Body",
+    note: "Deadlift + press + row pattern",
+    category: "Full Body", level: "Intermediate", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Full Body"], duration: 45,
+    exercises: [
+      { exerciseId: "romanian-deadlift", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "bench-press", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "seated-cable-row", setCount: 3, restTimer: "01:45" },
+      { exerciseId: "shoulder-press", setCount: 3, restTimer: "01:45" },
+      { exerciseId: "hanging-leg-raise", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-full-body-c",
+    name: "Full Body C",
+    tag: "Full Body",
+    note: "Squat + pull-up + incline pattern",
+    category: "Full Body", level: "Intermediate", equipment: "Full Gym", goal: "Strength",
+    muscleGroups: ["Full Body"], duration: 50,
+    exercises: [
+      { exerciseId: "barbell-squat", setCount: 3, restTimer: "02:30" },
+      { exerciseId: "weighted-pull-up", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "incline-dumbbell-press", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "cable-lateral-raise", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "back-extension", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  // ── Specialisation ──
+  {
+    id: "template-chest-tris",
+    name: "Chest & Triceps",
+    tag: "Chest",
+    note: "Volume day for chest and tricep detail",
+    category: "Specialisation", level: "Intermediate", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Chest", "Triceps"], duration: 45,
+    exercises: [
+      { exerciseId: "bench-press", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "incline-dumbbell-press", setCount: 4, restTimer: "01:45" },
+      { exerciseId: "chest-dip", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "rope-pushdown", setCount: 4, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-back-bis",
+    name: "Back & Biceps",
+    tag: "Back",
+    note: "Lats, rhomboids and bicep curls",
+    category: "Specialisation", level: "Intermediate", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Back", "Biceps"], duration: 50,
+    exercises: [
+      { exerciseId: "lat-pulldown", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "seated-cable-row", setCount: 4, restTimer: "01:45" },
+      { exerciseId: "chest-supported-row", setCount: 3, restTimer: "01:45" },
+      { exerciseId: "weighted-pull-up", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "ez-bar-curl", setCount: 4, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-shoulders",
+    name: "Shoulder Day",
+    tag: "Shoulders",
+    note: "Press, lateral raise and rear delt work",
+    category: "Specialisation", level: "Intermediate", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Shoulders"], duration: 40,
+    exercises: [
+      { exerciseId: "shoulder-press", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "cable-lateral-raise", setCount: 4, restTimer: "01:00" },
+      { exerciseId: "reverse-pec-deck", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "dumbbell-front-raise", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "dumbbell-shrug", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-glutes-hams",
+    name: "Glutes & Hamstrings",
+    tag: "Glutes",
+    note: "Hip thrust, hinge and isolation work",
+    category: "Specialisation", level: "Intermediate", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Glutes", "Legs"], duration: 45,
+    exercises: [
+      { exerciseId: "barbell-hip-thrust", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "romanian-deadlift", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "hamstring-curl", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "cable-hip-abduction", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "back-extension", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  // ── Powerlifting ──
+  {
+    id: "template-pl-squat",
+    name: "Squat Day",
+    tag: "Powerlifting",
+    note: "Competition squat with accessory work",
+    category: "Powerlifting", level: "Advanced", equipment: "Full Gym", goal: "Strength",
+    muscleGroups: ["Legs", "Core"], duration: 60,
+    exercises: [
+      { exerciseId: "barbell-squat", setCount: 5, restTimer: "03:00" },
+      { exerciseId: "leg-press", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "hamstring-curl", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "back-extension", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "plank", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-pl-bench",
+    name: "Bench Day",
+    tag: "Powerlifting",
+    note: "Competition bench with pressing accessories",
+    category: "Powerlifting", level: "Advanced", equipment: "Full Gym", goal: "Strength",
+    muscleGroups: ["Chest", "Triceps", "Shoulders"], duration: 55,
+    exercises: [
+      { exerciseId: "bench-press", setCount: 5, restTimer: "03:00" },
+      { exerciseId: "incline-dumbbell-press", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "chest-dip", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "rope-pushdown", setCount: 4, restTimer: "01:00" },
+      { exerciseId: "dumbbell-front-raise", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-pl-deadlift",
+    name: "Deadlift Day",
+    tag: "Powerlifting",
+    note: "Hinge pattern with upper back and trap work",
+    category: "Powerlifting", level: "Advanced", equipment: "Full Gym", goal: "Strength",
+    muscleGroups: ["Back", "Legs"], duration: 55,
+    exercises: [
+      { exerciseId: "romanian-deadlift", setCount: 5, restTimer: "03:00" },
+      { exerciseId: "seated-cable-row", setCount: 4, restTimer: "02:00" },
+      { exerciseId: "dumbbell-shrug", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "back-extension", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "standing-calf-raise", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  // ── Minimal Equipment ──
+  {
+    id: "template-dumbbell-fb",
+    name: "Dumbbell Full Body",
+    tag: "Dumbbells",
+    note: "Full body with dumbbells only",
+    category: "Minimal", level: "Intermediate", equipment: "Dumbbells", goal: "Hypertrophy",
+    muscleGroups: ["Full Body"], duration: 40,
+    exercises: [
+      { exerciseId: "incline-dumbbell-press", setCount: 3, restTimer: "01:45" },
+      { exerciseId: "romanian-deadlift", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "dumbbell-front-raise", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "dumbbell-shrug", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "standing-calf-raise", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-bodyweight",
+    name: "Bodyweight",
+    tag: "Bodyweight",
+    note: "No equipment needed",
+    category: "Minimal", level: "Beginner", equipment: "Bodyweight", goal: "Endurance",
+    muscleGroups: ["Full Body"], duration: 30,
+    exercises: [
+      { exerciseId: "push-up", setCount: 4, restTimer: "01:00" },
+      { exerciseId: "pull-up", setCount: 4, restTimer: "01:30" },
+      { exerciseId: "wall-sit", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "plank", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "hanging-leg-raise", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  // ── Beginner ──
+  {
+    id: "template-beginner-a",
+    name: "Beginner Full Body A",
+    tag: "Beginner",
+    note: "Simple compound movements — day 1",
+    category: "Beginner", level: "Beginner", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Full Body"], duration: 40,
+    exercises: [
+      { exerciseId: "barbell-squat", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "bench-press", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "lat-pulldown", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "shoulder-press", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "plank", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-beginner-b",
+    name: "Beginner Full Body B",
+    tag: "Beginner",
+    note: "Machine-friendly — day 2",
+    category: "Beginner", level: "Beginner", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Full Body"], duration: 40,
+    exercises: [
+      { exerciseId: "leg-press", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "chest-dip", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "seated-cable-row", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "cable-lateral-raise", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "back-extension", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  },
+  {
+    id: "template-beginner-c",
+    name: "Beginner Full Body C",
+    tag: "Beginner",
+    note: "Bodyweight + free weights — day 3",
+    category: "Beginner", level: "Beginner", equipment: "Full Gym", goal: "Hypertrophy",
+    muscleGroups: ["Full Body"], duration: 40,
+    exercises: [
+      { exerciseId: "romanian-deadlift", setCount: 3, restTimer: "02:00" },
+      { exerciseId: "push-up", setCount: 3, restTimer: "01:00" },
+      { exerciseId: "pull-up", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "shoulder-press", setCount: 3, restTimer: "01:30" },
+      { exerciseId: "standing-calf-raise", setCount: 3, restTimer: "01:00" }
+    ],
+    createdAt: "", updatedAt: ""
+  }
+];
+
 function getStoredThemePreference(): ThemePreference {
   if (typeof window === "undefined") {
     return "system";
@@ -2014,7 +2865,10 @@ function getStoredWorkoutSettings(): WorkoutSettings {
       guidanceInline:
         typeof parsed.guidanceInline === "boolean"
           ? parsed.guidanceInline
-          : defaultWorkoutSettings.guidanceInline
+          : defaultWorkoutSettings.guidanceInline,
+      preferredGoal: typeof parsed.preferredGoal === "string" ? parsed.preferredGoal : null,
+      preferredLevel: typeof parsed.preferredLevel === "string" ? parsed.preferredLevel : null,
+      preferredEquipment: typeof parsed.preferredEquipment === "string" ? parsed.preferredEquipment : null,
     };
   } catch {
     return defaultWorkoutSettings;
@@ -2130,7 +2984,7 @@ function formatMeasurementValue(value: number, measurementType: MeasurementType)
 
 function formatPreviousSet(set: WorkoutSet | undefined, measurementType: MeasurementType = "reps_volume") {
   if (!set) {
-    return "-";
+    return "";
   }
 
   if (measurementType === "timed") {
@@ -2174,6 +3028,13 @@ function formatTimeFromDate(date: Date) {
   return `${padTimeSegment(date.getHours())}:${padTimeSegment(date.getMinutes())}`;
 }
 
+function formatDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = padTimeSegment(date.getMonth() + 1);
+  const day = padTimeSegment(date.getDate());
+  return `${year}-${month}-${day}`;
+}
+
 function buildDateTime(date: string, time: string) {
   if (!date || !time) {
     return null;
@@ -2198,8 +3059,9 @@ function getDateAndTimeFromMinutesAgo(minutesAgoInput: string) {
   const start = new Date(Date.now() - Math.max(0, minutesAgo) * 60000);
 
   return {
-    date: start.toISOString().slice(0, 10),
-    startTime: formatTimeFromDate(start)
+    date: formatDateInputValue(start),
+    startTime: formatTimeFromDate(start),
+    startInstant: start.toISOString()
   };
 }
 
@@ -2219,8 +3081,15 @@ function formatMinutesSecondsInput(value: string) {
   return `${minutes}:${seconds}`;
 }
 
-function formatElapsedDuration(date: string, time: string) {
-  const start = buildDateTime(date, time);
+function formatElapsedDuration(date: string, time: string, startInstant?: string) {
+  const instantStart =
+    typeof startInstant === "string" && startInstant
+      ? new Date(startInstant)
+      : null;
+  const start =
+    instantStart && !Number.isNaN(instantStart.getTime())
+      ? instantStart
+      : buildDateTime(date, time);
   if (!start) {
     return "00:00";
   }
@@ -2420,6 +3289,25 @@ function getPreviousReferenceSet(
   );
 
   return matchingSets[targetOccurrence - 1];
+}
+
+function getCurrentExerciseCarrySource(
+  draftSets: DraftSet[],
+  index: number
+): DraftSet | null {
+  for (let currentIndex = index - 1; currentIndex >= 0; currentIndex -= 1) {
+    const candidate = draftSets[currentIndex];
+    if (
+      candidate.weightInput.trim().length > 0 ||
+      candidate.repsInput.trim().length > 0 ||
+      candidate.rpeInput.trim().length > 0 ||
+      candidate.done
+    ) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function normalizeSupersetGroups(exercises: ExerciseDraft[]) {
@@ -2785,6 +3673,101 @@ function getMuscleTone(score: number, maxScore: number) {
   return muscleMapPalette[0];
 }
 
+type ExerciseInsight = {
+  headline: string;
+  detail: string;
+  tone: "positive" | "neutral" | "warning";
+};
+
+function buildExerciseInsight(
+  weightTrend: number[],
+  volumeTrend: number[],
+  oneRmTrend: number[]
+): ExerciseInsight | null {
+  const n = weightTrend.length;
+  if (n < 2) return null;
+
+  const lastWeight = weightTrend[n - 1];
+  const maxWeight = Math.max(...weightTrend);
+  const previousMaxWeight = Math.max(...weightTrend.slice(0, -1));
+  const lastVolume = volumeTrend[n - 1];
+  const avgVolume = volumeTrend.reduce((a, b) => a + b, 0) / n;
+  const lastOneRm = oneRmTrend[n - 1];
+  const previousMaxOneRm = Math.max(...oneRmTrend.slice(0, -1));
+
+  // 1RM hit all-time best last session
+  if (lastOneRm > 0 && lastOneRm > previousMaxOneRm && n >= 3) {
+    return {
+      headline: "Estimated 1RM at all-time best",
+      detail: `Your best working set puts your 1RM at ${lastOneRm.toFixed(0)} kg — the highest recorded here.`,
+      tone: "positive"
+    };
+  }
+
+  // Weight hit new high last session
+  if (lastWeight > 0 && lastWeight > previousMaxWeight && n >= 2) {
+    return {
+      headline: "New weight high last session",
+      detail: `You moved ${lastWeight} kg — the heaviest logged for this exercise.`,
+      tone: "positive"
+    };
+  }
+
+  if (n >= 3) {
+    const recent = weightTrend.slice(-3);
+    const nonZero = recent.filter((w) => w > 0);
+
+    // Weight climbing 3 sessions in a row
+    if (nonZero.length === 3 && recent[2] > recent[1] && recent[1] >= recent[0]) {
+      const gain = recent[2] - recent[0];
+      return {
+        headline: "Weight climbing consistently",
+        detail: `Up ${gain.toFixed(1)} kg across your last 3 sessions — keep the overload going.`,
+        tone: "positive"
+      };
+    }
+
+    // Weight falling 3 sessions in a row
+    if (nonZero.length === 3 && recent[2] < recent[1] && recent[1] <= recent[0]) {
+      const drop = recent[0] - recent[2];
+      return {
+        headline: "Weight has been dropping",
+        detail: `Down ${drop.toFixed(1)} kg over your last 3 sessions — a recovery week or form check may help.`,
+        tone: "warning"
+      };
+    }
+
+    // Weight flat (within 2.5 kg) for 3 sessions
+    if (nonZero.length === 3 && Math.max(...nonZero) - Math.min(...nonZero) <= 2.5 && lastWeight > 0) {
+      return {
+        headline: "Weight has been steady",
+        detail: `Holding around ${lastWeight} kg for 3 sessions — try adding a rep or a small load increase.`,
+        tone: "neutral"
+      };
+    }
+  }
+
+  // Last session volume notably below average
+  if (n >= 3 && lastVolume > 0 && avgVolume > 0 && lastVolume < avgVolume * 0.78) {
+    return {
+      headline: "Volume was lower last session",
+      detail: `Last session: ${lastVolume.toFixed(0)} kg total — below your usual average of ${avgVolume.toFixed(0)} kg.`,
+      tone: "warning"
+    };
+  }
+
+  // Default: where they stand
+  if (lastWeight > 0) {
+    return {
+      headline: "Keep building",
+      detail: `Your heaviest logged is ${maxWeight} kg. Log consistently to unlock trend insights.`,
+      tone: "neutral"
+    };
+  }
+
+  return null;
+}
+
 function buildMuscleEngagementCopy(exercise: ExerciseDraft) {
   const secondary = exercise.secondaryMuscles.join(", ");
 
@@ -2852,13 +3835,1236 @@ function BodyMapPair({
   );
 }
 
+// ── Active workout tray ───────────────────────────────────────────────────────
+
+function ActiveWorkoutTray({
+  sessionName,
+  duration,
+  onResume,
+  onDiscardRequest
+}: {
+  sessionName: string;
+  duration: string;
+  onResume: () => void;
+  onDiscardRequest: () => void;
+}) {
+  return (
+    <div className="active-tray">
+      <div className="active-tray-bar">
+        <div className="active-tray-info">
+          <span className="active-tray-dot" aria-hidden="true" />
+          <div className="active-tray-text">
+            <span className="active-tray-name">{sessionName}</span>
+            <span className="active-tray-timer">{duration}</span>
+          </div>
+        </div>
+        <div className="active-tray-actions">
+          <button
+            className="active-tray-ghost-btn"
+            type="button"
+            aria-label="Discard workout"
+            onClick={onDiscardRequest}
+          >
+            Discard
+          </button>
+          <button
+            className="active-tray-resume-btn"
+            type="button"
+            aria-label="Resume workout"
+            onClick={onResume}
+          >
+            Resume
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Planner ───────────────────────────────────────────────────────────────────
+
+const PLAN_TAG_OPTIONS = ["Push", "Pull", "Legs", "Upper", "Lower", "Full Body", "Home", "Machines"];
+function planMusclePreview(plan: WorkoutPlan, library: ExerciseDraft[]): string {
+  const muscles = new Set<string>();
+  for (const pe of plan.exercises.slice(0, 5)) {
+    const ex = library.find((e) => e.id === pe.exerciseId);
+    if (ex) muscles.add(ex.primaryMuscle);
+  }
+  return [...muscles].slice(0, 3).join(" · ");
+}
+
+function getExistingUserTags(plans: WorkoutPlan[]): string[] {
+  // Most recently updated plans first, latest-added tags first within each plan
+  const sorted = [...plans].sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const plan of sorted) {
+    for (const tag of [...(plan.userTags ?? [])].reverse()) {
+      if (tag && !seen.has(tag)) { seen.add(tag); result.push(tag); }
+    }
+  }
+  return result;
+}
+
+function buildBlankWorkoutPlan(): WorkoutPlan {
+  const now = new Date().toISOString();
+  return {
+    id: `plan-${Date.now()}`,
+    name: "",
+    tag: "",
+    userTags: [],
+    note: "",
+    exercises: [],
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+function normalizePlanForComparison(plan: WorkoutPlan) {
+  return {
+    name: plan.name.trim(),
+    tag: plan.tag?.trim() ?? "",
+    userTags: [...(plan.userTags ?? [])].sort(),
+    note: plan.note?.trim() ?? "",
+    exercises: plan.exercises.map((exercise) => ({
+      exerciseId: exercise.exerciseId,
+      setCount: exercise.setCount,
+      restTimer: exercise.restTimer,
+      note: exercise.note?.trim() ?? ""
+    }))
+  };
+}
+
+function PlanCard({
+  plan,
+  isTemplate,
+  library,
+  draggable,
+  position,
+  onOpen,
+  onEdit,
+  onDuplicate,
+  onShare,
+  onEditTags,
+  onDelete,
+  onDragStart,
+  onDragOver,
+  onDrop
+}: {
+  plan: WorkoutPlan;
+  isTemplate: boolean;
+  library: ExerciseDraft[];
+  draggable?: boolean;
+  position?: number;
+  onOpen?: () => void;
+  onEdit?: () => void;
+  onDuplicate?: () => void;
+  onShare?: () => void;
+  onEditTags?: () => void;
+  onDelete?: () => void;
+  onDragStart?: () => void;
+  onDragOver?: (event: React.DragEvent<HTMLElement>) => void;
+  onDrop?: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const musclePreview = planMusclePreview(plan, library);
+  const tags = [...(plan.userTags ?? [])].reverse(); // latest first
+  const statsRef = useRef<HTMLDivElement>(null);
+  const [visibleCount, setVisibleCount] = useState(tags.length);
+  const tagKey = tags.join("\0");
+
+  useLayoutEffect(() => {
+    const el = statsRef.current;
+    if (!el || tags.length === 0) { setVisibleCount(0); return; }
+
+    const GAP = 6;
+    const MORE_PILL_W = 58; // approximate "+N more" width incl. gap
+    const availWidth = el.offsetWidth;
+
+    const tagEls = Array.from(el.querySelectorAll<HTMLElement>("[data-tag]"));
+    let used = 0, count = 0;
+    for (let i = 0; i < tagEls.length; i++) {
+      const w = tagEls[i].offsetWidth + (i > 0 ? GAP : 0);
+      const willHaveMore = i < tagEls.length - 1;
+      if (used + w + (willHaveMore ? MORE_PILL_W : 0) <= availWidth) {
+        used += w;
+        count++;
+      } else break;
+    }
+    setVisibleCount(count);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tagKey]);
+
+  const hiddenCount = tags.length - visibleCount;
+
+  return (
+    <>
+      <article
+        className={`plan-card plan-card--tappable${draggable ? " is-draggable" : ""}`}
+        draggable={draggable}
+        onClick={onOpen}
+        onDragStart={draggable ? onDragStart : undefined}
+        onDragOver={draggable ? onDragOver : undefined}
+        onDrop={draggable ? onDrop : undefined}
+      >
+        <div className="plan-card-top">
+          <div className="plan-card-meta">
+            <h3 className="plan-card-name">{plan.name}</h3>
+            {plan.note && <p className="plan-card-note">{plan.note}</p>}
+          </div>
+          {!isTemplate && (
+            <div className="plan-card-actions" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="plan-card-menu-btn"
+                type="button"
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-label="Plan options"
+              >
+                ⋮
+              </button>
+              {menuOpen && (
+                <div className="plan-card-menu" onClick={() => setMenuOpen(false)}>
+                  <button type="button" onClick={onShare}>Share</button>
+                  <button type="button" onClick={onEdit}>Edit</button>
+                  <button type="button" onClick={onEditTags}>Edit Tags</button>
+                  <button type="button" onClick={onDuplicate}>Duplicate</button>
+                  {onDelete && (
+                    <button type="button" className="is-danger" onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setConfirmDelete(true); }}>Delete</button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {tags.length > 0 && (
+          <div className="plan-card-stats" ref={statsRef}>
+            {tags.map((t, i) => (
+              <span
+                key={t}
+                data-tag
+                className="plan-tag-inline"
+                style={i >= visibleCount ? { display: "none" } : undefined}
+              >
+                {t}
+              </span>
+            ))}
+            {hiddenCount > 0 && (
+              <span className="plan-tags-more">+{hiddenCount} more</span>
+            )}
+          </div>
+        )}
+        <p className="plan-card-excount">
+          {plan.exercises.length} {plan.exercises.length === 1 ? "exercise" : "exercises"}
+        </p>
+        {musclePreview && <p className="plan-card-muscles-line">{musclePreview}</p>}
+        {position !== undefined && (
+          <span className="plan-card-position" aria-hidden="true">{position}</span>
+        )}
+      </article>
+
+      {confirmDelete && (
+        <div className="plan-delete-confirm-overlay" onClick={() => setConfirmDelete(false)}>
+          <div className="plan-delete-confirm-sheet" onClick={(e) => e.stopPropagation()}>
+            <p className="plan-delete-confirm-title">Delete "{plan.name}"?</p>
+            <p className="plan-delete-confirm-body">This workout will be permanently removed. You can&apos;t undo this.</p>
+            <div className="plan-delete-confirm-actions">
+              <button type="button" className="secondary-button" onClick={() => setConfirmDelete(false)}>Cancel</button>
+              <button type="button" className="danger-button" onClick={() => { setConfirmDelete(false); onDelete?.(); }}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function PlannerHomePage({
+  plans,
+  library,
+  existingTags,
+  activeView,
+  onViewChange,
+  hasActiveWorkout,
+  onBack,
+  onStartEmpty,
+  onCreateNew,
+  onGeneratePlan,
+  onStartPlan,
+  onEditPlan,
+  onDuplicatePlan,
+  onSharePlan,
+  onEditTags,
+  onReorderPlans,
+  onDeletePlan,
+  onUseTemplate,
+  onResumeWorkout,
+  resolvedTheme,
+  onToggleTheme,
+  defaultGoal,
+  defaultLevel,
+  defaultEquipment,
+}: {
+  plans: WorkoutPlan[];
+  library: ExerciseDraft[];
+  existingTags: string[];
+  activeView: "mine" | "library" | "generate";
+  onViewChange: (view: "mine" | "library" | "generate") => void;
+  hasActiveWorkout: boolean;
+  onBack: () => void;
+  onStartEmpty: () => void;
+  onCreateNew: () => void;
+  onGeneratePlan: (plan: WorkoutPlan) => void;
+  onStartPlan: (plan: WorkoutPlan) => void;
+  onEditPlan: (plan: WorkoutPlan) => void;
+  onDuplicatePlan: (plan: WorkoutPlan) => void;
+  onSharePlan: (plan: WorkoutPlan) => void;
+  onEditTags: (plan: WorkoutPlan) => void;
+  resolvedTheme: string;
+  onToggleTheme: () => void;
+  defaultGoal: string | null;
+  defaultLevel: string | null;
+  defaultEquipment: string | null;
+  onReorderPlans: (sourceId: string, targetId: string) => void;
+  onDeletePlan: (planId: string) => void;
+  onUseTemplate: (template: WorkoutPlan) => void;
+  onResumeWorkout: () => void;
+}) {
+  // Generate state
+  const [genGoal, setGenGoal] = useState("Hypertrophy");
+  const [genMuscles, setGenMuscles] = useState<string[]>([]);
+  const [genDuration, setGenDuration] = useState("45 min");
+  const [genError, setGenError] = useState<string | null>(null);
+  const [dragPlanId, setDragPlanId] = useState<string | null>(null);
+  const [activeTagFilter, setActiveTagFilter] = useState<string[]>([]);
+  const [tagFilterSearch, setTagFilterSearch] = useState("");
+  const lastBrowseViewRef = useRef<"mine" | "library">("mine");
+  const [detailPlan, setDetailPlan] = useState<WorkoutPlan | null>(null);
+  const [detailIsTemplate, setDetailIsTemplate] = useState(false);
+  const [libCategory, setLibCategory] = useState<string | null>(null);
+  const [libLevel, setLibLevel] = useState<string | null>(defaultLevel);
+  const [libGoal, setLibGoal] = useState<string | null>(defaultGoal);
+  const [libEquipment, setLibEquipment] = useState<string | null>(defaultEquipment);
+  const [libFilterOpen, setLibFilterOpen] = useState(false);
+  const [libFilterFocus, setLibFilterFocus] = useState<string | null>(null);
+  const [libDraftCategory, setLibDraftCategory] = useState<string | null>(null);
+  const [libDraftLevel, setLibDraftLevel] = useState<string | null>(null);
+  const [libDraftGoal, setLibDraftGoal] = useState<string | null>(null);
+  const [libDraftEquipment, setLibDraftEquipment] = useState<string | null>(null);
+  const draftVisibleCount = useMemo(() => WORKOUT_PLAN_TEMPLATES.filter((t) => {
+    if (libDraftCategory !== null && t.category !== libDraftCategory) return false;
+    if (libDraftLevel !== null && t.level !== libDraftLevel) return false;
+    if (libDraftGoal !== null && t.goal !== libDraftGoal) return false;
+    if (libDraftEquipment !== null && t.equipment !== libDraftEquipment) return false;
+    return true;
+  }).length, [libDraftCategory, libDraftLevel, libDraftGoal, libDraftEquipment]);
+  const visibleTemplates = useMemo(() => {
+    return WORKOUT_PLAN_TEMPLATES.filter((t) => {
+      if (libCategory !== null && t.category !== libCategory) return false;
+      if (libLevel !== null && t.level !== libLevel) return false;
+      if (libGoal !== null && t.goal !== libGoal) return false;
+      if (libEquipment !== null && t.equipment !== libEquipment) return false;
+      return true;
+    });
+  }, [libCategory, libLevel, libGoal, libEquipment]);
+
+  useEffect(() => {
+    if (activeView !== "generate") {
+      lastBrowseViewRef.current = activeView;
+    }
+  }, [activeView]);
+
+  function toggleMuscle(m: string) {
+    setGenMuscles((prev) => prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]);
+  }
+
+  function handleGenerate() {
+    const muscleKeywords: Record<string, string[]> = {
+      Chest: ["chest", "pec"],
+      Back: ["back", "lat", "row", "rhomboid", "trap"],
+      Shoulders: ["shoulder", "delt"],
+      Arms: ["bicep", "tricep", "arm", "forearm"],
+      Legs: ["quad", "hamstring", "glute", "calf", "leg", "hip"],
+      Core: ["core", "ab", "oblique"],
+    };
+    const goalConfig: Record<string, { setCount: number; restTimer: string }> = {
+      Strength: { setCount: 5, restTimer: "180" },
+      Hypertrophy: { setCount: 3, restTimer: "90" },
+      Endurance: { setCount: 3, restTimer: "45" },
+      "Fat loss": { setCount: 4, restTimer: "60" },
+    };
+    const durationCount: Record<string, number> = {
+      "30 min": 4, "45 min": 5, "60 min": 6, "75+ min": 8,
+    };
+    const config = goalConfig[genGoal] ?? { setCount: 3, restTimer: "90" };
+    const count = durationCount[genDuration] ?? 5;
+    const keywords = genMuscles.flatMap((m) => muscleKeywords[m] ?? [m.toLowerCase()]);
+
+    let candidates = [...library];
+    if (keywords.length > 0) {
+      candidates = candidates.filter((ex) =>
+        keywords.some(
+          (kw) =>
+            ex.primaryMuscle.toLowerCase().includes(kw) ||
+            ex.primaryMuscles?.some((pm) => pm.toLowerCase().includes(kw)) ||
+            ex.secondaryMuscles.some((sm) => sm.toLowerCase().includes(kw))
+        )
+      );
+      candidates.sort((a, b) => {
+        const score = (ex: ExerciseDraft) =>
+          keywords.filter(
+            (kw) =>
+              ex.primaryMuscle.toLowerCase().includes(kw) ||
+              ex.primaryMuscles?.some((pm) => pm.toLowerCase().includes(kw))
+          ).length;
+        return score(b) - score(a);
+      });
+    }
+
+    const selected = candidates.slice(0, count);
+    if (selected.length === 0) {
+      setGenError("No exercises found for your selections. Try removing some filters.");
+      return;
+    }
+    setGenError(null);
+    const plan: WorkoutPlan = {
+      id: `gen-${Date.now()}`,
+      name: genMuscles.length > 0
+        ? `${genGoal} · ${genMuscles.slice(0, 2).join(" & ")}`
+        : `${genGoal} Workout`,
+      tag: genGoal,
+      note: genMuscles.length > 0 ? `${genMuscles.join(", ")} · ${genDuration}` : genDuration,
+      exercises: selected.map((ex) => ({
+        exerciseId: ex.id,
+        setCount: config.setCount,
+        restTimer: config.restTimer,
+      })),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    onGeneratePlan(plan);
+  }
+
+  const trayClass = hasActiveWorkout ? " has-tray" : "";
+
+  if (activeView === "generate") {
+    return (
+      <main className={`planner-page${trayClass}`}>
+        <header className="planner-topbar">
+          <button
+            className="back-nav-button"
+            type="button"
+            onClick={() => onViewChange(lastBrowseViewRef.current)}
+            aria-label="Back"
+          >
+            ←
+          </button>
+          <div className="planner-topbar-copy">
+            <h1>Generate Session</h1>
+            <p className="planner-topbar-sub">Drafts a single workout from your goals</p>
+          </div>
+          <button type="button" className="theme-toggle-btn" onClick={onToggleTheme} aria-label="Toggle theme">
+            {resolvedTheme === "dark" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+          </button>
+        </header>
+        <section className="planner-section planner-generate-section">
+          <div className="generate-fields">
+            <div className="generate-field">
+              <label className="generate-field-label">Goal</label>
+              <div className="generate-field-chips">
+                {["Strength", "Hypertrophy", "Endurance", "Fat loss"].map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    className={`generate-chip${genGoal === g ? " is-selected" : ""}`}
+                    onClick={() => setGenGoal(g)}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="generate-field">
+              <label className="generate-field-label">Target muscles <span className="generate-field-hint">(optional)</span></label>
+              <div className="generate-field-chips">
+                {["Chest", "Back", "Shoulders", "Arms", "Legs", "Core"].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    className={`generate-chip${genMuscles.includes(m) ? " is-selected" : ""}`}
+                    onClick={() => toggleMuscle(m)}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="generate-field">
+              <label className="generate-field-label">Duration</label>
+              <div className="generate-field-chips">
+                {["30 min", "45 min", "60 min", "75+ min"].map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    className={`generate-chip${genDuration === d ? " is-selected" : ""}`}
+                    onClick={() => setGenDuration(d)}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          {genError && <p className="generate-error">{genError}</p>}
+          <p className="planner-generate-note">
+            Current generator uses goal, target muscles, and session constraints. Profile-based optimization comes next.
+          </p>
+        </section>
+        <div className={`planner-bottom-actions${hasActiveWorkout ? " has-tray" : ""}`}>
+          {hasActiveWorkout ? (
+            <button className="primary-button generate-cta-btn" type="button" disabled>
+              Generate Session
+            </button>
+          ) : (
+            <button className="primary-button generate-cta-btn" type="button" onClick={handleGenerate}>
+              Generate Session
+            </button>
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  if (detailPlan) {
+    const detailMusclePreview = planMusclePreview(detailPlan, library);
+    return (
+      <main className={`planner-page${trayClass}`}>
+        <header className="planner-topbar">
+          <button className="back-nav-button" type="button" onClick={() => setDetailPlan(null)} aria-label="Back">
+            ←
+          </button>
+          <div className="planner-topbar-copy">
+            <h1>{detailPlan.name}</h1>
+          </div>
+          <button type="button" className="theme-toggle-btn" onClick={onToggleTheme} aria-label="Toggle theme">
+            {resolvedTheme === "dark" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+          </button>
+        </header>
+
+        <section className="plan-detail-section">
+          {detailPlan.note && <p className="plan-detail-note">{detailPlan.note}</p>}
+          {((detailPlan.userTags?.length ?? 0) > 0 || detailPlan.tag) && (
+            <div className="plan-detail-tags">
+              {detailPlan.tag && <span className="plan-tag-inline">{detailPlan.tag}</span>}
+              {detailPlan.userTags?.map((t) => <span key={t} className="plan-tag-inline">{t}</span>)}
+            </div>
+          )}
+          {detailMusclePreview && (
+            <p className="plan-detail-muscles">{detailMusclePreview}</p>
+          )}
+          <div className="plan-detail-exercises">
+            {detailPlan.exercises.map((pe, i) => {
+              const ex = library.find((e) => e.id === pe.exerciseId);
+              const setLabel = pe.setTypes
+                ? pe.setTypes.map((t) => ({ warmup: "W", normal: "●", drop: "D", restpause: "RP", failure: "F" }[t] ?? "●")).join(" ")
+                : `${pe.setCount} sets`;
+              return (
+                <div key={pe.exerciseId + i} className="plan-detail-exercise-row">
+                  <span className="plan-detail-ex-num">{i + 1}</span>
+                  <div className="plan-detail-ex-info">
+                    <p className="plan-detail-ex-name">{ex?.name ?? "Unknown exercise"}</p>
+                    <span className="plan-detail-ex-meta">{setLabel} · {pe.restTimer.includes(":") ? pe.restTimer : `${pe.restTimer}s`} rest</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <div className={`planner-bottom-actions${hasActiveWorkout ? " has-tray" : ""}`}>
+          {hasActiveWorkout ? (
+            detailIsTemplate && (
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => { onUseTemplate(detailPlan); setDetailPlan(null); }}
+              >
+                Save to My Workouts
+              </button>
+            )
+          ) : (
+            <>
+              {detailIsTemplate && (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => { onUseTemplate(detailPlan); setDetailPlan(null); }}
+                >
+                  Save to My Workouts
+                </button>
+              )}
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => { onStartPlan(detailPlan); setDetailPlan(null); }}
+              >
+                Start Workout
+              </button>
+            </>
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  // Filter overlay helpers — defined outside JSX to avoid IIFE parse issues
+  type FilterDef = { label: string; options: string[]; draftValue: string | null; realSet: (v: string | null) => void; draftSet: (v: string | null) => void };
+  const filterAllDefs: FilterDef[] = [
+    { label: "Type",      options: ["PPL", "Upper/Lower", "Full Body", "Specialisation", "Powerlifting", "Minimal", "Beginner"], draftValue: libDraftCategory, realSet: setLibCategory,    draftSet: setLibDraftCategory },
+    { label: "Level",     options: ["Beginner", "Intermediate", "Advanced"],                                                     draftValue: libDraftLevel,    realSet: setLibLevel,       draftSet: setLibDraftLevel },
+    { label: "Goal",      options: ["Hypertrophy", "Strength", "Endurance"],                                                     draftValue: libDraftGoal,     realSet: setLibGoal,        draftSet: setLibDraftGoal },
+    { label: "Equipment", options: ["Full Gym", "Dumbbells", "Bodyweight"],                                                      draftValue: libDraftEquipment,realSet: setLibEquipment,   draftSet: setLibDraftEquipment },
+  ];
+  const filterVisibleDefs = libFilterFocus ? filterAllDefs.filter((f) => f.label === libFilterFocus) : filterAllDefs;
+  const applyFiltersAndClose = () => {
+    setLibCategory(libDraftCategory);
+    setLibLevel(libDraftLevel);
+    setLibGoal(libDraftGoal);
+    setLibEquipment(libDraftEquipment);
+    setLibFilterOpen(false);
+  };
+
+  return (
+    <main className={`planner-page${trayClass}`}>
+      <header className="planner-topbar">
+        <button className="back-nav-button" type="button" onClick={onBack} aria-label="Back">
+          ←
+        </button>
+        <div className="planner-topbar-copy">
+          <h1>Workout Planner</h1>
+        </div>
+        <button type="button" className="theme-toggle-btn" onClick={onToggleTheme} aria-label="Toggle theme">
+          {resolvedTheme === "dark" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+        </button>
+      </header>
+
+      <section className="planner-actions-strip">
+        <div className="planner-top-actions-row">
+          <button
+            className="planner-top-action planner-top-action-generate"
+            type="button"
+            onClick={() => onViewChange("generate")}
+          >
+            Generate Session
+          </button>
+          <button
+            className="planner-top-action planner-top-action-quick"
+            type="button"
+            onClick={onStartEmpty}
+            disabled={hasActiveWorkout}
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor" aria-hidden="true" style={{flexShrink:0}}>
+              <path d="M7.5 1L2 7.5h4.5L5 12l6.5-7H7L7.5 1z"/>
+            </svg>
+            Quick
+          </button>
+        </div>
+      </section>
+
+      <div className="planner-tabs" role="tablist" aria-label="Workout planner sections">
+        <div className="planner-tabs-track">
+          <button
+            type="button"
+            className={activeView === "mine" ? "is-active" : ""}
+            aria-selected={activeView === "mine"}
+            onClick={() => onViewChange("mine")}
+          >
+            My Workouts{plans.length > 0 ? ` (${plans.length})` : ""}
+          </button>
+          <button
+            type="button"
+            className={activeView === "library" ? "is-active" : ""}
+            aria-selected={activeView === "library"}
+            onClick={() => onViewChange("library")}
+          >
+            Library
+          </button>
+        </div>
+      </div>
+
+      <section className="planner-section">
+        {activeView === "mine" ? (
+          <>
+            {existingTags.length > 0 && (
+              <div className="plan-tag-filter">
+                <input
+                  className="plan-tag-search"
+                  placeholder="Filter by tag…"
+                  value={tagFilterSearch}
+                  onChange={(e) => setTagFilterSearch(e.target.value)}
+                />
+                <div className="plan-tag-chip-row">
+                  {(() => {
+                    const trimmed = tagFilterSearch.trim().toLowerCase();
+                    // Active filters first, then rest alphabetically
+                    const ordered = [
+                      ...activeTagFilter.filter((t) => existingTags.includes(t)),
+                      ...existingTags.filter((t) => !activeTagFilter.includes(t))
+                    ];
+                    return (trimmed ? ordered.filter((t) => t.toLowerCase().includes(trimmed)) : ordered).map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        className={`generate-chip${activeTagFilter.includes(tag) ? " is-selected" : ""}`}
+                        onClick={() =>
+                          setActiveTagFilter((prev) =>
+                            prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+                          )
+                        }
+                      >
+                        {tag}
+                      </button>
+                    ));
+                  })()}
+                </div>
+              </div>
+            )}
+            {(() => {
+              const visiblePlans = activeTagFilter.length > 0
+                ? plans.filter((p) => activeTagFilter.some((t) => p.userTags?.includes(t)))
+                : plans;
+              return visiblePlans.length === 0 ? (
+                <div className="planner-empty">
+                  <p className="planner-empty-title">
+                    {plans.length === 0 ? "No routines yet" : "No workouts match the selected tags"}
+                  </p>
+                  <p className="planner-empty-sub">
+                    {plans.length === 0
+                      ? "Create your first workout template, or use Generate Workout to draft one for you."
+                      : "Try selecting different tags or clear the filter."}
+                  </p>
+                </div>
+              ) : (
+                <div className="plan-list">
+                  <p className="planner-list-count">{visiblePlans.length} {visiblePlans.length === 1 ? "workout" : "workouts"}</p>
+                  {visiblePlans.map((plan, idx) => (
+                    <PlanCard
+                      key={plan.id}
+                      plan={plan}
+                      isTemplate={false}
+                      library={library}
+                      position={idx + 1}
+                      draggable={activeTagFilter.length === 0}
+                      onOpen={() => { setDetailPlan(plan); setDetailIsTemplate(false); }}
+                      onDragStart={() => setDragPlanId(plan.id)}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={() => {
+                        if (dragPlanId) onReorderPlans(dragPlanId, plan.id);
+                        setDragPlanId(null);
+                      }}
+                      onEdit={() => onEditPlan(plan)}
+                      onShare={() => void onSharePlan(plan)}
+                      onEditTags={() => onEditTags(plan)}
+                      onDuplicate={() => onDuplicatePlan(plan)}
+                      onDelete={SAMPLE_PLAN_IDS.has(plan.id) ? undefined : () => onDeletePlan(plan.id)}
+                    />
+                  ))}
+                </div>
+              );
+            })()}
+          </>
+        ) : (
+          <>
+            {/* Filter tray — compact summary + open button */}
+            <div className="lib-filter-tray">
+              <button
+                type="button"
+                className="lib-filter-open-btn"
+                onClick={() => {
+                  setLibDraftCategory(libCategory);
+                  setLibDraftLevel(libLevel);
+                  setLibDraftGoal(libGoal);
+                  setLibDraftEquipment(libEquipment);
+                  setLibFilterFocus(null);
+                  setLibFilterOpen(true);
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                  <path d="M1 3h12M3 7h8M5 11h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                Filters
+              </button>
+              <div className="lib-filter-tray-pills">
+                {([
+                  { label: "Type", value: libCategory, clear: () => setLibCategory(null) },
+                  { label: "Level", value: libLevel, clear: () => setLibLevel(null) },
+                  { label: "Goal", value: libGoal, clear: () => setLibGoal(null) },
+                  { label: "Equipment", value: libEquipment, clear: () => setLibEquipment(null) },
+                ] as { label: string; value: string | null; clear: () => void }[])
+                  .sort((a, b) => (a.value ? -1 : b.value ? 1 : 0))
+                  .map(({ label, value, clear }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className={`lib-filter-pill${value ? " is-active" : ""}`}
+                    onClick={() => {
+                      setLibDraftCategory(libCategory);
+                      setLibDraftLevel(libLevel);
+                      setLibDraftGoal(libGoal);
+                      setLibDraftEquipment(libEquipment);
+                      setLibFilterFocus(label);
+                      setLibFilterOpen(true);
+                    }}
+                  >
+                    <span className="lib-filter-pill-key">{label}</span>
+                    <span className="lib-filter-pill-sep">:</span>
+                    <span className="lib-filter-pill-val">{value ?? "none"}</span>
+                    {value && (
+                      <span
+                        className="lib-filter-pill-clear"
+                        role="button"
+                        aria-label={`Clear ${label} filter`}
+                        onClick={(e) => { e.stopPropagation(); clear(); }}
+                      >×</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="planner-section-hint">
+              {visibleTemplates.length} {visibleTemplates.length === 1 ? "template" : "templates"} — tap to preview and start.
+            </p>
+            {visibleTemplates.length === 0 ? (
+              <div className="planner-empty">
+                <p className="planner-empty-title">No templates match</p>
+                <p className="planner-empty-sub">Try adjusting the filters above.</p>
+              </div>
+            ) : (
+              <div className="plan-template-grid">
+                {visibleTemplates.map((template) => (
+                  <PlanCard
+                    key={template.id}
+                    plan={template}
+                    isTemplate={true}
+                    library={library}
+                    onOpen={() => { setDetailPlan(template); setDetailIsTemplate(true); }}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      <button
+        className={`planner-fab${hasActiveWorkout ? " has-tray" : ""}`}
+        type="button"
+        onClick={onCreateNew}
+        aria-label="Create workout"
+      >
+        +
+      </button>
+
+      {/* Filter overlay */}
+      {libFilterOpen && (
+        <div className="lib-filter-overlay" onClick={libFilterFocus ? () => setLibFilterOpen(false) : applyFiltersAndClose}>
+          <div className="lib-filter-sheet" onClick={(e) => e.stopPropagation()}>
+            <header className="lib-filter-sheet-header">
+              <h2 className="lib-filter-sheet-title">{libFilterFocus ?? "Filters"}</h2>
+              <button type="button" className="lib-filter-sheet-close" onClick={libFilterFocus ? () => setLibFilterOpen(false) : applyFiltersAndClose}>×</button>
+            </header>
+            <div className="lib-filter-sheet-body">
+              {filterVisibleDefs.map(({ label, options, draftValue, realSet, draftSet }) => (
+                <div key={label} className="lib-filter-sheet-section">
+                  {!libFilterFocus && <p className="lib-filter-sheet-section-label">{label}</p>}
+                  <div className="lib-filter-sheet-chips">
+                    {options.map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        className={`generate-chip${draftValue === opt ? " is-selected" : ""}`}
+                        onClick={() => {
+                          const newVal = draftValue === opt ? null : opt;
+                          if (libFilterFocus) {
+                            realSet(newVal);
+                            setLibFilterOpen(false);
+                          } else {
+                            draftSet(newVal);
+                          }
+                        }}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {!libFilterFocus && (
+              <div className="lib-filter-sheet-footer">
+                <button
+                  type="button"
+                  className="lib-filter-clear-btn"
+                  onClick={() => { setLibDraftCategory(null); setLibDraftLevel(null); setLibDraftGoal(null); setLibDraftEquipment(null); }}
+                >
+                  Clear all
+                </button>
+                <button type="button" className="primary-button lib-filter-apply-btn" onClick={applyFiltersAndClose}>
+                  Show {draftVisibleCount} {draftVisibleCount === 1 ? "template" : "templates"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
+
+function PlanTagPicker({
+  value,
+  existingTags,
+  createLabel,
+  onChange,
+  searchValue,
+  onSearchChange,
+}: {
+  value: string[];
+  existingTags: string[];
+  createLabel?: string;
+  onChange: (tags: string[]) => void;
+  searchValue?: string;
+  onSearchChange?: (s: string) => void;
+}) {
+  const [internalSearch, setInternalSearch] = useState("");
+  const search = searchValue ?? internalSearch;
+  const setSearch = onSearchChange ?? setInternalSearch;
+  const trimmed = search.trim();
+
+  const allTags = [...new Set([...existingTags, ...value])].sort((a, b) => a.localeCompare(b));
+  // Selected tags shown first, then unselected alphabetically
+  const ordered = [...value.filter((t) => allTags.includes(t)), ...allTags.filter((t) => !value.includes(t))];
+  const filtered = trimmed ? ordered.filter((t) => t.toLowerCase().includes(trimmed.toLowerCase())) : ordered;
+  const canCreate = trimmed.length > 0 && !allTags.some((t) => t.toLowerCase() === trimmed.toLowerCase());
+
+  function toggle(tag: string) {
+    onChange(value.includes(tag) ? value.filter((t) => t !== tag) : [...value, tag]);
+  }
+
+  function createAndAdd() {
+    if (!trimmed) return;
+    onChange([...value, trimmed]);
+    setSearch("");
+  }
+
+  return (
+    <div className="plan-tag-picker">
+      <input
+        className="plan-tag-search"
+        placeholder="Search or create a tag…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && canCreate) { e.preventDefault(); createAndAdd(); } }}
+      />
+      <div className="plan-tag-chip-row">
+        {filtered.map((tag) => (
+          <button
+            key={tag}
+            type="button"
+            className={`generate-chip${value.includes(tag) ? " is-selected" : ""}`}
+            onClick={() => toggle(tag)}
+          >
+            {tag}
+          </button>
+        ))}
+        {canCreate && (
+          <button type="button" className="generate-chip plan-tag-create-chip" onClick={createAndAdd}>
+            {createLabel ?? "+ New"} {trimmed}
+          </button>
+        )}
+        {filtered.length === 0 && !canCreate && (
+          <span className="plan-tag-empty">Type a name to create your first tag.</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PlanBuilderPage({
+  draft,
+  mode,
+  library,
+  existingTags,
+  onBack,
+  onChange,
+  onAddExercise,
+  onSavePlan,
+  onOpenExerciseDetails,
+  resolvedTheme,
+  onToggleTheme,
+}: {
+  draft: WorkoutPlan;
+  mode: PlanBuilderMode;
+  library: ExerciseDraft[];
+  existingTags: string[];
+  onBack: () => void;
+  onChange: (plan: WorkoutPlan) => void;
+  onAddExercise: () => void;
+  onSavePlan: (plan: WorkoutPlan) => void;
+  onOpenExerciseDetails: (exerciseId: string) => void;
+  resolvedTheme: string;
+  onToggleTheme: () => void;
+}) {
+  const [dragExerciseId, setDragExerciseId] = useState<string | null>(null);
+  const resolvedTitle =
+    mode === "generate" ? "Review Workout" : mode === "edit" ? "Edit Workout" : "New Workout";
+  const canSave = draft.exercises.length > 0;
+
+  const resolvedExercises = draft.exercises
+    .map((planned) => {
+      const exercise = library.find((entry) => entry.id === planned.exerciseId);
+      return exercise ? { planned, exercise } : null;
+    })
+    .filter((entry): entry is { planned: PlannedExercise; exercise: ExerciseDraft } => entry !== null);
+
+  function updateDraft(patch: Partial<WorkoutPlan>) {
+    onChange({
+      ...draft,
+      ...patch,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  function moveExercise(sourceId: string, targetId: string) {
+    if (sourceId === targetId) return;
+    const sourceIndex = draft.exercises.findIndex((e) => e.exerciseId === sourceId);
+    const targetIndex = draft.exercises.findIndex((e) => e.exerciseId === targetId);
+    if (sourceIndex === -1 || targetIndex === -1) return;
+    const reordered = [...draft.exercises];
+    const [item] = reordered.splice(sourceIndex, 1);
+    reordered.splice(targetIndex, 0, item);
+    updateDraft({ exercises: reordered });
+  }
+
+  function removeExercise(exerciseId: string) {
+    updateDraft({ exercises: draft.exercises.filter((pe) => pe.exerciseId !== exerciseId) });
+  }
+
+  function updatePlannedExercise(exerciseId: string, patch: Partial<PlannedExercise>) {
+    updateDraft({
+      exercises: draft.exercises.map((pe) =>
+        pe.exerciseId === exerciseId ? { ...pe, ...patch } : pe
+      )
+    });
+  }
+
+  function getEffectiveSetTypes(pe: PlannedExercise): DraftSetType[] {
+    if (pe.setTypes && pe.setTypes.length === pe.setCount) return pe.setTypes;
+    return Array.from({ length: pe.setCount }, () => "normal" as DraftSetType);
+  }
+
+  function addSet(exerciseId: string) {
+    const pe = draft.exercises.find((e) => e.exerciseId === exerciseId);
+    if (!pe) return;
+    const types = getEffectiveSetTypes(pe);
+    updatePlannedExercise(exerciseId, { setCount: pe.setCount + 1, setTypes: [...types, "normal"] });
+  }
+
+  function removeSet(exerciseId: string, index: number) {
+    const pe = draft.exercises.find((e) => e.exerciseId === exerciseId);
+    if (!pe || pe.setCount <= 1) return;
+    const types = getEffectiveSetTypes(pe).filter((_, i) => i !== index);
+    updatePlannedExercise(exerciseId, { setCount: pe.setCount - 1, setTypes: types });
+  }
+
+  function cycleSetType(exerciseId: string, index: number) {
+    const pe = draft.exercises.find((e) => e.exerciseId === exerciseId);
+    if (!pe) return;
+    const order: DraftSetType[] = ["normal", "warmup", "drop", "restpause", "failure"];
+    const types = getEffectiveSetTypes(pe);
+    const current = types[index] ?? "normal";
+    types[index] = order[(order.indexOf(current) + 1) % order.length];
+    updatePlannedExercise(exerciseId, { setTypes: [...types] });
+  }
+
+  function builderSetLabel(types: DraftSetType[], index: number): string {
+    const type = types[index] ?? "normal";
+    if (type === "normal") {
+      return String(types.slice(0, index + 1).filter((t) => t === "normal").length);
+    }
+    return setTypeOptions.find((o) => o.value === type)?.symbol ?? "#";
+  }
+
+  return (
+    <main className="planner-page">
+      <header className="planner-topbar">
+        <button className="back-nav-button" type="button" onClick={onBack} aria-label="Back">
+          ←
+        </button>
+        <div className="planner-topbar-copy">
+          <h1>{resolvedTitle}</h1>
+        </div>
+        <button type="button" className="theme-toggle-btn" onClick={onToggleTheme} aria-label="Toggle theme">
+          {resolvedTheme === "dark" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+        </button>
+      </header>
+
+      <section className="planner-section planner-builder-section">
+        <div className="builder-form">
+          <div className="builder-form-field">
+            <label className="builder-form-label" htmlFor="plan-name">Name</label>
+            <input
+              id="plan-name"
+              className="builder-form-input"
+              value={draft.name}
+              onChange={(event) => updateDraft({ name: event.target.value })}
+              placeholder="e.g. Upper Push, Leg Day…"
+            />
+          </div>
+
+          <div className="builder-form-field">
+            <label className="builder-form-label" htmlFor="plan-note">Note <span className="builder-form-optional">optional</span></label>
+            <input
+              id="plan-note"
+              className="builder-form-input"
+              value={draft.note ?? ""}
+              onChange={(event) => updateDraft({ note: event.target.value })}
+              placeholder="Focus, equipment, intent…"
+            />
+          </div>
+
+          <div className="builder-form-field">
+            <label className="builder-form-label">Tags <span className="builder-form-optional">optional</span></label>
+            <PlanTagPicker
+              value={draft.userTags ?? []}
+              existingTags={existingTags}
+              createLabel="+ New"
+              onChange={(userTags) => updateDraft({ userTags })}
+            />
+          </div>
+        </div>
+
+        <div className="planner-builder-summary">
+          <p className="planner-routine-count">
+            {draft.exercises.length} {draft.exercises.length === 1 ? "exercise" : "exercises"}
+          </p>
+        </div>
+
+        {resolvedExercises.length === 0 ? (
+          <div className="planner-builder-stub">
+            <p className="planner-empty-title">No exercises yet</p>
+            <p className="planner-empty-sub">Add exercises below to build your workout.</p>
+          </div>
+        ) : (
+          <div className="plan-list">
+            {resolvedExercises.map(({ planned, exercise }) => {
+              const setTypes = getEffectiveSetTypes(planned);
+              return (
+                <article
+                  key={planned.exerciseId}
+                  className="builder-exercise-card"
+                  draggable={true}
+                  onDragStart={() => setDragExerciseId(planned.exerciseId)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => {
+                    if (dragExerciseId) moveExercise(dragExerciseId, planned.exerciseId);
+                    setDragExerciseId(null);
+                  }}
+                >
+                  <div className="builder-ex-header">
+                    <div className="builder-ex-title-area">
+                      <span className="builder-ex-drag" aria-hidden="true">⋮⋮</span>
+                      <div className="builder-ex-copy">
+                        <button
+                          type="button"
+                          className="builder-ex-name"
+                          onClick={() => onOpenExerciseDetails(exercise.id)}
+                        >
+                          {exercise.name}
+                        </button>
+                        <p className="builder-ex-muscle">{exercise.primaryMuscles?.join(", ") || exercise.primaryMuscle}</p>
+                      </div>
+                    </div>
+                    <button className="builder-remove-btn" type="button" onClick={() => removeExercise(planned.exerciseId)} aria-label="Remove exercise">×</button>
+                  </div>
+
+                  <div className="builder-ex-rest-row">
+                    <span className="builder-ex-rest-label">Rest</span>
+                    <input
+                      className="builder-ex-rest-input"
+                      type="text"
+                      inputMode="numeric"
+                      value={planned.restTimer}
+                      onChange={(e) => updatePlannedExercise(planned.exerciseId, { restTimer: e.target.value.replace(/\D/g, "") })}
+                      aria-label="Rest seconds"
+                    />
+                    <span className="builder-ex-rest-unit">sec</span>
+                  </div>
+
+                  <div className="builder-set-list">
+                    <div className="builder-set-header">
+                      <span>SET</span>
+                      <span>TYPE</span>
+                    </div>
+                    {setTypes.map((type, i) => (
+                      <div key={i} className="builder-set-row">
+                        <button
+                          type="button"
+                          className={`builder-set-label builder-set-label--${type}`}
+                          onClick={() => cycleSetType(planned.exerciseId, i)}
+                          title="Tap to change set type"
+                        >
+                          {builderSetLabel(setTypes, i)}
+                        </button>
+                        <span className="builder-set-type-name">{setTypeOptions.find((o) => o.value === type)?.label ?? "Working set"}</span>
+                        <button type="button" className="builder-set-remove" onClick={() => removeSet(planned.exerciseId, i)} aria-label="Remove set">−</button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button type="button" className="builder-add-set-btn" onClick={() => addSet(planned.exerciseId)}>+ Add Set</button>
+                </article>
+              );
+            })}
+          </div>
+        )}
+
+        <button
+          className="secondary-button builder-add-exercise-btn"
+          type="button"
+          onClick={onAddExercise}
+        >
+          + Add Exercise
+        </button>
+      </section>
+
+      <div className="planner-bottom-actions">
+        <div className="planner-builder-actions">
+          <button
+            className="primary-button planner-builder-save-btn"
+            type="button"
+            disabled={!canSave}
+            onClick={() => onSavePlan(draft)}
+          >
+            {mode === "edit" ? "Save Changes" : "Save Workout"}
+          </button>
+        </div>
+      </div>
+
+    </main>
+  );
+}
+
 function ExerciseDetailPage({
   exercise,
   activeTab,
   initialScrollTarget,
   onTabChange,
   onBack,
-  customActions
+  customActions,
+  resolvedTheme,
+  onToggleTheme,
 }: {
   exercise: ExerciseDraft;
   activeTab: DetailTab;
@@ -2870,8 +5076,10 @@ function ExerciseDetailPage({
     onEdit: () => void;
     onDeleteOrArchive: () => void;
   } | null;
+  resolvedTheme?: string;
+  onToggleTheme?: () => void;
 }) {
-  const bottomRef = useRef<HTMLElement | null>(null);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
   const [manageConfirmOpen, setManageConfirmOpen] = useState(false);
   const measurementType = getExerciseMeasurementType(exercise);
   const recentHistory = [...exercise.history].reverse();
@@ -2894,6 +5102,8 @@ function ExerciseDetailPage({
         .sort((a, b) => estimateOneRm(b) - estimateOneRm(a))[0]
     )
   );
+  const hasHistory = recentHistory.length > 0;
+  const exerciseInsight = buildExerciseInsight(weightTrend, volumeTrend, oneRmTrend);
 
   useEffect(() => {
     if (initialScrollTarget !== "bottom") {
@@ -2932,6 +5142,10 @@ function ExerciseDetailPage({
               {customActions.deleteMode === "archive" ? "Hide" : "Delete"}
             </button>
           </div>
+        ) : resolvedTheme && onToggleTheme ? (
+          <button type="button" className="theme-toggle-btn" onClick={onToggleTheme} aria-label="Toggle theme">
+            {resolvedTheme === "dark" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+          </button>
         ) : (
           <span className="detail-topbar-spacer" aria-hidden="true" />
         )}
@@ -2966,10 +5180,34 @@ function ExerciseDetailPage({
           <div className="detail-hero">
             <img src={exercise.imageSrc} alt={exercise.name} className="detail-image" />
           </div>
-          <div className="detail-copy">
-            <h2>{exercise.name}</h2>
-            <p>Primary: {exercise.primaryMuscle}</p>
-            <p>Secondary: {exercise.secondaryMuscles.join(", ")}</p>
+
+          <div className="detail-muscles-card">
+            <div className="detail-muscles-row">
+              <span className="detail-muscles-label">Primary</span>
+              <div className="detail-muscle-chips">
+                {(exercise.primaryMuscles ?? [exercise.primaryMuscle]).map((m) => (
+                  <span key={m} className="detail-muscle-chip is-primary">{m}</span>
+                ))}
+              </div>
+            </div>
+            {exercise.secondaryMuscles.length > 0 && (
+              <div className="detail-muscles-row">
+                <span className="detail-muscles-label">Secondary</span>
+                <div className="detail-muscle-chips">
+                  {exercise.secondaryMuscles.map((m) => (
+                    <span key={m} className="detail-muscle-chip">{m}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="detail-meta-pills">
+            <span className="detail-meta-pill">{getExerciseTypeLabel(inferExerciseType(exercise))}</span>
+            <span className="detail-meta-pill">{measurementType === "timed" ? "Timed" : measurementType === "weight_timed" ? "Weight + timed" : "Reps & volume"}</span>
+            {exercise.movementSide && (
+              <span className="detail-meta-pill">{exercise.movementSide === "unilateral" ? "Unilateral" : "Bilateral"}</span>
+            )}
           </div>
 
           <div className="chart-card">
@@ -2990,66 +5228,88 @@ function ExerciseDetailPage({
 
       {activeTab === "history" && (
         <section className="detail-section">
-          <div className="detail-metrics">
-            <article className="detail-metric">
-              <span>Heaviest Weight</span>
-              <strong>{Math.max(...weightTrend)}kg</strong>
-            </article>
-            <article className="detail-metric">
-              <span>Best 1RM</span>
-              <strong>{Math.max(...oneRmTrend)}kg</strong>
-            </article>
-            <article className="detail-metric">
-              <span>Last Volume</span>
-              <strong>{volumeTrend.at(-1)?.toFixed(0)}kg</strong>
-            </article>
-          </div>
+          {hasHistory ? (
+            <>
+              <div className="detail-metrics">
+                <article className="detail-metric">
+                  <span>Heaviest Weight</span>
+                  <strong>{Math.max(...weightTrend)}kg</strong>
+                </article>
+                <article className="detail-metric">
+                  <span>Best 1RM</span>
+                  <strong>{Math.max(...oneRmTrend)}kg</strong>
+                </article>
+                <article className="detail-metric">
+                  <span>Last Volume</span>
+                  <strong>{volumeTrend.at(-1)?.toFixed(0)}kg</strong>
+                </article>
+              </div>
 
-          <div className="chart-card">
-            <div className="chart-copy">
-              <h3>Highest Weight</h3>
-              <span>Recent sessions</span>
-            </div>
-            <svg viewBox="0 0 260 92" className="trend-chart" aria-hidden="true">
-              <path d={buildSparkline(weightTrend)} />
-            </svg>
-          </div>
-
-          <div className="chart-card">
-            <div className="chart-copy">
-              <h3>One Rep Max</h3>
-              <span>Estimated from best working set</span>
-            </div>
-            <svg viewBox="0 0 260 92" className="trend-chart" aria-hidden="true">
-              <path d={buildSparkline(oneRmTrend)} />
-            </svg>
-          </div>
-
-          <div className="chart-card">
-            <div className="chart-copy">
-              <h3>Volume History</h3>
-              <span>Session volume trend</span>
-            </div>
-            <svg viewBox="0 0 260 92" className="trend-chart" aria-hidden="true">
-              <path d={buildSparkline(volumeTrend)} />
-            </svg>
-          </div>
-
-          <div className="history-list">
-            {recentHistory.map((session) => (
-              <article key={session.session_key ?? session.date} className="history-card">
-                <div className="history-top">
-                  <strong>{formatSessionDate(session.date)}</strong>
-                  <span>
-                    {session.sets.reduce((total, set) => total + set.weight * set.reps, 0).toFixed(0)} kg
-                  </span>
+              <div className="chart-card">
+                <div className="chart-copy">
+                  <h3>Highest Weight</h3>
+                  <span>Recent sessions</span>
                 </div>
-                <p className="history-detail">
-                  {session.sets.map((set) => formatPreviousSet(set, measurementType)).join(" • ")}
-                </p>
-              </article>
-            ))}
-          </div>
+                <svg viewBox="0 0 260 92" className="trend-chart" aria-hidden="true">
+                  <path d={buildSparkline(weightTrend)} />
+                </svg>
+              </div>
+
+              <div className="chart-card">
+                <div className="chart-copy">
+                  <h3>One Rep Max</h3>
+                  <span>Estimated from best working set</span>
+                </div>
+                <svg viewBox="0 0 260 92" className="trend-chart" aria-hidden="true">
+                  <path d={buildSparkline(oneRmTrend)} />
+                </svg>
+              </div>
+
+              <div className="chart-card">
+                <div className="chart-copy">
+                  <h3>Volume History</h3>
+                  <span>Session volume trend</span>
+                </div>
+                <svg viewBox="0 0 260 92" className="trend-chart" aria-hidden="true">
+                  <path d={buildSparkline(volumeTrend)} />
+                </svg>
+              </div>
+
+              {exerciseInsight && (
+                <div className={`exercise-insight-card tone-${exerciseInsight.tone}`}>
+                  <div className="exercise-insight-header">
+                    <span className="exercise-insight-label">Performance insight</span>
+                    <span className="exercise-insight-badge">Based on your history</span>
+                  </div>
+                  <p className="exercise-insight-headline">{exerciseInsight.headline}</p>
+                  <p className="exercise-insight-detail">{exerciseInsight.detail}</p>
+                </div>
+              )}
+
+              <div className="history-list">
+                {recentHistory.map((session) => (
+                  <article key={session.session_key ?? session.date} className="history-card">
+                    <div className="history-top">
+                      <strong>{formatSessionDate(session.date)}</strong>
+                      <span>
+                        {session.sets.reduce((total, set) => total + set.weight * set.reps, 0).toFixed(0)} kg
+                      </span>
+                    </div>
+                    <p className="history-detail">
+                      {session.sets.map((set) => formatPreviousSet(set, measurementType)).join(" • ")}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : (
+            <article className="empty-state-card detail-empty-state">
+              <strong>No history yet</strong>
+              <p>
+                Log this exercise in a workout first, and RepIQ will start showing trends, volume, and performance insights here.
+              </p>
+            </article>
+          )}
         </section>
       )}
 
@@ -3058,11 +5318,14 @@ function ExerciseDetailPage({
           <div className="detail-hero">
             <img src={exercise.imageSrc} alt={exercise.name} className="detail-image" />
           </div>
-          <ol className="instruction-list">
-            {exercise.howTo.map((step) => (
-              <li key={step}>{step}</li>
+          <div className="howto-steps">
+            {exercise.howTo.map((step, index) => (
+              <div key={step} className="howto-step">
+                <span className="howto-step-num">{index + 1}</span>
+                <p className="howto-step-text">{step}</p>
+              </div>
             ))}
-          </ol>
+          </div>
           {exercise.videoLabel && (
             <a href="#" className="video-link" onClick={(event) => event.preventDefault()}>
               {exercise.videoLabel}
@@ -3071,15 +5334,7 @@ function ExerciseDetailPage({
         </section>
       )}
 
-      {activeTab === "summary" && (
-        <section ref={bottomRef} className="coach-shell detail-coach">
-          <p className="label">What We Can Do Better</p>
-          <p className="detail-note">
-            This separate page should eventually own movement education, progress charts, PRs,
-            alternatives, and technique media so the logger stays fast and uncluttered.
-          </p>
-        </section>
-      )}
+      {activeTab === "summary" && <div ref={bottomRef} />}
 
       {customActions && manageConfirmOpen && (
         <section className="sheet-overlay leave-center-overlay" onClick={() => setManageConfirmOpen(false)}>
@@ -3453,17 +5708,28 @@ function ShareCardsStrip({ draft }: { draft: FinishWorkoutDraft }) {
 
 function PostSaveShareScreen({
   data,
-  onDone
+  onDone,
+  resolvedTheme,
+  onToggleTheme,
 }: {
   data: SavedWorkoutData;
   onDone: () => void;
+  resolvedTheme?: string;
+  onToggleTheme?: () => void;
 }) {
   return (
     <main className="detail-page post-save-screen">
       <div className="post-save-hero">
         <div className="post-save-topbar">
           <span className="post-save-eyebrow">Saved!</span>
-          <button type="button" className="post-save-done-btn" onClick={onDone}>Done</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {resolvedTheme && onToggleTheme && (
+              <button type="button" className="theme-toggle-btn theme-toggle-btn--ghost" onClick={onToggleTheme} aria-label="Toggle theme">
+                {resolvedTheme === "dark" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+              </button>
+            )}
+            <button type="button" className="post-save-done-btn" onClick={onDone}>Done</button>
+          </div>
         </div>
         <h1 className="post-save-title">{data.sessionName}</h1>
         <p className="post-save-subtitle">{formatSessionDate(data.date)}</p>
@@ -3703,13 +5969,17 @@ function FinishWorkoutPage({
   onTitleChange,
   onNoteChange,
   onBack,
-  onSave
+  onSave,
+  resolvedTheme,
+  onToggleTheme,
 }: {
   draft: FinishWorkoutDraft;
   onTitleChange: (value: string) => void;
   onNoteChange: (value: string) => void;
   onBack: () => void;
   onSave: (images: WorkoutMediaAsset[]) => Promise<void>;
+  resolvedTheme?: string;
+  onToggleTheme?: () => void;
 }) {
   // V1 decision: keep photo support visible for progress/self-reference.
   // Video stays parked behind a disabled flag until we design its real
@@ -3717,6 +5987,7 @@ function FinishWorkoutPage({
   const finishPhotosEnabled = true;
   const finishVideoEnabled = false;
   const [exercisesExpanded, setExercisesExpanded] = useState(false);
+  const [rewardsExpanded, setRewardsExpanded] = useState(false);
   // Each photo stores the original src (for re-editing) and the adjusted display URL
   const [photos, setPhotos] = useState<{ name: string; src: string; display: string }[]>([]);
   const [pendingCrop, setPendingCrop] = useState<{ name: string; src: string; index: number | null } | null>(null);
@@ -4024,7 +6295,13 @@ function FinishWorkoutPage({
             ←
           </button>
           <span className="finish-hero-eyebrow">Workout Complete</span>
-          <span style={{ width: 32 }} aria-hidden="true" />
+          {resolvedTheme && onToggleTheme ? (
+            <button type="button" className="theme-toggle-btn theme-toggle-btn--ghost" onClick={onToggleTheme} aria-label="Toggle theme">
+              {resolvedTheme === "dark" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+            </button>
+          ) : (
+            <span style={{ width: 32 }} aria-hidden="true" />
+          )}
         </div>
         <h1 className="finish-hero-title">{draft.sessionName || "Today's Workout"}</h1>
         <p className="finish-hero-date">{formatSessionDate(draft.date)}</p>
@@ -4050,43 +6327,50 @@ function FinishWorkoutPage({
 
       <section className="detail-section finish-workout-section">
         {draft.rewardSummary.total > 0 && (
-          <section className="finish-workout-card">
-            <div className="finish-workout-heading">
-              <p className="label">Rewards</p>
-              <span className="finish-workout-heading-meta">
-                {draft.rewardSummary.total} {draft.rewardSummary.total === 1 ? "reward" : "rewards"}
-              </span>
-            </div>
-            <div className="reward-sheet-summary finish-workout-reward-summary">
-              {draft.rewardSummary.exercise > 0 && (
-                <span className="reward-summary-chip reward-summary-chip-exercise">
-                  {rewardLevelIcon.exercise} {draft.rewardSummary.exercise}
-                </span>
-              )}
-              {draft.rewardSummary.set > 0 && (
-                <span className="reward-summary-chip reward-summary-chip-set">
-                  {rewardLevelIcon.set} {draft.rewardSummary.set}
-                </span>
-              )}
-              {draft.rewardSummary.session > 0 && (
-                <span className="reward-summary-chip reward-summary-chip-session">
-                  {rewardLevelIcon.session} {draft.rewardSummary.session}
-                </span>
-              )}
-            </div>
-            <div className="reward-sheet-list finish-workout-reward-list">
-              {draft.rewards.map((reward) => (
-                <article key={reward.id} className="reward-sheet-item">
-                  <div className={`reward-sheet-icon reward-sheet-icon-${reward.level}`} aria-hidden="true">
-                    {rewardLevelIcon[reward.level]}
-                  </div>
-                  <div>
-                    <strong>{reward.shortLabel}</strong>
-                    <p>{reward.detail}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
+          <section className="finish-workout-card finish-rewards-card">
+            <button
+              type="button"
+              className="finish-rewards-toggle"
+              onClick={() => setRewardsExpanded((v) => !v)}
+              aria-expanded={rewardsExpanded}
+            >
+              <div className="finish-rewards-toggle-left">
+                <p className="label" style={{ margin: 0 }}>Rewards</p>
+                <div className="reward-sheet-summary finish-workout-reward-summary">
+                  {draft.rewardSummary.exercise > 0 && (
+                    <span className="reward-summary-chip reward-summary-chip-exercise">
+                      {rewardLevelIcon.exercise} {draft.rewardSummary.exercise}
+                    </span>
+                  )}
+                  {draft.rewardSummary.set > 0 && (
+                    <span className="reward-summary-chip reward-summary-chip-set">
+                      {rewardLevelIcon.set} {draft.rewardSummary.set}
+                    </span>
+                  )}
+                  {draft.rewardSummary.session > 0 && (
+                    <span className="reward-summary-chip reward-summary-chip-session">
+                      {rewardLevelIcon.session} {draft.rewardSummary.session}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <span className={`finish-rewards-chevron${rewardsExpanded ? " is-open" : ""}`} aria-hidden="true">›</span>
+            </button>
+            {rewardsExpanded && (
+              <div className="reward-sheet-list finish-workout-reward-list">
+                {draft.rewards.map((reward) => (
+                  <article key={reward.id} className="reward-sheet-item">
+                    <div className={`reward-sheet-icon reward-sheet-icon-${reward.level}`} aria-hidden="true">
+                      {rewardLevelIcon[reward.level]}
+                    </div>
+                    <div>
+                      <strong>{reward.shortLabel}</strong>
+                      <p>{reward.detail}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
           </section>
         )}
 
@@ -4334,7 +6618,9 @@ function AddExercisePage({
   onCreateCustom,
   onOpenDetails,
   editorExercise,
-  onUpdateCustom
+  onUpdateCustom,
+  resolvedTheme,
+  onToggleTheme,
 }: {
   templates: ExerciseDraft[];
   existingExerciseNames: string[];
@@ -4344,6 +6630,8 @@ function AddExercisePage({
   onOpenDetails: (exerciseId: string) => void;
   editorExercise?: ExerciseDraft | null;
   onUpdateCustom?: (exerciseId: string, draft: CustomExerciseInput) => string | null;
+  resolvedTheme?: string;
+  onToggleTheme?: () => void;
 }) {
   const isEditingCustomExercise = Boolean(editorExercise);
   const [mode, setMode] = useState<AddExerciseMode>(editorExercise ? "create" : "browse");
@@ -4837,8 +7125,13 @@ function AddExercisePage({
           </h1>
         </div>
         <div className="detail-topbar-actions">
-          {mode === "browse" ? (
-            <div className="detail-topbar-action-group">
+          <div className="detail-topbar-action-group">
+            {resolvedTheme && onToggleTheme && (
+              <button type="button" className="theme-toggle-btn" onClick={onToggleTheme} aria-label="Toggle theme">
+                {resolvedTheme === "dark" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+              </button>
+            )}
+            {mode === "browse" && (
               <button
                 className="icon-button add-exercise-header-icon"
                 type="button"
@@ -4848,10 +7141,8 @@ function AddExercisePage({
               >
                 ≡
               </button>
-            </div>
-          ) : (
-            <span className="detail-topbar-spacer" aria-hidden="true" />
-          )}
+            )}
+          </div>
         </div>
       </header>
 
@@ -4887,7 +7178,7 @@ function AddExercisePage({
                 <div className="search-shell">
                   <div className="search-shell-head">
                     <div className="search-shell-head-left">
-                      <span className="label">{selectedTemplateIds.length} SELECTED</span>
+                      <span className="selected-count-label">{selectedTemplateIds.length} <span className="selected-count-word">selected</span></span>
                       <div className="quick-filter-row" aria-label="Quick exercise filters">
                         <button
                           type="button"
@@ -5055,88 +7346,62 @@ function AddExercisePage({
           </>
         ) : (
           <div className="custom-exercise-form">
-            <div className="custom-form-intro">
-              <p className="custom-form-step">Step {createStep} of 2</p>
-              <div className="custom-progress-strip" aria-label="Create exercise progress">
-                <span
-                  className={`custom-progress-chip ${
-                    createStep === 1 ? "is-page-active" : ""
-                  } ${customName.trim().length > 1 ? "is-complete" : "is-active"}`}
-                >
-                  1. Name
-                </span>
-                <span
-                  className={`custom-progress-chip ${
-                    createStep === 1 ? "is-page-active" : ""
-                  } ${customPrimaryMuscles.length > 0 ? "is-complete" : ""}`}
-                >
-                  2. Primary
-                </span>
-                <span
-                  className={`custom-progress-chip ${
-                    createStep === 1 ? "is-page-active" : ""
-                  } ${
-                    customPrimaryMuscles.length > 0 && customSecondaryMuscles.length === 0 ? "is-active" : ""
-                  } ${customSecondaryMuscles.length > 0 ? "is-complete" : ""}`}
-                >
-                  3. Secondary
-                </span>
-                <span
-                  className={`custom-progress-chip ${
-                    createStep === 2 ? "is-page-active" : ""
-                  } ${
-                    createStep === 2 && customExerciseType === null ? "is-active" : ""
-                  } ${customExerciseType ? "is-complete" : ""}`}
-                >
-                  4. Type
-                </span>
-                <span
-                  className={`custom-progress-chip ${
-                    createStep === 2 ? "is-page-active" : ""
-                  } ${
-                    createStep === 2 && (customMeasurementType === null || customMovementSide === null) ? "is-active" : ""
-                  } ${customMeasurementType && customMovementSide ? "is-complete" : ""}`}
-                >
-                  5. Tracking
-                </span>
+            {/* ── Step stepper ── */}
+            <div className="create-stepper">
+              <div className={`create-stepper-step${createStep === 1 ? " is-active" : " is-done"}`}>
+                <div className="create-stepper-dot">{createStep > 1 ? "✓" : "1"}</div>
+                <span className="create-stepper-label">Basics</span>
               </div>
+              <div className={`create-stepper-line${createStep > 1 ? " is-done" : ""}`} />
+              <div className={`create-stepper-step${createStep === 2 ? " is-active" : createStep > 2 ? " is-done" : ""}`}>
+                <div className="create-stepper-dot">2</div>
+                <span className="create-stepper-label">Logging</span>
+              </div>
+            </div>
+
+            <div className="custom-form-intro">
               <h2 className="custom-form-title">
-                {createStep === 1 ? "Basics" : "How RepIQ should log it"}
+                {isEditingCustomExercise
+                  ? createStep === 1 ? "Edit basics" : "Edit logging"
+                  : createStep === 1 ? "Name & muscles" : "How RepIQ logs it"}
               </h2>
               <p className="custom-form-copy">
                 {createStep === 1
-                  ? "Set up the exercise identity first. You can define how it should be logged in the next step."
-                  : "These choices tell RepIQ how to show and interpret this exercise inside the logger."}
+                  ? "Set the exercise name, target muscles, and an optional photo."
+                  : "These choices tell RepIQ how to track and interpret this exercise in the logger."}
               </p>
             </div>
 
             {createStep === 1 ? (
               <>
-                <label className="custom-form-field">
-                  <span className="custom-form-label">Exercise name</span>
-                  <input
-                    className="custom-form-input"
-                    type="text"
-                    value={customName}
-                    placeholder="e.g. Machine Chest Press"
-                    onChange={(event) => setCustomName(event.target.value)}
-                  />
-                </label>
+                {/* Name + Image card */}
+                <div className="create-form-card">
+                  <label className="custom-form-field">
+                    <span className="custom-form-label">Exercise name</span>
+                    <input
+                      className="custom-form-input"
+                      type="text"
+                      value={customName}
+                      placeholder="e.g. Machine Chest Press"
+                      onChange={(event) => setCustomName(event.target.value)}
+                      autoFocus={!isEditingCustomExercise}
+                    />
+                  </label>
 
-                <div className="custom-form-field">
-                  <span className="custom-form-label">Image</span>
-                  <div className="custom-image-picker">
-                    <div className="custom-image-preview">
-                      {customImageSrc ? (
-                        <img src={customImageSrc} alt="Custom exercise preview" />
-                      ) : (
-                        <img src={genericExerciseImage} alt="" aria-hidden="true" />
-                      )}
+                  <div className="custom-form-field">
+                    <div className="custom-form-label-row">
+                      <span className="custom-form-label">Photo</span>
+                      <span className="custom-form-label-optional">Optional</span>
                     </div>
-                    <div className="custom-image-actions">
-                      <label className="custom-image-button" htmlFor="custom-exercise-image">
-                        {customImageSrc ? "Change image" : "Add image"}
-                      </label>
+                    <label htmlFor="custom-exercise-image" className={`custom-image-zone${customImageSrc ? " has-image" : ""}`}>
+                      {customImageSrc ? (
+                        <img src={customImageSrc} alt="Exercise preview" />
+                      ) : (
+                        <div className="custom-image-zone-empty">
+                          <span className="custom-image-zone-icon" aria-hidden="true">📷</span>
+                          <span>Tap to add photo</span>
+                        </div>
+                      )}
                       <input
                         id="custom-exercise-image"
                         className="custom-image-input"
@@ -5144,142 +7409,133 @@ function AddExercisePage({
                         accept="image/*"
                         onChange={handleCustomImageChange}
                       />
-                      {customImageSrc && (
-                        <button
-                          type="button"
-                          className="custom-image-remove"
-                          onClick={() => setCustomImageSrc("")}
-                        >
-                          Remove image
-                        </button>
-                      )}
-                    </div>
+                    </label>
+                    {customImageSrc && (
+                      <button
+                        type="button"
+                        className="custom-image-remove-link"
+                        onClick={() => setCustomImageSrc("")}
+                      >
+                        Remove photo
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                <div className="custom-form-field">
-                  <span className="custom-form-label">2. Primary muscles</span>
-                  <details
-                    className="custom-multi-select"
-                    open={primarySelectorOpen}
-                    onToggle={(event) => setPrimarySelectorOpen((event.currentTarget as HTMLDetailsElement).open)}
-                  >
-                    <summary className="custom-multi-select-summary">
-                      {customPrimaryMuscles.length > 0
-                        ? customPrimaryMuscles.join(", ")
-                        : "Choose primary muscles"}
-                    </summary>
-                    <div className="custom-option-grid custom-option-grid-muscles">
-                      {primaryMuscleOptions.map((muscle) => (
-                        <button
-                          key={muscle}
-                          type="button"
-                          className={`custom-choice-button ${
-                            customPrimaryMuscles.includes(muscle) ? "is-active" : ""
-                          }`}
-                          onClick={() => togglePrimaryMuscle(muscle)}
-                        >
-                          {muscle}
-                        </button>
-                      ))}
-                    </div>
-                  </details>
-                </div>
-
-                {customPrimaryMuscles.length > 0 ? (
-                  <div className="custom-form-field">
-                    <div className="custom-form-label-row">
-                      <span className="custom-form-label">3. Secondary muscles</span>
-                      <span className="custom-form-label-optional">Optional</span>
-                    </div>
-                    <details
-                      className={`custom-multi-select ${customSecondaryMuscles.length === 0 ? "is-prompted" : ""}`}
-                      open={secondarySelectorOpen}
-                      onToggle={(event) => setSecondarySelectorOpen((event.currentTarget as HTMLDetailsElement).open)}
-                    >
-                      <summary className="custom-multi-select-summary">
-                        {customSecondaryMuscles.length > 0
-                          ? customSecondaryMuscles.join(", ")
-                          : "Choose secondary muscles"}
-                      </summary>
+                {/* Primary muscles card — grouped by region */}
+                <div className="create-form-card">
+                  <div className="custom-form-label-row">
+                    <span className="custom-form-label">Primary muscles</span>
+                    {customPrimaryMuscles.length > 0 && (
+                      <span className="custom-form-label-count">{customPrimaryMuscles.length} selected</span>
+                    )}
+                  </div>
+                  {primaryMuscleGroups.map((group) => (
+                    <div key={group.label} className="muscle-group">
+                      <span className="muscle-group-label">{group.label}</span>
                       <div className="custom-option-grid custom-option-grid-muscles">
-                        {secondaryMuscleOptions.map((muscle) => (
+                        {group.muscles.map((muscle) => (
                           <button
                             key={muscle}
                             type="button"
-                            className={`custom-choice-button ${
-                              customSecondaryMuscles.includes(muscle) ? "is-active" : ""
-                            }`}
-                            onClick={() => toggleSecondaryMuscle(muscle)}
+                            className={`custom-choice-button${customPrimaryMuscles.includes(muscle) ? " is-active" : ""}`}
+                            onClick={() => togglePrimaryMuscle(muscle)}
                           >
                             {muscle}
                           </button>
                         ))}
                       </div>
-                    </details>
-                    {customSecondaryMuscles.length === 0 && (
-                      <p className="custom-next-hint">
-                        Next: add secondary muscles if this movement meaningfully hits support muscles too.
-                      </p>
-                    )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Secondary muscles card */}
+                {customPrimaryMuscles.length > 0 && (
+                  <div className="create-form-card">
+                    <div className="custom-form-label-row">
+                      <span className="custom-form-label">Secondary muscles</span>
+                      <span className="custom-form-label-optional">
+                        {customSecondaryMuscles.length > 0 ? `${customSecondaryMuscles.length} selected` : "Optional"}
+                      </span>
+                    </div>
+                    <p className="custom-form-copy" style={{ marginTop: -4 }}>
+                      Muscles meaningfully involved but not the primary focus.
+                    </p>
+                    {secondaryMuscleGroups.map((group) => {
+                      const available = group.muscles.filter((m) => secondaryMuscleOptions.includes(m));
+                      if (available.length === 0) return null;
+                      return (
+                        <div key={group.label} className="muscle-group">
+                          <span className="muscle-group-label">{group.label}</span>
+                          <div className="custom-option-grid custom-option-grid-muscles">
+                            {available.map((muscle) => (
+                              <button
+                                key={muscle}
+                                type="button"
+                                className={`custom-choice-button${customSecondaryMuscles.includes(muscle) ? " is-active" : ""}`}
+                                onClick={() => toggleSecondaryMuscle(muscle)}
+                              >
+                                {muscle}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                ) : (
-                  <p className="custom-field-hint">
-                    Choose the primary muscle first, then you can add secondary muscles.
-                  </p>
                 )}
               </>
             ) : (
               <>
-                <div className="custom-form-field">
-                  <span className="custom-form-label">Type</span>
-                  <div className="custom-option-grid">
+                {/* Exercise type card */}
+                <div className="create-form-card">
+                  <span className="custom-form-label">Equipment / type</span>
+                  <div className="custom-option-grid custom-option-grid-described">
                     {customExerciseTypeOptions.map((option) => (
                       <button
                         key={option.value}
                         type="button"
-                        className={`custom-choice-button ${
-                          customExerciseType === option.value ? "is-active" : ""
-                        }`}
+                        className={`custom-choice-button custom-choice-button-described${customExerciseType === option.value ? " is-active" : ""}`}
                         onClick={() => setCustomExerciseType(option.value)}
                       >
-                        {option.label}
+                        <span className="custom-choice-label">{option.label}</span>
+                        <span className="custom-choice-desc">{exerciseTypeDescriptions[option.value]}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div className="custom-form-field">
-                  <span className="custom-form-label">How it is calculated</span>
-                  <div className="custom-option-grid custom-option-grid-tight">
+                {/* Measurement card — always shown so user can override */}
+                <div className="create-form-card">
+                  <span className="custom-form-label">What to track per set</span>
+                  <div className="custom-option-grid custom-option-grid-described">
                     {customMeasurementOptions.map((option) => (
                       <button
                         key={option.value}
                         type="button"
-                        className={`custom-choice-button ${
-                          customMeasurementType === option.value ? "is-active" : ""
-                        }`}
+                        className={`custom-choice-button custom-choice-button-described${customMeasurementType === option.value ? " is-active" : ""}`}
                         onClick={() => setCustomMeasurementType(option.value)}
                       >
-                        {option.label}
+                        <span className="custom-choice-label">{option.label}</span>
+                        <span className="custom-choice-desc">{measurementDescriptions[option.value]}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div className="custom-form-field">
+                {/* Movement side card */}
+                <div className="create-form-card">
                   <span className="custom-form-label">Movement side</span>
-                  <div className="custom-option-grid custom-option-grid-tight">
+                  <div className="custom-option-grid custom-option-grid-described">
                     {customMovementSideOptions.map((option) => (
                       <button
                         key={option.value}
                         type="button"
-                        className={`custom-choice-button ${
-                          customMovementSide === option.value ? "is-active" : ""
-                        }`}
+                        className={`custom-choice-button custom-choice-button-described${customMovementSide === option.value ? " is-active" : ""}`}
                         onClick={() => setCustomMovementSide(option.value)}
                       >
-                        {option.label}
+                        <span className="custom-choice-label">{option.label}</span>
+                        <span className="custom-choice-desc">{movementSideDescriptions[option.value]}</span>
                       </button>
                     ))}
                   </div>
@@ -5288,6 +7544,13 @@ function AddExercisePage({
             )}
 
             <div className="sheet-actions custom-form-actions">
+              {!canContinueToStepTwo && createStep === 1 && (
+                <p className="custom-form-continue-hint">
+                  {customName.trim().length <= 1
+                    ? "Add a name to continue"
+                    : "Select at least one primary muscle"}
+                </p>
+              )}
               {createStep === 1 ? (
                 <>
                   <button
@@ -5611,14 +7874,249 @@ function MusclesWorkedPage({
   );
 }
 
+// ── Bottom Navigation Bar ─────────────────────────────────────────────────────
+function BottomNav({ activeView, onNavigate }: { activeView: AppView; onNavigate: (view: "home" | "planner" | "insights") => void }) {
+  return (
+    <nav className="bottom-nav" aria-label="Main navigation">
+      <button className={`bottom-nav-tab${activeView === "home" ? " is-active" : ""}`} type="button" onClick={() => onNavigate("home")} aria-label="Home">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+        </svg>
+        <span>Home</span>
+      </button>
+      <button className={`bottom-nav-tab${activeView === "planner" ? " is-active" : ""}`} type="button" onClick={() => onNavigate("planner")} aria-label="Planner">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+        </svg>
+        <span>Planner</span>
+      </button>
+      <button className={`bottom-nav-tab${activeView === "insights" ? " is-active" : ""}`} type="button" onClick={() => onNavigate("insights")} aria-label="Insights">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+        </svg>
+        <span>Insights</span>
+      </button>
+    </nav>
+  );
+}
+
+// ── Workout Report Page ───────────────────────────────────────────────────────
+function WorkoutReportPage({
+  data,
+  onBack,
+  onShare,
+  resolvedTheme,
+  onToggleTheme,
+}: {
+  data: SavedWorkoutData;
+  onBack: () => void;
+  onShare: () => void;
+  resolvedTheme?: string;
+  onToggleTheme?: () => void;
+}) {
+  const rewardLevelIcon: Record<LoggerReward["level"], string> = { session: "🏆", exercise: "⭐", set: "✓" };
+
+  return (
+    <main className="detail-page finish-workout-page" data-theme={resolvedTheme}>
+      <div className="finish-hero">
+        <div className="finish-hero-topbar">
+          <button className="finish-hero-back" type="button" onClick={onBack} aria-label="Back">←</button>
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <p className="finish-hero-eyebrow label" style={{ color: "rgba(255,255,255,0.7)", margin: 0 }}>Workout Report</p>
+          </div>
+          {resolvedTheme && onToggleTheme ? (
+            <button type="button" className="theme-toggle-btn theme-toggle-btn--ghost" onClick={onToggleTheme} aria-label="Toggle theme">
+              {resolvedTheme === "dark"
+                ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+            </button>
+          ) : <span style={{ width: 38 }} />}
+        </div>
+        <h1 className="finish-hero-title">{data.sessionName}</h1>
+        <p className="finish-hero-date">{new Date(data.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</p>
+        <div className="finish-hero-stats">
+          <div className="finish-hero-stat"><span className="finish-hero-stat-label">Duration</span><strong className="finish-hero-stat-value">{data.duration}</strong></div>
+          <div className="finish-hero-stat"><span className="finish-hero-stat-label">Sets</span><strong className="finish-hero-stat-value">{data.totalSets}</strong></div>
+          <div className="finish-hero-stat"><span className="finish-hero-stat-label">Exercises</span><strong className="finish-hero-stat-value">{data.exerciseCount}</strong></div>
+          {data.totalVolume > 0 && <div className="finish-hero-stat"><span className="finish-hero-stat-label">Volume</span><strong className="finish-hero-stat-value">{data.totalVolume.toFixed(0)} kg</strong></div>}
+        </div>
+      </div>
+
+      <div className="finish-workout-body">
+        {data.rewards.length > 0 && (
+          <section className="finish-workout-card">
+            <p className="label" style={{ marginBottom: 8 }}>Rewards</p>
+            <div className="reward-sheet-summary finish-workout-reward-summary">
+              {data.rewardSummary.session > 0 && <span className="reward-summary-chip reward-summary-chip-session">{rewardLevelIcon.session} {data.rewardSummary.session}</span>}
+              {data.rewardSummary.exercise > 0 && <span className="reward-summary-chip reward-summary-chip-exercise">{rewardLevelIcon.exercise} {data.rewardSummary.exercise}</span>}
+              {data.rewardSummary.set > 0 && <span className="reward-summary-chip reward-summary-chip-set">{rewardLevelIcon.set} {data.rewardSummary.set}</span>}
+            </div>
+            <div className="reward-sheet-list finish-workout-reward-list" style={{ borderTop: "1px solid rgba(255,255,255,0.12)", paddingTop: 10, marginTop: 8 }}>
+              {data.rewards.map((r) => (
+                <article key={r.id} className="reward-sheet-item">
+                  <div className={`reward-sheet-icon reward-sheet-icon-${r.level}`}>{rewardLevelIcon[r.level]}</div>
+                  <div><strong>{r.shortLabel}</strong><p>{r.detail}</p></div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="finish-workout-card">
+          <p className="label" style={{ marginBottom: 8 }}>Exercises</p>
+          {data.exercises.map((ex) => (
+            <div key={ex.id} className="finish-exercise-row">
+              <span className="finish-exercise-name">{ex.name}</span>
+              <span className="finish-exercise-sets">{ex.loggedSets} sets</span>
+            </div>
+          ))}
+        </section>
+
+        {data.note && (
+          <section className="finish-workout-card">
+            <p className="label" style={{ marginBottom: 6 }}>Note</p>
+            <p className="settings-note" style={{ margin: 0 }}>{data.note}</p>
+          </section>
+        )}
+
+        <button className="primary-button finish-save-btn" type="button" onClick={onShare}>
+          Share Summary
+        </button>
+      </div>
+    </main>
+  );
+}
+
+// ── Insights Page ─────────────────────────────────────────────────────────────
+function InsightsPage({
+  savedWorkouts,
+  onOpenReport,
+  resolvedTheme,
+  onToggleTheme,
+}: {
+  savedWorkouts: SavedWorkoutData[];
+  onOpenReport: (workout: SavedWorkoutData) => void;
+  resolvedTheme?: string;
+  onToggleTheme?: () => void;
+}) {
+  const [tab, setTab] = useState<"analyzer" | "reports">("reports");
+
+  return (
+    <main className="shell selector-shell" data-theme={resolvedTheme}>
+      <section className="app-shell selector-page">
+        <header className="selector-header">
+          <div>
+            <p className="label">REPIQ</p>
+            <h1>Insights</h1>
+          </div>
+          {resolvedTheme && onToggleTheme && (
+            <button type="button" className="theme-toggle-btn" onClick={onToggleTheme} aria-label="Toggle theme">
+              {resolvedTheme === "dark"
+                ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+            </button>
+          )}
+        </header>
+
+        <div className="planner-tabs" role="tablist" aria-label="Insights sections">
+          <div className="planner-tabs-track">
+            <button type="button" className={tab === "reports" ? "is-active" : ""} aria-selected={tab === "reports"} onClick={() => setTab("reports")}>Reports</button>
+            <button type="button" className={tab === "analyzer" ? "is-active" : ""} aria-selected={tab === "analyzer"} onClick={() => setTab("analyzer")}>Analyzer</button>
+          </div>
+        </div>
+
+        {tab === "reports" ? (
+          <section className="planner-section">
+            {savedWorkouts.length === 0 ? (
+              <div className="planner-builder-stub">
+                <p className="planner-empty-title">No workouts logged yet</p>
+                <p className="planner-empty-sub">Complete a workout to see your reports here.</p>
+              </div>
+            ) : (
+              <div className="plan-list">
+                {savedWorkouts.map((w) => (
+                  <article key={w.savedAt} className="session-card" style={{ cursor: "pointer" }} onClick={() => onOpenReport(w)}>
+                    <div className="session-card-top">
+                      <div>
+                        <p className="label">{new Date(w.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</p>
+                        <h3 style={{ margin: "2px 0 0", fontWeight: 700, fontSize: "1rem" }}>{w.sessionName}</h3>
+                      </div>
+                      <span style={{ color: "var(--muted)", fontSize: "1.2rem" }}>›</span>
+                    </div>
+                    <p className="settings-note" style={{ margin: "6px 0 0" }}>{w.duration} · {w.totalSets} sets · {w.exerciseCount} exercises</p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : (
+          <section className="planner-section">
+            <div className="planner-builder-stub">
+              <p className="planner-empty-title">Analyzer coming soon</p>
+              <p className="planner-empty-sub">Trends, plateaus, and volume tracking will appear here.</p>
+            </div>
+          </section>
+        )}
+      </section>
+    </main>
+  );
+}
+
+// ── Profile Page ──────────────────────────────────────────────────────────────
+function ProfilePage({
+  onBack,
+  resolvedTheme,
+  onToggleTheme,
+}: {
+  onBack: () => void;
+  resolvedTheme?: string;
+  onToggleTheme?: () => void;
+}) {
+  return (
+    <main className="profile-page" data-theme={resolvedTheme}>
+      <header className="profile-header">
+        <button className="back-nav-button detail-back-button" type="button" onClick={onBack} aria-label="Back">←</button>
+        <span className="profile-header-title">Profile</span>
+        {resolvedTheme && onToggleTheme ? (
+          <button type="button" className="theme-toggle-btn" onClick={onToggleTheme} aria-label="Toggle theme">
+            {resolvedTheme === "dark"
+              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+          </button>
+        ) : <span style={{ width: 38 }} aria-hidden="true" />}
+      </header>
+
+      <div className="profile-section">
+        <p className="profile-section-label">Settings</p>
+        <div className="profile-list">
+          {[
+            { label: "Preferences", sub: "Theme, units, display" },
+            { label: "Account", sub: "Manage your account" },
+            { label: "Import / Export", sub: "Backup and restore data" },
+          ].map(({ label, sub }) => (
+            <button key={label} type="button" className="profile-row">
+              <div>
+                <p style={{ margin: 0, fontWeight: 600, fontSize: "0.92rem" }}>{label}</p>
+                <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>{sub}</p>
+              </div>
+              <span className="profile-row-chevron">›</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </main>
+  );
+}
+
 export function App() {
-  const [appView, setAppView] = useState<AppView>("logger");
-  const [hasActiveWorkout, setHasActiveWorkout] = useState(true);
+  const storedPlanBuilderState = getStoredPlanBuilderDraft();
+  const [appView, setAppView] = useState<AppView>("home");
+  const [hasActiveWorkout, setHasActiveWorkout] = useState(false);
   const [clockTick, setClockTick] = useState(() => Date.now());
   const [themePreference, setThemePreference] = useState<ThemePreference>(getStoredThemePreference);
   const [systemTheme, setSystemTheme] = useState<"light" | "dark">(getSystemTheme);
-  const [exercises, setExercises] = useState<ExerciseDraft[]>(initialWorkoutExercises);
-  const [activeExerciseId, setActiveExerciseId] = useState<string | null>(initialWorkoutExercises[0].id);
+  const [exercises, setExercises] = useState<ExerciseDraft[]>([]);
+  const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
   const [userActiveExerciseId, setUserActiveExerciseId] = useState<string | null>(null);
   const [detailsExerciseId, setDetailsExerciseId] = useState<string | null>(null);
   const [detailsScrollTarget, setDetailsScrollTarget] = useState<"top" | "bottom">("top");
@@ -5632,6 +8130,7 @@ export function App() {
   const [reorderOpen, setReorderOpen] = useState(false);
   const [reorderDragId, setReorderDragId] = useState<string | null>(null);
   const [collapsedExerciseIds, setCollapsedExerciseIds] = useState<string[]>([]);
+  const [focusedExpandedExerciseId, setFocusedExpandedExerciseId] = useState<string | null>(null);
   const [guidanceCollapsed, setGuidanceCollapsed] = useState(false);
   const [timingOpen, setTimingOpen] = useState(false);
   const [leavePromptOpen, setLeavePromptOpen] = useState(false);
@@ -5639,6 +8138,25 @@ export function App() {
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
   const [finishWorkoutDraft, setFinishWorkoutDraft] = useState<FinishWorkoutDraft | null>(null);
   const [savedWorkoutData, setSavedWorkoutData] = useState<SavedWorkoutData | null>(null);
+  const [workoutPlans, setWorkoutPlans] = useState<WorkoutPlan[]>(getStoredWorkoutPlans);
+  const [editingPlan, setEditingPlan] = useState<WorkoutPlan | null>(null);
+  const [planBuilderDraft, setPlanBuilderDraft] = useState<WorkoutPlan | null>(
+    storedPlanBuilderState?.draft ?? null
+  );
+  const [planBuilderMode, setPlanBuilderMode] = useState<PlanBuilderMode>(
+    storedPlanBuilderState?.mode ?? "create"
+  );
+  const [plannerView, setPlannerView] = useState<"mine" | "library" | "generate">("mine");
+  const [activePlanSession, setActivePlanSession] = useState<ActivePlanSession>(null);
+  const [discardReturnView, setDiscardReturnView] = useState<"home" | "planner">("home");
+  const [reportWorkout, setReportWorkout] = useState<SavedWorkoutData | null>(null);
+  const [savedWorkoutsList, setSavedWorkoutsList] = useState<SavedWorkoutData[]>(getStoredSavedWorkouts);
+  const [templateApplyPromptImages, setTemplateApplyPromptImages] = useState<WorkoutMediaAsset[] | null>(null);
+  const [tagPlanId, setTagPlanId] = useState<string | null>(null);
+  const [tagPlanDraft, setTagPlanDraft] = useState<string[]>([]);
+  const [tagPlanSearch, setTagPlanSearch] = useState("");
+  const [builderAddExerciseOpen, setBuilderAddExerciseOpen] = useState(false);
+  const [trayDiscardOpen, setTrayDiscardOpen] = useState(false);
   const [supersetSheetExerciseId, setSupersetSheetExerciseId] = useState<string | null>(null);
   const [supersetSelectionIds, setSupersetSelectionIds] = useState<string[]>([]);
   const [exerciseRestDefaults, setExerciseRestDefaults] = useState<ExerciseRestDefaults>({});
@@ -5662,6 +8180,7 @@ export function App() {
   const [topGuidancePullDistance, setTopGuidancePullDistance] = useState(0);
   const [activeRestTimer, setActiveRestTimer] = useState<ActiveRestTimer>(null);
   const [restDockMinimized, setRestDockMinimized] = useState(false);
+  const [showBottomRestDock, setShowBottomRestDock] = useState(true);
   const [loggerRewards, setLoggerRewards] = useState<LoggerReward[]>([]);
   const [rewardSheetOpen, setRewardSheetOpen] = useState(false);
   const titleHoldTimer = useRef<number | null>(null);
@@ -5687,14 +8206,23 @@ export function App() {
   const activeExercise =
     (resolvedActiveExerciseId
       ? exercises.find((exercise) => exercise.id === resolvedActiveExerciseId)
-      : null) ?? exercises[0];
+      : null) ?? exercises[0] ?? null;
   const activeExerciseIndex = resolvedActiveExerciseId
     ? exercises.findIndex((exercise) => exercise.id === resolvedActiveExerciseId)
     : -1;
+  const resolvedFocusedExpandedExerciseId =
+    focusedExpandedExerciseId &&
+    exercises.some(
+      (exercise) =>
+        exercise.id === focusedExpandedExerciseId && !collapsedExerciseIds.includes(exercise.id)
+    )
+      ? focusedExpandedExerciseId
+      : null;
   const activeCustomExercises = useMemo(
     () => customExercises.filter((exercise) => exercise.libraryStatus !== "archived"),
     [customExercises]
   );
+  const existingUserTags = useMemo(() => getExistingUserTags(workoutPlans), [workoutPlans]);
   const availableExerciseTemplates = useMemo(
     () => [...exerciseTemplates, ...activeCustomExercises],
     [activeCustomExercises]
@@ -5728,9 +8256,10 @@ export function App() {
     state.status === "loading"
       ? "RepIQ is checking your completed sets against recent sessions so the next prompt reflects your actual workout pattern, not just the plan on paper."
       : state.suggestion?.why ?? state.message ?? fallbackGuidanceWhy;
+  const hasExercises = exercises.length > 0;
   const hasStartedExercise = exercises.some((exercise) => isExerciseStarted(exercise));
   const showTopGuidanceSurface =
-    settings.guidanceTopStrip && showTopGuidance && !allExercisesComplete;
+    hasExercises && settings.guidanceTopStrip && showTopGuidance && !allExercisesComplete;
 
   const activeRestSeconds =
     activeRestTimer
@@ -5741,16 +8270,8 @@ export function App() {
     activeRestTimer && activeRestTimer.totalSeconds > 0
       ? Math.max(0, Math.min(100, (activeRestSeconds / activeRestTimer.totalSeconds) * 100))
       : 0;
-  const stickyRestLabel =
-    activeRestTimer?.kind === "transition"
-      ? activeRestTimer?.pausedRemainingSeconds !== null
-        ? "Between exercises paused"
-        : "Between exercises"
-      : activeRestTimer?.pausedRemainingSeconds !== null
-        ? "Rest paused"
-        : "Rest timer";
   const showStickyRestDock =
-    activeRestTimer !== null && activeRestSeconds > 0;
+    showBottomRestDock && activeRestTimer !== null && activeRestSeconds > 0;
 
   const workoutSummary = useMemo(() => {
     return exercises.reduce(
@@ -5803,9 +8324,170 @@ export function App() {
   }, [loggerRewards]);
 
   const derivedDuration = useMemo(
-    () => formatElapsedDuration(workoutMeta.date, workoutMeta.startTime),
-    [clockTick, workoutMeta.date, workoutMeta.startTime, workoutMeta.startedMinutesAgo]
+    () => formatElapsedDuration(workoutMeta.date, workoutMeta.startTime, workoutMeta.startInstant),
+    [clockTick, workoutMeta.date, workoutMeta.startTime, workoutMeta.startedMinutesAgo, workoutMeta.startInstant]
   );
+
+  useEffect(() => {
+    if (planBuilderDraft && planBuilderMode !== "edit") {
+      persistPlanBuilderDraft(planBuilderDraft, planBuilderMode);
+      return;
+    }
+    persistPlanBuilderDraft(null, "create");
+  }, [planBuilderDraft, planBuilderMode]);
+
+  useEffect(() => {
+    if (!resolvedFocusedExpandedExerciseId) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const card = document.querySelector<HTMLElement>(
+        `[data-exercise-card-id="${resolvedFocusedExpandedExerciseId}"]`
+      );
+      card?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    });
+  }, [resolvedFocusedExpandedExerciseId]);
+
+  function buildPlanFromCurrentExercises(basePlan?: WorkoutPlan | null): WorkoutPlan {
+    const now = new Date().toISOString();
+    return {
+      id: basePlan?.id ?? `plan-${Date.now()}`,
+      name: workoutMeta.sessionName.trim() || basePlan?.name || generateWorkoutName(exercises),
+      tag: basePlan?.tag ?? "",
+      userTags: basePlan?.userTags ?? [],
+      note: basePlan?.note ?? "",
+      exercises: exercises.map((exercise) => ({
+        exerciseId:
+          availableExerciseTemplates.find(
+            (template) => exercise.id === template.id || exercise.id.startsWith(`${template.id}-`)
+          )?.id ?? exercise.id,
+        setCount: exercise.draftSets.length,
+        restTimer: exercise.restTimer,
+        note: exercise.note.trim() || undefined
+      })),
+      createdAt: basePlan?.createdAt ?? now,
+      updatedAt: now
+    };
+  }
+
+  function activeWorkoutHasTemplateChanges() {
+    if (activePlanSession?.source !== "saved" || !activePlanSession.originalPlan) {
+      return false;
+    }
+    const currentPlan = buildPlanFromCurrentExercises(activePlanSession.originalPlan);
+    return JSON.stringify(normalizePlanForComparison(currentPlan)) !== JSON.stringify(normalizePlanForComparison(activePlanSession.originalPlan));
+  }
+
+  function finalizeFinishedWorkoutSave(images: WorkoutMediaAsset[], applyTemplateChanges: boolean) {
+    if (!finishWorkoutDraft) return;
+
+    if (applyTemplateChanges && activePlanSession?.source === "saved" && activePlanSession.originalPlan) {
+      const updatedPlan = buildPlanFromCurrentExercises(activePlanSession.originalPlan);
+      savePlan(updatedPlan);
+    }
+
+    const completedCustomSessions = exercises.flatMap((exercise) => {
+      const matchingTemplate = customExercises.find(
+        (template) => exercise.id === template.id || exercise.id.startsWith(`${template.id}-`)
+      );
+      if (!matchingTemplate) {
+        return [];
+      }
+
+      const lastSession = exercise.history[exercise.history.length - 1];
+      const completedSets = buildCompletedSets(
+        exercise.draftSets,
+        lastSession,
+        settings.carryForwardDefaults,
+        getExerciseMeasurementType(exercise)
+      ).resolvedSets;
+
+      if (completedSets.length === 0) {
+        return [];
+      }
+
+      return [
+        {
+          templateId: matchingTemplate.id,
+          session: {
+            date: workoutMeta.date,
+            exercise: matchingTemplate.name,
+            session_key: `${matchingTemplate.id}-${Date.now()}-${exercise.id}`,
+            sets: completedSets
+          } satisfies ExerciseHistorySession
+        }
+      ];
+    });
+
+    if (completedCustomSessions.length > 0) {
+      setCustomExercises((current) =>
+        current.map((exercise) => {
+          const matchingSessions = completedCustomSessions.filter(
+            (entry) => entry.templateId === exercise.id
+          );
+          if (matchingSessions.length === 0) {
+            return exercise;
+          }
+
+          return cloneExerciseDraft(exercise, {
+            history: [...exercise.history, ...matchingSessions.map((entry) => entry.session)]
+          });
+        })
+      );
+    }
+
+    const saved: SavedWorkoutData = {
+      ...finishWorkoutDraft,
+      images,
+      savedAt: new Date().toISOString()
+    };
+    persistSavedWorkout(saved);
+
+    // ── Passive psych capture (zero user friction) ──────────────────────────
+    // Automatically record behavioral signals for every completed session.
+    // This seeds the V2 psychological intelligence layer from day one.
+    const psychProfile = getStoredPsychProfile();
+    if (psychProfile.capturePassiveBehavior) {
+      const source: SessionSource = activePlanSession
+        ? activePlanSession.source === "saved" ? "plan"
+          : activePlanSession.source === "library" ? "template"
+          : "generated"
+        : "quick";
+      const signals = buildSessionBehaviorSignals(
+        saved.savedAt,
+        {
+          date: saved.date,
+          startInstant: workoutMeta.startInstant,
+          duration: saved.duration,
+          exerciseCount: saved.exerciseCount,
+          totalSets: saved.totalSets,
+        },
+        activePlanSession?.originalPlan
+          ? { id: activePlanSession.originalPlan.id, exercises: activePlanSession.originalPlan.exercises }
+          : null,
+        source,
+        0,   // TODO: wire restTimerUseCount from logger state
+        0,   // TODO: wire midSessionExercisesAdded from logger state
+      );
+      persistSessionBehavior(signals);
+      // Link today's readiness entry to this session if one was captured
+      const todayReadiness = getTodayReadiness();
+      if (todayReadiness && !todayReadiness.followedBySessionId) {
+        persistDailyReadiness({ ...todayReadiness, followedBySessionId: saved.savedAt });
+      }
+    }
+    // ── End passive psych capture ───────────────────────────────────────────
+
+    setSavedWorkoutData(saved);
+    setReportWorkout(saved);
+    setSavedWorkoutsList(getStoredSavedWorkouts());
+    setTemplateApplyPromptImages(null);
+    setActivePlanSession(null);
+    resetWorkout();
+    setHasActiveWorkout(false);
+    setAppView("report");
+  }
 
   function buildFinishWorkoutDraft(ignoredIncompleteSets: number): FinishWorkoutDraft {
     const exerciseSummaries = exercises
@@ -6139,6 +8821,10 @@ export function App() {
         }
       }
 
+      if (resolvedFocusedExpandedExerciseId === exerciseId) {
+        setFocusedExpandedExerciseId(null);
+      }
+
       return [...current, exerciseId];
     });
     setMenuExerciseId(null);
@@ -6147,6 +8833,7 @@ export function App() {
   function toggleCollapseAllExercises() {
     const allCollapsed = collapsedExerciseIds.length === exercises.length && guidanceCollapsed;
     setCollapsedExerciseIds(allCollapsed ? [] : exercises.map((exercise) => exercise.id));
+    setFocusedExpandedExerciseId(null);
     setGuidanceCollapsed(!allCollapsed);
     setMenuExerciseId(null);
   }
@@ -6158,6 +8845,9 @@ export function App() {
   }
 
   function openWorkoutMusclesPage() {
+    if (!activeExercise) {
+      return;
+    }
     setMusclesPageMode("overall");
     setMusclesExerciseId(activeExercise.id);
     setMenuExerciseId(null);
@@ -6287,6 +8977,7 @@ export function App() {
       return;
     }
     const measurementType = getExerciseMeasurementType(exercise);
+    const carrySource = getCurrentExerciseCarrySource(exercise.draftSets, setIndex);
 
     const previousSet = getPreviousReferenceSet(
       exercise.draftSets,
@@ -6296,24 +8987,31 @@ export function App() {
     const draftSet = exercise.draftSets[setIndex];
     const resolvedWeightInput = usesWeightInputForMeasurement(measurementType)
       ? settings.carryForwardDefaults &&
-        previousSet &&
         draftSet.weightInput.trim().length === 0
-          ? String(previousSet.weight)
+          ? carrySource?.weightInput?.trim().length
+            ? carrySource.weightInput
+            : previousSet
+              ? String(previousSet.weight)
+              : ""
           : draftSet.weightInput
       : "";
     const resolvedRepsInput =
       settings.carryForwardDefaults &&
-      previousSet &&
       draftSet.repsInput.trim().length === 0
-        ? String(previousSet.reps)
+        ? carrySource?.repsInput?.trim().length
+          ? carrySource.repsInput
+          : previousSet
+            ? String(previousSet.reps)
+            : ""
         : draftSet.repsInput;
     const resolvedRpeInput =
       settings.carryForwardDefaults &&
-      previousSet &&
       draftSet.rpeInput.trim().length === 0
-        ? typeof previousSet.rpe === "number" && Number.isFinite(previousSet.rpe)
-          ? String(previousSet.rpe)
-          : ""
+        ? carrySource?.rpeInput?.trim().length
+          ? carrySource.rpeInput
+          : typeof previousSet?.rpe === "number" && Number.isFinite(previousSet.rpe)
+            ? String(previousSet.rpe)
+            : ""
         : draftSet.rpeInput;
 
     const nextExercises = exercises.map((currentExercise) => {
@@ -6593,9 +9291,11 @@ export function App() {
   function discardWorkout() {
     resetWorkout();
     setHasActiveWorkout(false);
-    setAppView("selector");
+    setActivePlanSession(null);
+    setAppView(discardReturnView);
     setWorkoutMenuOpen(false);
     setDiscardConfirmOpen(false);
+    setTrayDiscardOpen(false);
   }
 
   function requestDiscardWorkout() {
@@ -6617,14 +9317,36 @@ export function App() {
     setSupersetSelectionIds([]);
     setSetTypePickerRowId(null);
     setPullDownDistance(0);
-    setAppView("selector");
+    // Go back to where the session was started from
+    setAppView(discardReturnView);
   }
 
   function openActiveWorkout() {
     if (!hasActiveWorkout) {
-      resetWorkout();
-      setHasActiveWorkout(true);
+      openQuickSession();
+      return;
     }
+    setAppView("logger");
+  }
+
+  function openQuickSession(returnView: "home" | "planner" = "home") {
+    setDiscardReturnView(returnView);
+    resetWorkout();
+    setExercises([]);
+    setActiveExerciseId(null);
+    const now = new Date();
+    const hour = now.getHours();
+    const timeLabel = hour < 12 ? "Morning" : hour < 17 ? "Afternoon" : "Evening";
+    setWorkoutMeta({
+      date: formatDateInputValue(now),
+      startTime: formatTimeFromDate(now),
+      startedMinutesAgo: "0",
+      sessionName: `${timeLabel} Workout`,
+      startInstant: now.toISOString()
+    });
+    setShowBottomRestDock(true);
+    setHasActiveWorkout(true);
+    setActivePlanSession({ source: "quick", planId: null, originalPlan: null });
     setAppView("logger");
   }
 
@@ -7090,7 +9812,8 @@ export function App() {
         current.filter((exercise) => exercise.id !== exerciseId)
       );
       if (remaining.length === 0) {
-        return current;
+        setActiveExerciseId(null);
+        return remaining;
       }
       if (activeExerciseId === exerciseId) {
         const nextActiveExerciseId = getDefaultActiveExerciseId(remaining);
@@ -7125,6 +9848,8 @@ export function App() {
     setReorderOpen(false);
     setReorderDragId(null);
     setCollapsedExerciseIds([]);
+    setGuidanceCollapsed(false);
+    setFocusedExpandedExerciseId(null);
     setTimingOpen(false);
     setLeavePromptOpen(false);
     setSupersetSheetExerciseId(null);
@@ -7134,6 +9859,7 @@ export function App() {
     setSaveRestTimerToDefault(false);
     setSetTypePickerRowId(null);
     setRevealedDeleteRowId(null);
+    setShowBottomRestDock(true);
     setPullDownDistance(0);
     updateSwipeState(createInitialSwipeState());
     setWorkoutMeta(defaultWorkoutMeta);
@@ -7142,6 +9868,7 @@ export function App() {
     setActiveRestTimer(null);
     setLoggerRewards([]);
     setRewardSheetOpen(false);
+    setTemplateApplyPromptImages(null);
   }
 
   function beginPullToAdd(event: React.PointerEvent<HTMLElement>) {
@@ -7454,68 +10181,162 @@ export function App() {
     openFinishWorkoutPage(incompleteSetCount);
   }
 
-  async function saveFinishedWorkout(images: WorkoutMediaAsset[]) {
-    if (!finishWorkoutDraft) return;
-    const completedCustomSessions = exercises.flatMap((exercise) => {
-      const matchingTemplate = customExercises.find(
-        (template) => exercise.id === template.id || exercise.id.startsWith(`${template.id}-`)
+  // ── Workout plan management ────────────────────────────────────────────────
+
+  function savePlan(plan: WorkoutPlan) {
+    setWorkoutPlans((current) => {
+      // Strip sample plans from current state before building the user list
+      const userPlans = current.filter((p) => !SAMPLE_PLAN_IDS.has(p.id));
+      const exists = userPlans.some((p) => p.id === plan.id);
+      const updated = exists
+        ? userPlans.map((p) => (p.id === plan.id ? { ...plan, updatedAt: new Date().toISOString() } : p))
+        : [plan, ...userPlans];
+      persistWorkoutPlans(updated);
+      // Show updated user plans; if empty fall back to sample plans
+      return updated.length > 0 ? updated : SAMPLE_WORKOUT_PLANS;
+    });
+  }
+
+  function reorderPlans(sourceId: string, targetId: string) {
+    if (sourceId === targetId) {
+      return;
+    }
+    setWorkoutPlans((current) => {
+      const sourceIndex = current.findIndex((plan) => plan.id === sourceId);
+      const targetIndex = current.findIndex((plan) => plan.id === targetId);
+      if (sourceIndex === -1 || targetIndex === -1) {
+        return current;
+      }
+      const reordered = [...current];
+      const [plan] = reordered.splice(sourceIndex, 1);
+      reordered.splice(targetIndex, 0, plan);
+      persistWorkoutPlans(reordered);
+      return reordered;
+    });
+  }
+
+  function deletePlan(planId: string) {
+    setWorkoutPlans((current) => {
+      const updated = current.filter((p) => p.id !== planId && !SAMPLE_PLAN_IDS.has(p.id));
+      persistWorkoutPlans(updated);
+      // If all user plans are gone, show sample plans again
+      return updated.length > 0 ? updated : SAMPLE_WORKOUT_PLANS;
+    });
+  }
+
+  function duplicatePlan(plan: WorkoutPlan) {
+    const copy: WorkoutPlan = {
+      ...plan,
+      id: `plan-${Date.now()}`,
+      name: `${plan.name} (copy)`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    savePlan(copy);
+  }
+
+  async function sharePlan(plan: WorkoutPlan) {
+    const body = [
+      `${plan.name}`,
+      plan.userTags && plan.userTags.length > 0 ? `Tags: ${plan.userTags.join(", ")}` : null,
+      plan.note ? plan.note : null,
+      `${plan.exercises.length} ${plan.exercises.length === 1 ? "exercise" : "exercises"}`
+    ].filter(Boolean).join("\n");
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: plan.name, text: body });
+        return;
+      }
+
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(body);
+      }
+    } catch {
+      // ignore cancelled shares
+    }
+  }
+
+  function setPlanTags(planId: string, tags: string[]) {
+    setWorkoutPlans((current) => {
+      const updated = current.map((plan) =>
+        plan.id === planId
+          ? { ...plan, userTags: tags, updatedAt: new Date().toISOString() }
+          : plan
       );
-      if (!matchingTemplate) {
-        return [];
+      persistWorkoutPlans(updated);
+      return updated;
+    });
+  }
+
+  function useTemplate(template: WorkoutPlan) {
+    const copy: WorkoutPlan = {
+      ...template,
+      id: `plan-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    savePlan(copy);
+    setPlannerView("mine");
+  }
+
+  function startPlanWorkout(plan: WorkoutPlan, source: PlanSessionSource = "saved") {
+    // Build exercises from plan, hydrating from the library
+    const planExercises: ExerciseDraft[] = plan.exercises.flatMap((pe) => {
+      const template = availableExerciseTemplates.find((e) => e.id === pe.exerciseId);
+      if (!template) return [];
+      const sets: DraftSet[] = [];
+      for (let i = 0; i < pe.setCount; i++) {
+        sets.push({
+          id: `${pe.exerciseId}-${i}`,
+          setType: pe.setTypes?.[i] ?? "normal",
+          weightInput: "",
+          repsInput: "",
+          rpeInput: "",
+          done: false,
+          failed: false
+        });
       }
-
-      const lastSession = exercise.history[exercise.history.length - 1];
-      const completedSets = buildCompletedSets(
-        exercise.draftSets,
-        lastSession,
-        settings.carryForwardDefaults,
-        getExerciseMeasurementType(exercise)
-      ).resolvedSets;
-
-      if (completedSets.length === 0) {
-        return [];
-      }
-
-      return [
-        {
-          templateId: matchingTemplate.id,
-          session: {
-            date: workoutMeta.date,
-            exercise: matchingTemplate.name,
-            session_key: `${matchingTemplate.id}-${Date.now()}-${exercise.id}`,
-            sets: completedSets
-          } satisfies ExerciseHistorySession
-        }
-      ];
+      return [{
+        ...template,
+        restTimer: pe.restTimer,
+        note: pe.note ?? "",
+        draftSets: sets
+      }];
     });
 
-    if (completedCustomSessions.length > 0) {
-      setCustomExercises((current) =>
-        current.map((exercise) => {
-          const matchingSessions = completedCustomSessions.filter(
-            (entry) => entry.templateId === exercise.id
-          );
-          if (matchingSessions.length === 0) {
-            return exercise;
-          }
+    if (planExercises.length === 0) return;
 
-          return cloneExerciseDraft(exercise, {
-            history: [...exercise.history, ...matchingSessions.map((entry) => entry.session)]
-          });
-        })
-      );
+    setExercises(planExercises);
+    setCollapsedExerciseIds(source === "saved" ? planExercises.map((exercise) => exercise.id) : []);
+    setGuidanceCollapsed(source === "saved");
+    setFocusedExpandedExerciseId(null);
+    const now = new Date();
+    setWorkoutMeta({
+      date: formatDateInputValue(now),
+      startTime: formatTimeFromDate(now),
+      startedMinutesAgo: "0",
+      sessionName: plan.name,
+      startInstant: now.toISOString()
+    });
+    setShowBottomRestDock(true);
+    setActivePlanSession({
+      source,
+      planId: source === "saved" ? plan.id : null,
+      originalPlan: source === "saved" ? plan : null
+    });
+    setDiscardReturnView("planner");
+    setHasActiveWorkout(true);
+    setAppView("logger");
+  }
+
+  async function saveFinishedWorkout(images: WorkoutMediaAsset[]) {
+    if (!finishWorkoutDraft) return;
+    if (activeWorkoutHasTemplateChanges()) {
+      setTemplateApplyPromptImages(images);
+      return;
     }
-
-    const saved: SavedWorkoutData = {
-      ...finishWorkoutDraft,
-      images,
-      savedAt: new Date().toISOString()
-    };
-    persistSavedWorkout(saved);
-    setSavedWorkoutData(saved);
-    resetWorkout();
-    setHasActiveWorkout(false);
-    setAppView("share");
+    finalizeFinishedWorkoutSave(images, false);
   }
 
   if (editingCustomExercise) {
@@ -7530,6 +10351,8 @@ export function App() {
           onOpenDetails={(exerciseId) => openDetails(exerciseId)}
           editorExercise={editingCustomExercise}
           onUpdateCustom={updateCustomExercise}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
       </div>
     );
@@ -7559,6 +10382,8 @@ export function App() {
                 }
               : null
           }
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
       </div>
     );
@@ -7591,6 +10416,48 @@ export function App() {
           onCreateCustom={createCustomExercise}
           onOpenDetails={(exerciseId) => openDetails(exerciseId)}
           onUpdateCustom={updateCustomExercise}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+        />
+      </div>
+    );
+  }
+
+  if (appView === "report" && reportWorkout) {
+    return (
+      <div data-theme={resolvedTheme}>
+        <WorkoutReportPage
+          data={reportWorkout}
+          onBack={() => setAppView("home")}
+          onShare={() => setAppView("share")}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+        />
+      </div>
+    );
+  }
+
+  if (appView === "insights") {
+    return (
+      <div data-theme={resolvedTheme}>
+        <InsightsPage
+          savedWorkouts={savedWorkoutsList}
+          onOpenReport={(workout) => { setReportWorkout(workout); setAppView("report"); }}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+        />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+      </div>
+    );
+  }
+
+  if (appView === "profile") {
+    return (
+      <div data-theme={resolvedTheme}>
+        <ProfilePage
+          onBack={() => setAppView("home")}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
       </div>
     );
@@ -7601,7 +10468,9 @@ export function App() {
       <div data-theme={resolvedTheme}>
         <PostSaveShareScreen
           data={savedWorkoutData}
-          onDone={() => { setSavedWorkoutData(null); setAppView("selector"); }}
+          onDone={() => { setSavedWorkoutData(null); setAppView("report"); }}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
       </div>
     );
@@ -7634,95 +10503,482 @@ export function App() {
           }
           onBack={() => setAppView("logger")}
           onSave={saveFinishedWorkout}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+        />
+        {templateApplyPromptImages && (
+          <section className="sheet-overlay leave-center-overlay" onClick={() => setTemplateApplyPromptImages(null)}>
+            <div className="leave-center-card" onClick={(event) => event.stopPropagation()}>
+              <div className="sheet-head">
+                <div>
+                  <p className="label">Update Template</p>
+                  <h3>Save changes to your template?</h3>
+                </div>
+                <button className="icon-button" type="button" onClick={() => setTemplateApplyPromptImages(null)}>×</button>
+              </div>
+              <p className="settings-note">
+                You changed the exercises or order during this session. Update your saved template to match, or keep the original.
+              </p>
+              <div className="sheet-actions">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => finalizeFinishedWorkoutSave(templateApplyPromptImages, false)}
+                >
+                  Don&apos;t Apply
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => finalizeFinishedWorkoutSave(templateApplyPromptImages, true)}
+                >
+                  Apply to Original
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
+    );
+  }
+
+  if (appView === "planner") {
+    return (
+      <div data-theme={resolvedTheme}>
+        <PlannerHomePage
+          plans={workoutPlans}
+          library={availableExerciseTemplates}
+          existingTags={existingUserTags}
+          activeView={plannerView}
+          onViewChange={setPlannerView}
+          hasActiveWorkout={hasActiveWorkout}
+          onBack={() => setAppView("home")}
+          onStartEmpty={() => openQuickSession("planner")}
+          onCreateNew={() => {
+            setEditingPlan(null);
+            if (planBuilderDraft && planBuilderMode !== "edit") {
+              setPlanBuilderMode(planBuilderMode);
+              setPlanBuilderDraft(planBuilderDraft);
+            } else {
+              setPlanBuilderMode("create");
+              setPlanBuilderDraft(buildBlankWorkoutPlan());
+            }
+            setAppView("plan-builder");
+          }}
+          onGeneratePlan={(plan) => {
+            setEditingPlan(null);
+            setPlanBuilderMode("generate");
+            setPlanBuilderDraft(plan);
+            setAppView("plan-builder");
+          }}
+          onStartPlan={(plan) => startPlanWorkout(plan, workoutPlans.some((entry) => entry.id === plan.id) ? "saved" : "library")}
+          onEditPlan={(plan) => {
+            setEditingPlan(plan);
+            setPlanBuilderMode("edit");
+            setPlanBuilderDraft(plan);
+            setAppView("plan-builder");
+          }}
+          onDuplicatePlan={duplicatePlan}
+          onSharePlan={sharePlan}
+          onEditTags={(plan) => {
+            setTagPlanId(plan.id);
+            setTagPlanDraft(plan.userTags ?? []);
+            setTagPlanSearch("");
+          }}
+          onReorderPlans={reorderPlans}
+          onDeletePlan={deletePlan}
+          onUseTemplate={useTemplate}
+          onResumeWorkout={openActiveWorkout}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+          defaultGoal={settings.preferredGoal}
+          defaultLevel={settings.preferredLevel}
+          defaultEquipment={settings.preferredEquipment}
+        />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+
+        {hasActiveWorkout && (
+          <ActiveWorkoutTray
+            sessionName={workoutMeta.sessionName}
+            duration={derivedDuration}
+            onResume={openActiveWorkout}
+            onDiscardRequest={() => {
+              setDiscardReturnView("planner");
+              setTrayDiscardOpen(true);
+            }}
+          />
+        )}
+        {trayDiscardOpen && (
+          <section className="sheet-overlay leave-center-overlay" onClick={() => setTrayDiscardOpen(false)}>
+            <div className="leave-center-card" onClick={(e) => e.stopPropagation()}>
+              <div className="sheet-head">
+                <div>
+                  <p className="label">Discard Workout</p>
+                  <h3>{workoutMeta.sessionName}</h3>
+                </div>
+                <button className="icon-button" type="button" onClick={() => setTrayDiscardOpen(false)}>×</button>
+              </div>
+              <section className="session-summary session-summary-compact">
+                <p className="label">Session so far</p>
+                <div className="session-summary-grid">
+                  <article className="session-summary-item">
+                    <span>Elapsed</span>
+                    <strong>{derivedDuration}</strong>
+                  </article>
+                  <article className="session-summary-item">
+                    <span>Completed</span>
+                    <strong>{workoutSummary.sets} sets</strong>
+                  </article>
+                  <article className="session-summary-item">
+                    <span>Volume</span>
+                    <strong>{workoutSummary.volume.toFixed(0)} kg</strong>
+                  </article>
+                  <article className="session-summary-item">
+                    <span>Incomplete</span>
+                    <strong>{incompleteSetCount} sets</strong>
+                  </article>
+                </div>
+              </section>
+              <div className="sheet-actions">
+                <button className="secondary-button" type="button" onClick={() => setTrayDiscardOpen(false)}>
+                  Keep Going
+                </button>
+                <button className="primary-button is-danger-btn" type="button" onClick={() => { setTrayDiscardOpen(false); discardWorkout(); }}>
+                  Discard
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+        {tagPlanId && (
+          <section className="sheet-overlay leave-center-overlay" onClick={() => setTagPlanId(null)}>
+            <div className="leave-center-card" onClick={(e) => e.stopPropagation()}>
+              <div className="sheet-head">
+                <div>
+                  <p className="label">Tags</p>
+                  <h3>Edit workout tags</h3>
+                </div>
+                <button className="icon-button" type="button" onClick={() => setTagPlanId(null)}>×</button>
+              </div>
+              <PlanTagPicker
+                value={tagPlanDraft}
+                existingTags={existingUserTags}
+                createLabel="+ New"
+                onChange={setTagPlanDraft}
+                searchValue={tagPlanSearch}
+                onSearchChange={setTagPlanSearch}
+              />
+              <div className="sheet-actions" style={{ marginTop: "16px" }}>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => {
+                    const pending = tagPlanSearch.trim();
+                    const allTags = [...new Set([...existingUserTags, ...tagPlanDraft])];
+                    const canAdd = pending.length > 0 && !allTags.some(t => t.toLowerCase() === pending.toLowerCase());
+                    const finalTags = canAdd ? [...tagPlanDraft, pending] : tagPlanDraft;
+                    setPlanTags(tagPlanId, finalTags);
+                    setTagPlanSearch("");
+                    setTagPlanId(null);
+                  }}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
+    );
+  }
+
+  if (appView === "plan-builder" && planBuilderDraft) {
+    if (builderAddExerciseOpen) {
+      const addedIds = new Set(planBuilderDraft.exercises.map((pe) => pe.exerciseId));
+      return (
+        <div data-theme={resolvedTheme}>
+          <AddExercisePage
+            templates={availableExerciseTemplates}
+            existingExerciseNames={planBuilderDraft.exercises
+              .map((pe) => availableExerciseTemplates.find((t) => t.id === pe.exerciseId)?.name ?? "")
+              .filter(Boolean)}
+            onBack={() => setBuilderAddExerciseOpen(false)}
+            onAddSelected={(templateIds) => {
+              const newExercises = templateIds
+                .filter((id) => !addedIds.has(id))
+                .map((id) => ({ exerciseId: id, setCount: 3, setTypes: ["normal", "normal", "normal"] as DraftSetType[], restTimer: "90" }));
+              setPlanBuilderDraft((draft) =>
+                draft
+                  ? { ...draft, exercises: [...draft.exercises, ...newExercises], updatedAt: new Date().toISOString() }
+                  : draft
+              );
+              setBuilderAddExerciseOpen(false);
+            }}
+            onCreateCustom={(input) => {
+              const id = createCustomExercise(input);
+              return id;
+            }}
+            onOpenDetails={(exerciseId) => openDetails(exerciseId)}
+            resolvedTheme={resolvedTheme}
+            onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div data-theme={resolvedTheme}>
+        <PlanBuilderPage
+          draft={planBuilderDraft}
+          mode={planBuilderMode}
+          library={availableExerciseTemplates}
+          existingTags={existingUserTags}
+          onBack={() => setAppView("planner")}
+          onChange={setPlanBuilderDraft}
+          onAddExercise={() => setBuilderAddExerciseOpen(true)}
+          onOpenExerciseDetails={(exerciseId) => openDetails(exerciseId)}
+          onSavePlan={(plan) => {
+            savePlan(plan);
+            setEditingPlan(planBuilderMode === "edit" ? plan : null);
+            setPlanBuilderDraft(null);
+            setPlanBuilderMode("create");
+            setPlannerView("mine");
+            setAppView("planner");
+          }}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
       </div>
     );
   }
 
-  if (appView === "selector") {
+  if (appView === "home") {
     return (
-      <main className="shell selector-shell" data-theme={resolvedTheme}>
+      <main className={`shell selector-shell${hasActiveWorkout ? " has-tray" : ""}`} data-theme={resolvedTheme}>
         <section className="app-shell selector-page">
           <header className="selector-header">
             <div>
-              <p className="label">Workouts</p>
-              <h1>Choose your session</h1>
+              <p className="label">REPIQ</p>
+              <h1>Ready to train</h1>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                type="button"
+                className="profile-avatar-btn"
+                onClick={() => setAppView("profile")}
+                aria-label="Open profile"
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="theme-toggle-btn"
+                aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                onClick={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+              >
+                {resolvedTheme === "dark" ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                  </svg>
+                ) : (
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                  </svg>
+                )}
+              </button>
             </div>
           </header>
 
-          {hasActiveWorkout ? (
-            <section className="selector-stack">
-              <article className="session-card session-card-active">
-                <div className="session-card-top">
-                  <div>
-                    <p className="label">Active Workout</p>
-                    <h2 title={workoutMeta.sessionName}>{workoutMeta.sessionName}</h2>
-                  </div>
-                  <span className="session-status-pill">In progress</span>
-                </div>
-                <p className="session-subtitle">
-                  {formatSessionDate(workoutMeta.date)} · {derivedDuration} elapsed
-                </p>
-                <section className="session-summary">
-                  <p className="label">Workout Summary</p>
-                  <div className="session-summary-grid">
-                    <article className="session-summary-item">
-                      <span>Elapsed</span>
-                      <strong>{derivedDuration}</strong>
-                    </article>
-                    <article className="session-summary-item">
-                      <span>Logged</span>
-                      <strong>{workoutSummary.sets} sets</strong>
-                    </article>
-                    <article className="session-summary-item">
-                      <span>Volume</span>
-                      <strong>{workoutSummary.volume.toFixed(0)} kg</strong>
-                    </article>
-                    <article className="session-summary-item">
-                      <span>Exercises</span>
-                      <strong>{exercises.length}</strong>
-                    </article>
-                  </div>
-                </section>
-                <div className="sheet-actions">
-                  <button className="secondary-button" type="button" onClick={discardWorkout}>
-                    Discard workout
-                  </button>
-                  <button className="primary-button" type="button" onClick={openActiveWorkout}>
-                    Resume workout
-                  </button>
-                </div>
-              </article>
+          <section className="selector-stack">
+            <button
+              className="quick-workout-card"
+              type="button"
+              disabled={hasActiveWorkout}
+              onClick={() => openQuickSession("home")}
+            >
+              Quick Workout
+              <span className="quick-workout-card-arrow" aria-hidden="true">→</span>
+            </button>
 
-              <article className="session-card session-card-muted">
-                <p className="label">Next Rule</p>
-                <p className="settings-note">
-                  You can&apos;t start another workout until this one is finished or discarded.
-                </p>
-              </article>
-            </section>
-          ) : (
-            <section className="selector-stack">
-              <article className="session-card">
-                <div className="session-card-top">
-                  <div>
-                    <p className="label">No Active Workout</p>
-                    <h2>Ready to log</h2>
-                  </div>
+            {/* Latest workout card */}
+            <article className="session-card home-latest-card" onClick={savedWorkoutData ? () => { setReportWorkout(savedWorkoutData); setAppView("report"); } : undefined} style={savedWorkoutData ? { cursor: "pointer" } : undefined}>
+              <div className="session-card-top">
+                <div>
+                  <p className="label">Latest Workout</p>
+                  {savedWorkoutData ? (
+                    <h2 className="home-latest-name">{savedWorkoutData.sessionName}</h2>
+                  ) : (
+                    <h2>No workouts yet</h2>
+                  )}
                 </div>
-                <p className="settings-note">
-                  The full workout plan selector comes next. For now, reopen the sample session to
-                  keep testing the logger flow.
-                </p>
-                <div className="sheet-actions">
-                  <button className="primary-button" type="button" onClick={openActiveWorkout}>
-                    Open sample workout
-                  </button>
+                {savedWorkoutData && <span className="home-latest-chevron" aria-hidden="true">›</span>}
+              </div>
+              {savedWorkoutData ? (
+                <p className="home-latest-meta">{savedWorkoutData.duration} · {savedWorkoutData.totalSets} sets · {savedWorkoutData.exerciseCount} exercises</p>
+              ) : (
+                <p className="settings-note">Complete a workout to see your report here.</p>
+              )}
+            </article>
+
+            <article className="session-card">
+              <div className="session-card-top">
+                <div>
+                  <p className="label">Workout Planner</p>
+                  <h2>Your routines</h2>
                 </div>
-              </article>
-            </section>
-          )}
+              </div>
+              <p className="settings-note">
+                Browse your saved routines and starter templates.
+              </p>
+              <button className="primary-button selector-planner-btn" type="button" onClick={() => setAppView("planner")}>
+                Open Planner
+              </button>
+            </article>
+          </section>
         </section>
+
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+
+        {hasActiveWorkout && (
+          <ActiveWorkoutTray
+            sessionName={workoutMeta.sessionName}
+            duration={derivedDuration}
+            onResume={openActiveWorkout}
+            onDiscardRequest={() => {
+              setDiscardReturnView("home");
+              setTrayDiscardOpen(true);
+            }}
+          />
+        )}
+        {trayDiscardOpen && (
+          <section className="sheet-overlay leave-center-overlay" onClick={() => setTrayDiscardOpen(false)}>
+            <div className="leave-center-card" onClick={(e) => e.stopPropagation()}>
+              <div className="sheet-head">
+                <div>
+                  <p className="label">Discard Workout</p>
+                  <h3>{workoutMeta.sessionName}</h3>
+                </div>
+                <button className="icon-button" type="button" onClick={() => setTrayDiscardOpen(false)}>×</button>
+              </div>
+              <section className="session-summary session-summary-compact">
+                <p className="label">Session so far</p>
+                <div className="session-summary-grid">
+                  <article className="session-summary-item">
+                    <span>Elapsed</span>
+                    <strong>{derivedDuration}</strong>
+                  </article>
+                  <article className="session-summary-item">
+                    <span>Completed</span>
+                    <strong>{workoutSummary.sets} sets</strong>
+                  </article>
+                  <article className="session-summary-item">
+                    <span>Volume</span>
+                    <strong>{workoutSummary.volume.toFixed(0)} kg</strong>
+                  </article>
+                  <article className="session-summary-item">
+                    <span>Incomplete</span>
+                    <strong>{incompleteSetCount} sets</strong>
+                  </article>
+                </div>
+              </section>
+              <div className="sheet-actions">
+                <button className="secondary-button" type="button" onClick={() => setTrayDiscardOpen(false)}>
+                  Keep Going
+                </button>
+                <button className="primary-button is-danger-btn" type="button" onClick={() => { setTrayDiscardOpen(false); discardWorkout(); }}>
+                  Discard
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+      </main>
+    );
+  }
+
+  if (settingsOpen) {
+    return (
+      <main className="detail-page workout-settings-page" data-theme={resolvedTheme}>
+        <header className="detail-topbar">
+          <button className="back-nav-button detail-back-button" type="button" onClick={() => setSettingsOpen(false)} aria-label="Back">←</button>
+          <div className="detail-topbar-copy">
+            <p className="label">Workout</p>
+            <h1>Settings</h1>
+          </div>
+          <button type="button" className="theme-toggle-btn" onClick={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")} aria-label="Toggle theme">
+            {resolvedTheme === "dark" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+          </button>
+        </header>
+
+        <div className="workout-settings-body">
+          <div className="settings-block">
+            <p className="settings-section-title">Session Settings</p>
+            <label className="settings-row">
+              <span>Default rest timer for new exercises</span>
+              <input type="text" inputMode="numeric" value={settings.defaultRestSeconds}
+                onChange={(e) => setSettings((c) => ({ ...c, defaultRestSeconds: sanitizeIntegerInput(e.target.value) }))} />
+            </label>
+            <label className="settings-row">
+              <span>Between exercises</span>
+              <input type="text" inputMode="numeric" value={settings.transitionRestSeconds}
+                onChange={(e) => setSettings((c) => ({ ...c, transitionRestSeconds: sanitizeIntegerInput(e.target.value) }))} />
+            </label>
+            <label className="toggle-row">
+              <span>Carry forward previous values</span>
+              <input type="checkbox" checked={settings.carryForwardDefaults}
+                onChange={(e) => setSettings((c) => ({ ...c, carryForwardDefaults: e.target.checked }))} />
+            </label>
+            <label className="toggle-row">
+              <span>Show RPE column</span>
+              <input type="checkbox" checked={settings.showRpe}
+                onChange={(e) => setSettings((c) => ({ ...c, showRpe: e.target.checked }))} />
+            </label>
+            <p className="settings-note">New exercises use the default rest timer. Existing exercises keep their own timer. The between-exercises timer fires after the final set when moving to the next exercise.</p>
+          </div>
+
+          <div className="settings-block">
+            <p className="settings-section-title">Guidance Defaults</p>
+            <label className="toggle-row">
+              <span>Show top strip guidance</span>
+              <input type="checkbox" checked={settings.guidanceTopStrip}
+                onChange={(e) => setSettings((c) => ({ ...c, guidanceTopStrip: e.target.checked }))} />
+            </label>
+            <label className="toggle-row">
+              <span>Show inline guidance</span>
+              <input type="checkbox" checked={settings.guidanceInline}
+                onChange={(e) => setSettings((c) => ({ ...c, guidanceInline: e.target.checked }))} />
+            </label>
+            <p className="settings-note">New workout sessions start with these guidance defaults. You can still toggle them while logging.</p>
+          </div>
+
+          <div className="settings-block">
+            <p className="settings-section-title">Library Defaults</p>
+            <p className="settings-note" style={{ marginBottom: 10 }}>Pre-applied filters when you open the Library tab.</p>
+            {([
+              { label: "Goal", key: "preferredGoal" as const, options: ["Hypertrophy", "Strength", "Endurance"] },
+              { label: "Level", key: "preferredLevel" as const, options: ["Beginner", "Intermediate", "Advanced"] },
+              { label: "Equipment", key: "preferredEquipment" as const, options: ["Full Gym", "Dumbbells", "Bodyweight"] },
+            ]).map(({ label, key, options }) => (
+              <div key={key} className="settings-pref-row">
+                <span className="settings-pref-label">{label}</span>
+                <div className="settings-pref-chips">
+                  {options.map((opt) => (
+                    <button key={opt} type="button"
+                      className={`generate-chip generate-chip--sm${settings[key] === opt ? " is-selected" : ""}`}
+                      onClick={() => setSettings((c) => ({ ...c, [key]: c[key] === opt ? null : opt }))}
+                    >{opt}</button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </main>
     );
   }
@@ -7773,7 +11029,7 @@ export function App() {
               <button
                 className="back-nav-button"
                 type="button"
-                onClick={() => setLeavePromptOpen(true)}
+                onClick={returnToWorkoutSelector}
                 aria-label="Back"
               >
                 ←
@@ -7788,6 +11044,9 @@ export function App() {
               </div>
             </div>
             <div className="topbar-actions">
+              <button type="button" className="theme-toggle-btn" onClick={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")} aria-label="Toggle theme">
+                {resolvedTheme === "dark" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+              </button>
               <button
                 className="icon-button topbar-settings-button"
                 type="button"
@@ -7878,7 +11137,15 @@ export function App() {
           </div>
         </div>
 
-        <section className="exercise-stack">
+        <section className={`exercise-stack ${resolvedFocusedExpandedExerciseId ? "has-focused-card" : ""}`}>
+          {resolvedFocusedExpandedExerciseId && (
+            <button
+              className="logger-focus-backdrop"
+              type="button"
+              aria-label="Exit focused exercise view"
+              onClick={() => setFocusedExpandedExerciseId(null)}
+            />
+          )}
           <div
             className={`pull-to-add ${pullDownDistance > 0 ? "is-visible" : ""} ${
               pullDownDistance > 58 ? "is-ready" : ""
@@ -7891,6 +11158,28 @@ export function App() {
           >
             <span>{pullDownDistance > 58 ? "Release for workout actions" : "Pull for workout actions"}</span>
           </div>
+          {exercises.length === 0 && (
+            <div className="logger-empty-state">
+              <p className="logger-empty-title">No exercises yet</p>
+              <p className="logger-empty-sub">Add your first exercise to get started.</p>
+              <div className="logger-empty-actions">
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => setAddExerciseOpen(true)}
+                >
+                  + Add Exercise
+                </button>
+                <button
+                  className="logger-empty-discard-btn"
+                  type="button"
+                  onClick={requestDiscardWorkout}
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
           {exercises.map((exercise, exerciseIndex) => {
             const lastSession = exercise.history[exercise.history.length - 1];
             const measurementType = getExerciseMeasurementType(exercise);
@@ -7912,10 +11201,14 @@ export function App() {
             const exerciseRewards = loggerRewards.filter(
               (reward) => reward.exerciseId === exercise.id && reward.level === "exercise"
             );
+            const focusedExerciseIndex = resolvedFocusedExpandedExerciseId
+              ? exercises.findIndex((entry) => entry.id === resolvedFocusedExpandedExerciseId)
+              : -1;
 
             return (
               <article
                 key={exercise.id}
+                data-exercise-card-id={exercise.id}
                 className={`exercise-card ${
                   exercise.id === resolvedActiveExerciseId ? "is-active" : ""
                 } ${isComplete ? "is-complete" : ""} ${
@@ -7923,6 +11216,24 @@ export function App() {
                 } ${exercise.supersetGroupId ? "has-superset" : ""} ${
                   isCollapsed ? "is-collapsed" : ""
                 } ${reorderDragId === exercise.id ? "is-dragging" : ""
+                } ${resolvedFocusedExpandedExerciseId === exercise.id ? "is-focused" : ""
+                } ${
+                  resolvedFocusedExpandedExerciseId &&
+                  resolvedFocusedExpandedExerciseId !== exercise.id
+                    ? "is-defocused"
+                    : ""
+                } ${
+                  resolvedFocusedExpandedExerciseId &&
+                  focusedExerciseIndex !== -1 &&
+                  exerciseIndex < focusedExerciseIndex
+                    ? "is-before-focus"
+                    : ""
+                } ${
+                  resolvedFocusedExpandedExerciseId &&
+                  focusedExerciseIndex !== -1 &&
+                  exerciseIndex > focusedExerciseIndex
+                    ? "is-after-focus"
+                    : ""
                 }`}
                 style={
                   exercise.supersetGroupId
@@ -7947,6 +11258,7 @@ export function App() {
                 }}
                 onClick={() => {
                   if (isCollapsed) {
+                    setFocusedExpandedExerciseId(exercise.id);
                     if (!hasStartedExercise) {
                       setPreStartExerciseActive(exercise.id);
                     }
@@ -7968,6 +11280,9 @@ export function App() {
                   onDragEnd={() => setReorderDragId(null)}
                   onClick={(event) => {
                     event.stopPropagation();
+                    if (isCollapsed) {
+                      setFocusedExpandedExerciseId(exercise.id);
+                    }
                     if (!hasStartedExercise) {
                       setPreStartExerciseActive(exercise.id);
                     }
@@ -7980,11 +11295,14 @@ export function App() {
                     aria-label={isCollapsed ? `Expand ${exercise.name}` : `Collapse ${exercise.name}`}
                     onClick={(event) => {
                       event.stopPropagation();
+                      if (isCollapsed) {
+                        setFocusedExpandedExerciseId(exercise.id);
+                      }
                       if (!hasStartedExercise) {
                         setPreStartExerciseActive(exercise.id);
                       }
-                      toggleExerciseCollapse(exercise.id);
-                    }}
+                        toggleExerciseCollapse(exercise.id);
+                      }}
                   >
                     <img src={exercise.imageSrc} alt="" className="exercise-thumb" aria-hidden="true" />
                   </button>
@@ -8085,11 +11403,14 @@ export function App() {
                       type="button"
                       aria-label={isCollapsed ? "Expand exercise" : "Collapse exercise"}
                       aria-expanded={!isCollapsed}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (!hasStartedExercise) {
-                      setPreStartExerciseActive(exercise.id);
-                    }
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (isCollapsed) {
+                          setFocusedExpandedExerciseId(exercise.id);
+                        }
+                        if (!hasStartedExercise) {
+                          setPreStartExerciseActive(exercise.id);
+                        }
                         toggleExerciseCollapse(exercise.id);
                       }}
                     >
@@ -8339,8 +11660,8 @@ export function App() {
                             type="text"
                             inputMode="decimal"
                             placeholder={
-                              hasWeightInput && settings.carryForwardDefaults && previousSet
-                                ? String(previousSet.weight)
+                              hasWeightInput && settings.carryForwardDefaults
+                                ? getCurrentExerciseCarrySource(exercise.draftSets, index)?.weightInput || ""
                                 : ""
                             }
                             value={hasWeightInput ? draftSet.weightInput : ""}
@@ -8356,8 +11677,8 @@ export function App() {
                             type="text"
                             inputMode="numeric"
                             placeholder={
-                              settings.carryForwardDefaults && previousSet
-                                ? formatMeasurementValue(previousSet.reps, measurementType)
+                              settings.carryForwardDefaults
+                                ? getCurrentExerciseCarrySource(exercise.draftSets, index)?.repsInput || ""
                                 : ""
                             }
                             value={draftSet.repsInput}
@@ -8372,10 +11693,8 @@ export function App() {
                               type="text"
                               inputMode="decimal"
                               placeholder={
-                                settings.carryForwardDefaults &&
-                                previousSet &&
-                                typeof previousSet.rpe === "number"
-                                  ? String(previousSet.rpe)
+                                settings.carryForwardDefaults
+                                  ? getCurrentExerciseCarrySource(exercise.draftSets, index)?.rpeInput || "RPE"
                                   : "RPE"
                               }
                               value={draftSet.rpeInput}
@@ -8506,7 +11825,8 @@ export function App() {
           })}
         </section>
 
-        <section className={`coach-shell ${guidanceCollapsed ? "is-collapsed" : ""}`}>
+        {hasExercises && activeExercise && (
+          <section className={`coach-shell ${guidanceCollapsed ? "is-collapsed" : ""}`}>
             <header className="coach-header">
               <div className="coach-header-text">
                 <p className="label">{allExercisesComplete ? "Overall Guidance" : "Next Guidance"}</p>
@@ -8623,8 +11943,9 @@ export function App() {
             )}
 
           </section>
+        )}
 
-        <div className="logger-end-actions">
+        {exercises.length > 0 && <div className="logger-end-actions">
           <div className="logger-end-actions-row">
             <button
               className="secondary-button logger-action-button logger-add-button"
@@ -8653,7 +11974,7 @@ export function App() {
           {completedSetCount === 0 && (
             <p className="finish-blocked-hint">Complete at least 1 set to finish</p>
           )}
-        </div>
+        </div>}
 
         {showStickyRestDock && activeRestExercise && (
           restDockMinimized ? (
@@ -8674,54 +11995,62 @@ export function App() {
                   style={{ width: `${stickyRestProgressPercent}%` }}
                 />
               </div>
-              <div className="sticky-rest-dock-copy">
-                <strong>{stickyRestLabel}</strong>
-              </div>
               <div className="sticky-rest-dock-controls">
-                <button
-                  className="sticky-rest-adjust-button"
-                  type="button"
-                  onClick={() => adjustActiveRestTimer(-5)}
-                  aria-label="Reduce rest timer by 5 seconds"
-                >
-                  -5
-                </button>
-                <span className="sticky-rest-dock-time">{formatRemainingSeconds(activeRestSeconds)}</span>
-                <button
-                  className="sticky-rest-adjust-button"
-                  type="button"
-                  onClick={() => adjustActiveRestTimer(5)}
-                  aria-label="Increase rest timer by 5 seconds"
-                >
-                  +5
-                </button>
-                <button
-                  className="rest-timer-icon-button"
-                  type="button"
-                  aria-label={
-                    activeRestTimer?.pausedRemainingSeconds !== null
-                      ? "Resume rest timer"
-                      : "Pause rest timer"
-                  }
-                  onClick={() => togglePauseRestTimer(activeRestExercise.id)}
-                >
-                  {activeRestTimer?.pausedRemainingSeconds !== null ? "▶" : "⏸"}
-                </button>
-                <button
-                  className="rest-timer-icon-button rest-timer-stop-button"
-                  type="button"
-                  aria-label="Skip rest timer"
-                  onClick={() => stopRestTimer(activeRestExercise.id)}
-                >
-                  <span className="rest-timer-stop-glyph" aria-hidden="true">■</span>
-                </button>
+                <div className="sticky-rest-dock-left">
+                  <button
+                    className="rest-timer-icon-button sticky-rest-dismiss-button"
+                    type="button"
+                    aria-label="Hide bottom rest timer"
+                    onClick={() => setShowBottomRestDock(false)}
+                  >
+                    ×
+                  </button>
+                  <button
+                    className="rest-timer-icon-button rest-timer-stop-button"
+                    type="button"
+                    aria-label="Stop rest timer"
+                    onClick={() => stopRestTimer(activeRestExercise.id)}
+                  >
+                    <span className="rest-timer-stop-glyph" aria-hidden="true">■</span>
+                  </button>
+                </div>
+                <div className="sticky-rest-dock-center">
+                  <button
+                    className="sticky-rest-adjust-button"
+                    type="button"
+                    onClick={() => adjustActiveRestTimer(-5)}
+                    aria-label="Reduce rest timer by 5 seconds"
+                  >
+                    -5
+                  </button>
+                  <button
+                    className={`sticky-rest-dock-time${activeRestTimer?.pausedRemainingSeconds !== null ? " is-paused" : ""}`}
+                    type="button"
+                    onClick={() => togglePauseRestTimer(activeRestExercise.id)}
+                    aria-label={
+                      activeRestTimer?.pausedRemainingSeconds !== null
+                        ? "Resume rest timer"
+                        : "Pause rest timer"
+                    }
+                  >
+                    {formatRemainingSeconds(activeRestSeconds)}
+                  </button>
+                  <button
+                    className="sticky-rest-adjust-button"
+                    type="button"
+                    onClick={() => adjustActiveRestTimer(5)}
+                    aria-label="Increase rest timer by 5 seconds"
+                  >
+                    +5
+                  </button>
+                </div>
                 <button
                   className="sticky-rest-dock-minimize"
                   type="button"
                   aria-label="Minimize active rest timer"
                   onClick={() => setRestDockMinimized(true)}
                 >
-                  <span className="sticky-rest-dock-minimize-glyph" aria-hidden="true" />
+                  <span className="sticky-rest-dock-minimize-glyph" aria-hidden="true">›</span>
                 </button>
               </div>
             </section>
@@ -8839,67 +12168,6 @@ export function App() {
           </section>
         )}
 
-        {workoutMenuOpen && (
-          <section
-            className="sheet-overlay bottom-sheet-overlay"
-            onClick={() => setWorkoutMenuOpen(false)}
-          >
-            <div
-              className="sheet-card action-sheet"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="sheet-handle" />
-              <div className="sheet-head">
-                <div>
-                  <p className="label">Alter</p>
-                  <h3>Workout actions</h3>
-                </div>
-                <button className="icon-button" type="button" onClick={() => setWorkoutMenuOpen(false)}>
-                  ×
-                </button>
-              </div>
-
-              <div className="action-sheet-list">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAddExerciseOpen(true);
-                    setWorkoutMenuOpen(false);
-                  }}
-                >
-                  Add exercise
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReorderOpen(true);
-                    setWorkoutMenuOpen(false);
-                  }}
-                >
-                  Reorder exercises
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSettingsOpen(true);
-                    setWorkoutMenuOpen(false);
-                  }}
-                >
-                  Workout settings
-                </button>
-                <button type="button" onClick={clearUncheckedSets}>
-                  Clear unchecked rows
-                </button>
-                <button type="button" onClick={resetWorkout}>
-                  Reset workout
-                </button>
-                <button type="button" onClick={requestDiscardWorkout}>
-                  Discard workout
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
 
         {activeMenuExercise && (
           <section
@@ -9086,7 +12354,7 @@ export function App() {
           </section>
         )}
 
-        {inlineGuidanceOpen && (
+        {inlineGuidanceOpen && activeExercise && (
           <section
             className="sheet-overlay guidance-center-overlay"
             onClick={() => setInlineGuidanceOpen(false)}
@@ -9119,145 +12387,6 @@ export function App() {
           </section>
         )}
 
-        {settingsOpen && (
-          <section className="sheet-overlay" onClick={() => setSettingsOpen(false)}>
-            <div className="sheet-card" onClick={(event) => event.stopPropagation()}>
-              <div className="sheet-head">
-                <div>
-                  <p className="label">Workout Settings</p>
-                  <h3>Session-level preferences</h3>
-                </div>
-                <button className="icon-button" type="button" onClick={() => setSettingsOpen(false)}>
-                  ×
-                </button>
-              </div>
-
-              <label className="settings-row">
-                <span>Default rest timer for new exercises</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={settings.defaultRestSeconds}
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      defaultRestSeconds: sanitizeIntegerInput(event.target.value)
-                    }))
-                  }
-                />
-              </label>
-
-              <label className="settings-row">
-                <span>Between exercises</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={settings.transitionRestSeconds}
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      transitionRestSeconds: sanitizeIntegerInput(event.target.value)
-                    }))
-                  }
-                />
-              </label>
-
-              <label className="toggle-row">
-                <span>Carry forward previous values</span>
-                <input
-                  type="checkbox"
-                  checked={settings.carryForwardDefaults}
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      carryForwardDefaults: event.target.checked
-                    }))
-                  }
-                />
-              </label>
-
-              <label className="toggle-row">
-                <span>Show RPE column</span>
-                <input
-                  type="checkbox"
-                  checked={settings.showRpe}
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      showRpe: event.target.checked
-                    }))
-                  }
-                />
-              </label>
-
-              <div className="settings-block">
-                <p className="settings-section-title">Guidance Defaults</p>
-
-                <label className="toggle-row">
-                  <span>Show top strip guidance</span>
-                  <input
-                    type="checkbox"
-                    checked={settings.guidanceTopStrip}
-                    onChange={(event) =>
-                      setSettings((current) => ({
-                        ...current,
-                        guidanceTopStrip: event.target.checked
-                      }))
-                    }
-                  />
-                </label>
-
-                <label className="toggle-row">
-                  <span>Show inline guidance</span>
-                  <input
-                    type="checkbox"
-                    checked={settings.guidanceInline}
-                    onChange={(event) =>
-                      setSettings((current) => ({
-                        ...current,
-                        guidanceInline: event.target.checked
-                      }))
-                    }
-                  />
-                </label>
-
-                <p className="settings-note">
-                  New workout sessions start with these guidance defaults. You can still turn the
-                  top strip and inline guidance on or off from the bottom guidance section while
-                  logging.
-                </p>
-              </div>
-
-              <div className="settings-block">
-                <p className="settings-section-title">Appearance</p>
-                <div className="theme-choice-group" role="radiogroup" aria-label="Theme preference">
-                  {(["light", "dark", "system"] as const).map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      className={`theme-choice ${
-                        themePreference === option ? "is-active" : ""
-                      }`}
-                      onClick={() => setThemePreference(option)}
-                      aria-pressed={themePreference === option}
-                    >
-                      {option[0].toUpperCase() + option.slice(1)}
-                    </button>
-                  ))}
-                </div>
-                <p className="settings-note">
-                  This is an app-wide theme setting. Current appearance: {resolvedTheme}.
-                </p>
-              </div>
-
-              <p className="settings-note">
-                New exercises will use the default rest timer. Existing exercises keep their own timer
-                for now. The between-exercises timer is used after the final set of an exercise when
-                the workout moves on to the next one.
-              </p>
-            </div>
-          </section>
-        )}
 
         {noteEditorExerciseId && (
           <section className="sheet-overlay" onClick={closeNoteEditor}>
@@ -9488,6 +12617,75 @@ export function App() {
           </section>
         )}
 
+        {workoutMenuOpen && (
+          <section className="sheet-overlay bottom-sheet-overlay" onClick={() => setWorkoutMenuOpen(false)}>
+            <div className="sheet-card action-sheet" onClick={(event) => event.stopPropagation()}>
+              <div className="sheet-handle" />
+              <div className="sheet-head">
+                <div>
+                  <p className="label">Workout Actions</p>
+                  <h3>{workoutMeta.sessionName}</h3>
+                </div>
+                <button className="icon-button" type="button" onClick={() => setWorkoutMenuOpen(false)}>
+                  ×
+                </button>
+              </div>
+              <div className="workout-menu-action-list">
+                <button
+                  type="button"
+                  onClick={() => { setAddExerciseOpen(true); setWorkoutMenuOpen(false); }}
+                >
+                  <span>Add exercise</span>
+                  <span className="workout-menu-chevron">›</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setReorderOpen(true); setWorkoutMenuOpen(false); }}
+                >
+                  <span>Reorder exercises</span>
+                  <span className="workout-menu-chevron">›</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSettingsOpen(true); setWorkoutMenuOpen(false); }}
+                >
+                  <span>Workout settings</span>
+                  <span className="workout-menu-chevron">›</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowBottomRestDock((v) => !v); setWorkoutMenuOpen(false); }}
+                >
+                  <span>{showBottomRestDock ? "Hide bottom rest timer" : "Show bottom rest timer"}</span>
+                  <span className="workout-menu-check">{showBottomRestDock ? "✓" : ""}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { clearUncheckedSets(); setWorkoutMenuOpen(false); }}
+                >
+                  <span>Clear unchecked rows</span>
+                  <span className="workout-menu-chevron">›</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { resetWorkout(); setWorkoutMenuOpen(false); }}
+                >
+                  <span>Reset workout</span>
+                  <span className="workout-menu-chevron">›</span>
+                </button>
+                <button
+                  type="button"
+                  className="is-danger"
+                  onClick={() => requestDiscardWorkout()}
+                >
+                  <span>Discard workout</span>
+                  <span className="workout-menu-chevron">›</span>
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
         {timingOpen && (
           <section className="sheet-overlay" onClick={() => setTimingOpen(false)}>
             <div className="sheet-card" onClick={(event) => event.stopPropagation()}>
@@ -9511,6 +12709,9 @@ export function App() {
                     setWorkoutMeta((current) => ({
                       ...current,
                       startTime: event.target.value,
+                      startInstant:
+                        buildDateTime(current.date, event.target.value)?.toISOString() ??
+                        current.startInstant,
                       startedMinutesAgo: getMinutesAgoFromDateTime(
                         current.date,
                         event.target.value
@@ -9536,7 +12737,8 @@ export function App() {
                         ...current,
                         date: nextStart.date,
                         startTime: nextStart.startTime,
-                        startedMinutesAgo
+                        startedMinutesAgo,
+                        startInstant: nextStart.startInstant
                       };
                     })
                   }

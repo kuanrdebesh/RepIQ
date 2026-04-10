@@ -18,6 +18,8 @@ RepIQ is an AI-powered workout coach for intermediate lifters who have plateaued
 - `docs/project-status.md`: current implementation status
 - `docs/api-and-sequences.md`: living API inventory and sequence diagrams
 - `docs/algorithms.md`: implemented web, API, and engine algorithms
+- `docs/navigation-map.md`: page connectivity, entry points, exit points, and bottom-nav rules
+- `docs/psych-layer.md`: psychological-data schema, capture plan, and future intelligence layer
 - `docs/v1-roadmap.md`: phased roadmap
 - `docs/architecture.md`: architecture decisions and follow-on design notes
 - `docs/product-management.md`: product decisions and interaction rationale

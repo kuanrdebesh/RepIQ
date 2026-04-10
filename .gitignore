@@ -23,3 +23,5 @@ __pycache__
 apps/web/.vercel
 apps/web/dev-dist
 supabase/.temp
+.claude/
+apps/api/uploads/workouts/

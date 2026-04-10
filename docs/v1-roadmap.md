@@ -19,6 +19,19 @@
 - Overload engine integration
 - Plateau detection
 - Session-complete recommendation surface
+- Home-first app shell instead of logger-first default entry
+- Planner foundation:
+  - `My Workouts`
+  - `Library`
+  - `Generate Session`
+  - template preview and review/builder path
+- Workout builder foundation:
+  - create/edit/save
+  - drag-reorder exercises
+  - plan tags
+  - add/remove sets
+  - per-exercise rest editing
+- Unsaved workout-builder draft persistence
 - In-workout top guidance strip / expandable coaching tray
 - Post-finish workout save screen for workout title, notes, reward review, and summary/share handoff
 - Finish-flow media is limited in V1:
@@ -74,16 +87,25 @@
   - minimize to compact timer FAB
   - between-exercise timer handling
   - quick `-5 / +5` timer adjustments
+  - session-level show/hide from workout actions
 - Finish-with-incomplete confirmation:
   - go back and finish
   - finish anyway and ignore unfinished rows
 - Logger active-flow cleanup:
   - no stale active exercise once all exercises are complete by the current last-set rule
   - expanded-card drag reorder in the logger itself
+  - focused expanded-card mode with outside-tap exit
+  - precise duration clock based on exact start timestamp
+- Navigation/source-of-truth docs:
+  - page connectivity and bottom-nav rules in `navigation-map.md`
+  - psych-data capture/storage direction in `psych-layer.md`
 
 ## Phase 4
 
 - Progress dashboard basics
+- Insights / Reports destination integration
+- Goal Planner refinement and onboarding alignment
+- Profile, account, preferences, and import/export wiring
 - Session 3 paywall
 - Referrals and share-card hooks
 - Validation pass on engine accuracy and explanation quality
@@ -112,11 +134,11 @@ These are intentionally captured so they do not get lost while we finish the cor
 
 ### Next Screen Sequence
 
-1. Custom workout creation
-2. Post-finish workout screen
-3. Workout plans screen
-4. Exercise details / history expansion
-5. App shell and navigation polish
+1. Library workout optimization and filters
+2. Workout builder refinement
+3. Goal Planner / generation refinement
+4. Insights and reports integration
+5. Profile / import-export / account wiring
 
 ### After Theme System Matures
 

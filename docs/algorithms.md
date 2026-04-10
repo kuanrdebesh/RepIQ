@@ -64,13 +64,23 @@ Current sort modes:
 
 - `alphabetical`
 - `frequency`
+- `library`
 
 Behavior:
 
-- `alphabetical` sorts by exercise name
-- `frequency` sorts by `history.length` descending, then alphabetical as tie-break
+- each sort mode has a direction state:
+  - `asc`
+  - `desc`
+- selecting a different sort mode resets direction:
+  - `alphabetical` -> ascending by default
+  - `library` -> ascending by default
+  - `frequency` -> descending by default
+- tapping the same sort mode again reverses the direction
+- `alphabetical` sorts by exercise name in current direction
+- `frequency` sorts by `history.length` in current direction, then alphabetical in current direction as tie-break
+- `library` sorts by original library insertion order in current direction
 
-This is currently a proxy for “most logged,” not a full log-count calculation.
+`frequency` is currently still a proxy for “most logged,” not a full log-count calculation.
 
 ### 1.3 Add Exercise Grouping
 
@@ -86,6 +96,8 @@ Current groupings:
 Type derivation currently uses simple rules:
 
 - custom exercise id prefix -> `Added by me`
+- explicit custom/body metadata can override keyword inference
+- `bodyweight_weighted` -> `Weighted Bodyweight`
 - run/bike/cycle/etc -> `Cardio`
 - stretch/mobility/yoga -> `Stretching`
 - push-up/pull-up/bodyweight keywords -> `Bodyweight`
@@ -123,6 +135,91 @@ Behavior:
 3. Added exercises are inserted in the exact order selected.
 
 This is not just “selected or not”; order is preserved intentionally.
+
+### 1.6 Selector Details Access
+
+Implemented in:
+- `apps/web/src/App.tsx`
+
+Behavior:
+
+1. Template rows are split into two actions:
+   - main row button -> select / unselect
+   - dedicated `i` button -> open details
+2. Detail resolution checks:
+   - current workout exercises
+   - custom library exercises
+   - available exercise templates
+3. This allows library inspection without breaking ordered selection.
+
+### 1.7 Custom Exercise Create/Edit Flow
+
+Implemented in:
+- `apps/web/src/App.tsx`
+
+Behavior:
+
+1. The create flow is split into 2 steps:
+   - step 1: name, image, primary muscles, secondary muscles
+   - step 2: type, measurement, movement side
+2. Progress chips at the top act as a lightweight section guide.
+3. After the first primary muscle is chosen:
+   - the secondary-muscle selector auto-opens
+   - the form highlights that secondary can be added next
+4. The same form is reused for edit mode by preloading the existing custom exercise draft.
+
+### 1.8 Custom Exercise Naming And Library Management
+
+Implemented in:
+- `apps/web/src/App.tsx`
+
+Functions:
+- `ensureUniqueExerciseName`
+- `createCustomExercise`
+- `updateCustomExercise`
+- `archiveCustomExercise`
+- `deleteCustomExercise`
+- `importCustomExercises`
+
+Behavior:
+
+1. Direct create/edit:
+   - if the requested name already exists, the UI prompts the user to:
+     - rename it
+     - or save as the suggested suffixed name
+2. Suggested duplicate suffixes follow:
+   - `_1`
+   - `_2`
+   - `_3`
+   - and so on
+3. Edit mode excludes the exercise’s current own name from duplicate matching.
+4. Delete/archive rule:
+   - if custom exercise has no history -> full delete from library
+   - if custom exercise has history -> archive/hide from library instead
+5. Archived custom exercises are filtered out of the selector, but remain stored.
+6. Import path reuses the same unique-name helper automatically, so imported duplicates are suffixed without changing the naming convention.
+
+### 1.9 Planner Tag Filtering
+
+Implemented in:
+- `apps/web/src/App.tsx`
+
+Function/component:
+- `PlanTagPicker`
+
+Behavior:
+
+1. Build the unique tag set from saved plans plus currently selected tags.
+2. Order visible chips as:
+   - selected tags first
+   - remaining tags alphabetically
+3. If search text exists:
+   - filter the visible chip list only
+4. If the typed text is not an existing tag:
+   - expose `+ New <name>`
+5. `My Workouts` list filtering uses inclusive matching:
+   - if no tag filter exists -> show all plans
+   - else show plans whose `userTags` contain at least one selected tag
 
 ---
 
@@ -192,6 +289,26 @@ Behavior:
 So the UI rule is:
 
 - “last 3 sessions if available”
+
+### 2.4 Custom Exercise History Sync On Workout Save
+
+Implemented in:
+- `apps/web/src/App.tsx`
+
+Behavior:
+
+1. On workout save, scan the current workout exercises.
+2. For each exercise, try to match it back to a custom library template by:
+   - exact template id
+   - or cloned workout id prefix `${template.id}-...`
+3. Build completed sets from the final draft rows using the exercise measurement mode.
+4. If a custom exercise has at least one completed set:
+   - append a new history session to the custom library record
+5. Persist the updated custom library back to local storage.
+
+Implication:
+
+- custom exercises can later be archived instead of deleted once they have real usage history
 
 ---
 
@@ -293,6 +410,23 @@ Function:
 Same idea as `buildCompletedSets`, but only for one row.
 
 Used in reward recomputation.
+
+### 3.6 Current-Exercise Carry-Forward Placeholders
+
+Implemented in:
+- `apps/web/src/App.tsx`
+
+Function:
+- `getCurrentExerciseCarrySource`
+
+Behavior:
+
+1. Look backward only within the current exercise.
+2. Find the nearest earlier set that has entered or completed values.
+3. Use those values as placeholders for the next set.
+4. Do not hard-fill them into the next inputs immediately.
+
+This keeps the next row visually blank while still suggesting the likely working values from the same exercise flow.
 
 ---
 
@@ -476,6 +610,59 @@ Labels:
 - `Rest paused`
 - `Between exercises`
 - `Between exercises paused`
+
+### 4.9 Precise Session Clock Start
+
+Implemented in:
+- `apps/web/src/App.tsx`
+
+Functions:
+- `openQuickSession`
+- `startPlanWorkout`
+- `formatElapsedDuration`
+
+Behavior:
+
+1. Fresh sessions capture `startInstant = now.toISOString()`.
+2. Human-readable date/time fields are still stored for editing and display.
+3. Live elapsed duration prefers `startInstant` over reconstructing from `date + startTime`.
+
+This prevents fresh sessions from appearing to start 10–50 seconds into the current minute.
+
+### 4.10 Focused Expanded Card Mode
+
+Implemented in:
+- `apps/web/src/App.tsx`
+- `apps/web/src/styles.css`
+
+State:
+- `focusedExpandedExerciseId`
+
+Behavior:
+
+1. Trigger only when a collapsed exercise card is expanded directly.
+2. Do not trigger on `Expand all`.
+3. Track focused card state separately from collapse state.
+4. If the focused card collapses or disappears:
+   - clear focus mode
+5. Scroll the focused card toward the center of the logger.
+6. Dim/blur neighboring cards.
+7. Outside tap clears the focused state and restores the normal logger view.
+
+### 4.11 Session-Level Bottom Dock Visibility
+
+Implemented in:
+- `apps/web/src/App.tsx`
+
+State:
+- `showBottomRestDock`
+
+Behavior:
+
+1. Fresh sessions default to showing the bottom dock.
+2. Dismiss action can fully hide the dock for the current session.
+3. `Workout Actions` can restore the dock.
+4. The preference does not persist as a reusable workout default.
 
 ---
 
@@ -663,6 +850,23 @@ Used by:
 - reorder sheet drag/drop
 - direct logger drag/drop on expanded headers
 
+### 7.3 Planner Workout Reorder
+
+Implemented in:
+- `apps/web/src/App.tsx`
+
+Behavior:
+
+1. Track the dragged workout id.
+2. On drop, resolve source and target indices by id.
+3. Remove the source item.
+4. Insert it at the target position.
+5. Save the reordered plan list.
+
+Current rule:
+
+- planner drag-reorder is only meaningful in the unfiltered `My Workouts` ordering context
+
 ---
 
 ## 8. Swipe Algorithms
@@ -754,6 +958,26 @@ Algorithm:
 Note:
 
 - this is still exercise-level completion logic, not yet the final post-workout save flow
+
+### 9.4 Unsaved Workout-Builder Draft Persistence
+
+Implemented in:
+- `apps/web/src/App.tsx`
+
+Functions:
+- `getStoredPlanBuilderDraft`
+- `persistPlanBuilderDraft`
+
+Behavior:
+
+1. Persist `{ draft, mode }` in local storage when a new-builder draft changes.
+2. Rehydrate that draft on app load.
+3. Reuse it when the user returns to create flow.
+4. Clear it when the workout is saved.
+
+Current rule:
+
+- edit mode is excluded so in-progress template editing does not silently overwrite saved-plan truth
 
 ---
 

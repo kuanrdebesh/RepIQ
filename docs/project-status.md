@@ -33,6 +33,7 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
 ## Web App
 
 - Mobile-first logger UI exists and is actively being refined
+- Home and Planner surfaces now exist as real app-level destinations rather than only logger-adjacent ideas
 - App-level theme system exists with:
   - Light
   - Dark
@@ -145,6 +146,72 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
 - Active workouts can be resumed later
 - User cannot start another workout while one is active
 - Active workout summary is shown in the leave/resume flow
+- App launch now defaults to `Home` instead of dropping directly into the logger
+- App-level navigation direction is now clearer:
+  - `Home`
+  - `Planner`
+  - `Insights`
+  - `Profile` via `Home`
+- A dedicated navigation/connectivity source of truth now exists in [navigation-map.md](/Users/debeshkuanr/Documents/RepIQ/docs/navigation-map.md)
+
+## Home And Planner
+
+- `Home` now acts as the operational entry point:
+  - quick session
+  - resume active workout
+  - planner entry
+  - profile/settings access
+- `Quick Session` now starts a fresh blank workout and uses a precise start timestamp so the timer begins at `0`
+- `Workout Planner` now has real app-level structure:
+  - `My Workouts`
+  - `Library`
+  - `Generate Session`
+- Planner cards now support:
+  - open/preview
+  - edit
+  - duplicate
+  - share
+  - delete where allowed
+  - tag editing
+- `My Workouts` supports:
+  - draggable card reorder
+  - count in the tab label
+  - tag-based filtering
+- `Library` now supports:
+  - compact filter tray
+  - template preview/start path
+- `Generate Session` now opens a dedicated review/builder path before logger entry
+- `Workout Builder` now exists as a real editable surface:
+  - name
+  - note
+  - tags
+  - drag-reorder exercises
+  - per-exercise rest
+  - per-set type editing
+  - add/remove sets
+  - add exercise
+- Unsaved new-builder drafts now persist locally until they are saved or replaced
+- Starting from a generated workout, plan, template, or quick session now routes through clearer source-specific behavior
+
+## Logger Flow Refinements
+
+- Saved workouts entered from `My Workouts` now start in collapsed mode
+- Expanding a collapsed card can enter a focused mode:
+  - focused card is centered
+  - surrounding cards are dimmed/blurred
+  - tapping outside exits focus mode
+  - `Expand all` does not trigger focus mode
+- The sticky bottom rest dock is now more session-oriented:
+  - centered `-5 / time / +5` cluster
+  - time tap pauses/resumes
+  - minimize on the left
+  - stop/dismiss on the right side
+  - full dismiss can be restored from workout actions
+- Bottom rest timer visibility is now a session-level action rather than a reusable workout default
+- Logger guidance no longer appears when there are no exercises
+- Missing previous-session values now stay blank rather than showing placeholder dashes
+- Current-exercise carry-forward placeholders now appear as lighter grey hints in the next set instead of pre-filling hard values
+- Workout duration now uses precise `startInstant` timing, which also fixes quick-session and plan-start timing drift
 
 ## Additional Screens
 
@@ -190,6 +257,27 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
   - top-strip summary should stay limited to in-logger reward levels that matter during the workout
   - finish flow should include a full reward section for the completed exercise/workout
   - shareable summaries should include reward counts in the main summary plus a reward-only card later
+- Planner-linked surfaces now exist:
+  - template preview
+  - generated review
+  - workout builder/edit
+- A dedicated navigation/connectivity document now exists:
+  - [navigation-map.md](/Users/debeshkuanr/Documents/RepIQ/docs/navigation-map.md)
+- A dedicated psychological-data planning document now exists:
+  - [psych-layer.md](/Users/debeshkuanr/Documents/RepIQ/docs/psych-layer.md)
+
+## Psychological Data Layer
+
+- Psychological/readiness architecture is now documented and partially stubbed in the web app
+- The psych layer is intentionally separate from normal workout-save payloads
+- Planned stores currently cover:
+  - user psych profile
+  - post-workout mood / energy / session RPE
+  - daily readiness
+  - passive session behavior signals
+- Current status:
+  - schema and storage direction documented
+  - capture UI and intelligence surfaces not yet built
 
 ## UX Direction Locked In
 
@@ -252,12 +340,13 @@ These are documented and should not be forgotten:
   - smoother gradients / intensity legend
   - clearer comparison between overall workout and selected exercise
 
-## Most Likely Next Screens
+## Most Likely Next Surfaces
 
-1. Custom workout creation
-2. Post-finish workout screen
-3. Workout plans screen
-4. Exercise details / history expansion
+1. Library workout optimization and filters
+2. Workout builder refinement
+3. Goal Planner / generation refinement
+4. Insights and reports integration
+5. Profile, preferences, and import/export wiring
 5. App-level shell with clearer navigation between `Today`, `Workouts`, `Analyze`, and `Profile`
 
 ## Planned Logger Enhancement

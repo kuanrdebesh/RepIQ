@@ -44,6 +44,51 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 
 ## Key Decisions Captured
 
+### App Navigation And Page Roles
+
+- the app should no longer feel like a logger-first prototype on refresh
+- `Home` is now the operational launch surface
+- `Planner` is now the build/manage surface
+- `Insights` should own analyzer-style understanding plus reports
+- `Profile` remains important, but should be reached from `Home` instead of consuming a bottom-nav slot
+- bottom navigation should be reserved for the highest-frequency destinations only:
+  - `Home`
+  - `Planner`
+  - `Insights`
+- focused task flows should hide bottom nav:
+  - logger
+  - builder
+  - add exercise
+  - custom exercise
+  - finish workout
+  - report detail
+
+### Home And Planner Information Architecture
+
+- `Ready to Train` belongs inside `Home`, not as a separate top-level destination
+- `Quick Session` should create a fresh blank session, not act like a lightweight resume
+- `Planner` should center around:
+  - `My Workouts`
+  - `Library`
+  - `Generate Session`
+- `Generate Session` should be visible, but should not visually replace the identity of `Planner`
+- `Create Template` belongs to the `+` action, not the main heading structure
+- generated sessions should always stop at review/builder before logger entry
+- `Goal Planner` should live under `Planner`, not become its own app-level destination
+
+### Workout Builder Principles
+
+- builder bottom tray should stay simple:
+  - save only
+- back already exists in the top bar and should not be duplicated
+- builder should feel calmer than logger:
+  - editable
+  - ordered
+  - structured
+  - not like a dense live-session surface
+- tags should be typeable and create-on-demand, not preloaded with a heavy fixed folder taxonomy
+- unsaved new-workout drafts should persist until the user saves or discards them deliberately
+
 ### Logger Structure
 
 - top row now focuses on:
@@ -92,6 +137,7 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - guidance card should stay content-led:
   - exercise/workout context is secondary
   - main tip is the primary emphasis
+  - no exercise = no guidance surface
 
 ### Reward Presentation
 
@@ -157,6 +203,18 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
   - during direct creation, the user should choose to rename or save as `_1`
   - future import flows should reuse the same unique-name helper automatically
 
+### Planner And Library Card Behavior
+
+- `My Workouts` cards should feel like manageable assets:
+  - reorderable
+  - editable
+  - shareable
+  - duplicable
+  - taggable
+- `Library` should stay browsable and filterable, not user-reorderable by default
+- planner content under the tab selector benefits from stronger contrast/tinting than plain white when the surrounding layout starts feeling too empty
+- planner action buttons should read like buttons, not like content sections in disguise
+
 ## Optimizations Made During Logger Refinement
 
 - reduced horizontal wasted space in logger cards and strips
@@ -175,6 +233,10 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
   - minimize-to-FAB behavior
   - progress line
   - quick timer adjustment controls
+- moved bottom-rest-dock visibility into workout actions because it is a session-level preference, not a reusable workout-level default
+- changed quick/fresh sessions and plan starts to use precise session timestamps rather than deriving duration only from hour/minute strings
+- moved current-set carry-forward toward lighter placeholders rather than hard-filled next-set values
+- added focused expanded-card mode for collapsed→expanded logger transitions only
 
 ## Timer Decision Log
 
@@ -190,9 +252,11 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 
 ### Next Major Product Block
 
-1. custom workout creation
-2. post-finish workout screen
-3. workout plans
+1. library workout optimization and filter refinement
+2. workout builder refinement
+3. goal planner and generated-workout refinement
+4. insights / reports integration
+5. profile, preferences, account, and import/export wiring
 
 ### Guidance Refinement Later
 
