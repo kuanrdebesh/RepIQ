@@ -8519,6 +8519,55 @@ ol {
   color: var(--accent);
 }
 
+.ob-dot.is-clickable {
+  cursor: pointer;
+  padding: 0;
+}
+.ob-dot.is-clickable:hover {
+  background: color-mix(in srgb, var(--accent) 28%, var(--paper));
+}
+
+/* ── Progressive disclosure — locked section preview ── */
+.ob-locked-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1.5px dashed var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--muted);
+  transition: border-color 0.15s, background 0.15s;
+}
+.ob-locked-section:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--paper));
+}
+.ob-locked-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  flex-shrink: 0;
+}
+.ob-locked-label {
+  flex: 1;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--subtle-text);
+}
+.ob-locked-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.ob-field-revealed {
+  animation: obFadeUp 0.2s ease-out;
+}
+
 .ob-connector {
   flex: 1;
   height: 2px;

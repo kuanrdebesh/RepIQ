@@ -8122,6 +8122,7 @@ function OnboardingPage({
   const [preWorkoutFeeling, setPreWorkoutFeeling] = useState<string | null>(null);
   const [workoutStyle, setWorkoutStyle] = useState<string | null>(null);
   const [successVision, setSuccessVision] = useState<string | null>(null);
+  const [mindsetReveal, setMindsetReveal] = useState(1);
 
   const canAdvance =
     step === 1 ? true :
@@ -8447,79 +8448,109 @@ function OnboardingPage({
 
     5: (
       <div className="ob-step" key="step-5">
-        <div className="ob-trust-card">
-          <span className="ob-trust-icon">{trustMessages[5].icon}</span>
-          <div>
-            <strong className="ob-trust-headline">{trustMessages[5].headline}</strong>
-            <p className="ob-trust-body">{trustMessages[5].body}</p>
-          </div>
-        </div>
         <div className="ob-fields">
+          {/* Section 1 — Biggest challenge */}
           <div className="ob-field">
             <label className="ob-field-label">Biggest challenge right now <span className="ob-optional">(optional — pick all that apply)</span></label>
             <div className="ob-chip-grid">
               {[
-                { value: "time", label: "⏱ Not enough time" },
-                { value: "motivation", label: "😴 Staying motivated" },
-                { value: "knowledge", label: "📚 What to do" },
-                { value: "injury", label: "🩹 Recovery / injury" },
-                { value: "consistency", label: "🔁 Staying consistent" },
+                { value: "time",        label: "Not enough time" },
+                { value: "motivation",  label: "Staying motivated" },
+                { value: "knowledge",   label: "Not sure what to do" },
+                { value: "injury",      label: "Recovery / injury" },
+                { value: "consistency", label: "Staying consistent" },
               ].map((o) => (
                 <Chip
                   key={o.value}
                   label={o.label}
                   active={biggestObstacles.includes(o.value)}
-                  onClick={() => setBiggestObstacles((prev) =>
-                    prev.includes(o.value) ? prev.filter((x) => x !== o.value) : [...prev, o.value]
-                  )}
+                  onClick={() => {
+                    setBiggestObstacles((prev) =>
+                      prev.includes(o.value) ? prev.filter((x) => x !== o.value) : [...prev, o.value]
+                    );
+                    if (mindsetReveal < 2) setMindsetReveal(2);
+                  }}
                 />
               ))}
             </div>
           </div>
-          <div className="ob-field">
-            <label className="ob-field-label">Before a workout, you usually feel <span className="ob-optional">(optional)</span></label>
-            <div className="ob-chip-grid">
-              {[
-                { value: "energised", label: "⚡ Energised & ready" },
-                { value: "neutral", label: "😐 Neutral" },
-                { value: "reluctant", label: "😤 Reluctant, but I go" },
-                { value: "tired", label: "😴 Usually tired" },
-              ].map((f) => (
-                <Chip key={f.value} label={f.label} active={preWorkoutFeeling === f.value} onClick={() => setPreWorkoutFeeling(preWorkoutFeeling === f.value ? null : f.value)} />
-              ))}
+
+          {/* Section 2 — Pre-workout feeling */}
+          {mindsetReveal >= 2 ? (
+            <div className="ob-field ob-field-revealed">
+              <label className="ob-field-label">Before a workout, you usually feel <span className="ob-optional">(optional)</span></label>
+              <div className="ob-chip-grid">
+                {[
+                  { value: "energised", label: "Energised & ready" },
+                  { value: "neutral",   label: "Neutral" },
+                  { value: "reluctant", label: "Reluctant, but I go" },
+                  { value: "tired",     label: "Usually tired" },
+                ].map((f) => (
+                  <Chip key={f.value} label={f.label} active={preWorkoutFeeling === f.value} onClick={() => {
+                    setPreWorkoutFeeling(preWorkoutFeeling === f.value ? null : f.value);
+                    if (mindsetReveal < 3) setMindsetReveal(3);
+                  }} />
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="ob-field">
-            <label className="ob-field-label">Preferred workout style <span className="ob-optional">(optional)</span></label>
-            <div className="ob-chip-grid">
-              {[
-                { value: "full_body", label: "🔄 Full Body" },
-                { value: "upper_lower", label: "↕️ Upper / Lower" },
-                { value: "ppl", label: "🔀 Push · Pull · Legs" },
-                { value: "body_part", label: "🎯 Body Part Split" },
-                { value: "any", label: "🤷 No preference" },
-              ].map((s) => (
-                <Chip key={s.value} label={s.label} active={workoutStyle === s.value} onClick={() => setWorkoutStyle(workoutStyle === s.value ? null : s.value)} />
-              ))}
+          ) : (
+            <button type="button" className="ob-locked-section" onClick={() => setMindsetReveal(2)}>
+              <span className="ob-locked-dot" />
+              <span className="ob-locked-label">Pre-workout feeling</span>
+              <span className="ob-locked-hint">tap to answer</span>
+            </button>
+          )}
+
+          {/* Section 3 — Workout style */}
+          {mindsetReveal >= 3 ? (
+            <div className="ob-field ob-field-revealed">
+              <label className="ob-field-label">Preferred workout style <span className="ob-optional">(optional)</span></label>
+              <div className="ob-chip-grid">
+                {[
+                  { value: "full_body",   label: "Full Body" },
+                  { value: "upper_lower", label: "Upper / Lower" },
+                  { value: "ppl",         label: "Push · Pull · Legs" },
+                  { value: "body_part",   label: "Body Part Split" },
+                  { value: "any",         label: "No preference" },
+                ].map((s) => (
+                  <Chip key={s.value} label={s.label} active={workoutStyle === s.value} onClick={() => {
+                    setWorkoutStyle(workoutStyle === s.value ? null : s.value);
+                    if (mindsetReveal < 4) setMindsetReveal(4);
+                  }} />
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="ob-field">
-            <label className="ob-field-label">In 3 months, success means <span className="ob-optional">(optional)</span></label>
-            <div className="ob-chip-grid">
-              {[
-                { value: "look_different", label: "🪞 I look noticeably different" },
-                { value: "stronger", label: "💪 I'm significantly stronger" },
-                { value: "consistent", label: "📅 I've trained consistently" },
-                { value: "healthier", label: "❤️ I feel healthier overall" },
-                { value: "habit", label: "🔥 I've built a real habit" },
-              ].map((v) => (
-                <Chip key={v.value} label={v.label} active={successVision === v.value} onClick={() => setSuccessVision(successVision === v.value ? null : v.value)} />
-              ))}
+          ) : (
+            <button type="button" className="ob-locked-section" onClick={() => setMindsetReveal(3)}>
+              <span className="ob-locked-dot" />
+              <span className="ob-locked-label">Preferred workout style</span>
+              <span className="ob-locked-hint">tap to answer</span>
+            </button>
+          )}
+
+          {/* Section 4 — Success vision */}
+          {mindsetReveal >= 4 ? (
+            <div className="ob-field ob-field-revealed">
+              <label className="ob-field-label">In 3 months, success means <span className="ob-optional">(optional)</span></label>
+              <div className="ob-chip-grid">
+                {[
+                  { value: "look_different", label: "I look noticeably different" },
+                  { value: "stronger",       label: "I'm significantly stronger" },
+                  { value: "consistent",     label: "I've trained consistently" },
+                  { value: "healthier",      label: "I feel healthier overall" },
+                  { value: "habit",          label: "I've built a real habit" },
+                ].map((v) => (
+                  <Chip key={v.value} label={v.label} active={successVision === v.value} onClick={() => setSuccessVision(successVision === v.value ? null : v.value)} />
+                ))}
+              </div>
             </div>
-          </div>
-        </div>
-        <div className="ob-ready-close">
-          <p className="ob-ready-copy">You're all set. RepIQ will personalise your experience as you train — the more you log, the smarter it gets.</p>
+          ) : (
+            <button type="button" className="ob-locked-section" onClick={() => setMindsetReveal(4)}>
+              <span className="ob-locked-dot" />
+              <span className="ob-locked-label">Your vision in 3 months</span>
+              <span className="ob-locked-hint">tap to answer</span>
+            </button>
+          )}
         </div>
       </div>
     ),
@@ -8545,9 +8576,16 @@ function OnboardingPage({
               const active = n === step;
               return (
                 <Fragment key={n}>
-                  <div className={`ob-dot ${done ? "is-done" : ""} ${active ? "is-active" : ""}`}>
-                    {done ? "✓" : n}
-                  </div>
+                  {done ? (
+                    <button
+                      type="button"
+                      className="ob-dot is-done is-clickable"
+                      onClick={() => setStep(n)}
+                      aria-label={`Go back to ${lbl}`}
+                    >✓</button>
+                  ) : (
+                    <div className={`ob-dot${active ? " is-active" : ""}`}>{n}</div>
+                  )}
                   {i < TOTAL - 1 && <div className={`ob-connector ${n < step ? "is-filled" : ""}`} />}
                 </Fragment>
               );
