@@ -16,7 +16,10 @@
     "dev:engine": "cd apps/engine && python3 -m uvicorn app.main:app --reload --port ${ENGINE_PORT:-8000}",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present"
+    "lint": "npm run lint --workspaces --if-present",
+    "screenshots": "node scripts/screenshots.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.59.1"
   }
 }
-
