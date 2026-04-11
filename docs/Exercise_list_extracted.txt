@@ -1,0 +1,362 @@
+## Full Exercise List by Category
+### CHEST
+| Exercise | Primary Muscles | Equipment |
+|---|---|---|
+| Bear Walk | Chest, Shoulders, Triceps | Bodyweight |
+| Butterfly (Cable Fly) | Pectoralis major | Machine |
+| Butterfly Machine | Pectoralis major | Machine |
+| Burpees | — | Bodyweight |
+| Chest Press | Pectoralis major | Machine |
+| Dumbbell Pullovers | Lats, Chest, Serratus anterior | Dumbbell |
+| Dumbbell Push-Up | — | Dumbbell |
+| Incline Shoulder Press Up | Shoulders, Chest | Bench |
+| Pause Bench | Chest | Barbell, Bench |
+| Dumbbell Incline Fly | Chest | Dumbbell, Incline bench |
+| Dumbbell Decline Bench Press | Chest | Dumbbell, Incline bench |
+| Machine Chest Press | Chest | Machine |
+| Omni Cable Cross-over | Chest | Cable |
+| Push-Up | Pectoralis major | Bodyweight |
+| Bent over Cable Flye | Chest | Cable |
+| Close-grip Press-ups | Chest, Lats, Trapezius | Bodyweight |
+| Overhead Press | Anterior deltoid | Barbell |
+| Cable Chest Press - Decline | Chest | Cable |
+| Pike Push Ups | Chest, Triceps | Bodyweight |
+| Hammerstrength Decline Chest Press | Chest | Machine |
+| Ring Support Hold | — | — |
+| Bench Press Dumbbell | Chest | Dumbbell |
+| Machine Chest Press | Chest | Bench |
+| High-Incline Smith Machine Press | Chest, Shoulders, Triceps | Machine |
+| Flat Machine Press | Chest | Bench |
+| DB Upper Chest Variation | Chest | Dumbbell |
+| DB Underhand bench press | Chest, Shoulders | Dumbbell, Bench |
+| Elbows Tucked DB Bench Press | Triceps | Dumbbell, Bench |
+| Cable Fly Middle Chest | Chest | Cable |
+| Cable Fly Upper Chest | Chest | Cable |
+| Cable Fly Lower Chest | Chest | Cable |
+| Incline Smith Press | Chest | Incline bench |
+| Dumbbell Floor Press | Pectoralis major | Dumbbell |
+| Incline Static Hold | Chest | Dumbbell |
+| Dumbbell Bench Press | Pectoralis major | Dumbbell |
+| Upper External Oblique | Obliquus externus | Pull-up bar |
+### ARMS
+| Exercise | Primary Muscles | Equipment |
+|---|---|---|
+| Axe Hold | — | Dumbbell |
+| Tricep Pushdown on Cable | Triceps | Cable |
+| Fingerboard 20mm Edge | — | Bodyweight |
+| One-handed kettlebell curls | Biceps | Kettlebell |
+| Sloper hanging | — | Bodyweight |
+| Close-Grip Barbell Bench Press | Triceps | Barbell |
+| Deadhang | — | Pull-up bar |
+| Preacher Curls | Brachialis | SZ-Bar |
+| Australian pull-ups | Shoulders, Biceps, Lats | Bodyweight |
+| Kneck extension | Biceps | SZ-Bar |
+| Dumbbell upright-row | Shoulders, Biceps | Dumbbell |
+| Triceps Extensions on Cable | Triceps | Cable |
+| Triceps stretch left | Triceps | — |
+| Standing biceps stretch left | Shoulders, Biceps, Chest | — |
+| Dumbbell bicep curl to press | Biceps | Dumbbell |
+| Dumbbell drag curls | Biceps | Dumbbell |
+| Dumbbell wide bicep curls | Biceps | Dumbbell |
+| Dumbbell close grip bench press | Chest, Triceps | Dumbbell |
+| Dumbbell rear delt row | Shoulders, Trapezius | Dumbbell |
+| Triceps Dips (Assisted) | Triceps | Bodyweight |
+| Floor Skull Crusher | Triceps | — |
+| Lying Triceps Extensions | Triceps | Barbell, Dumbbell |
+| Drag Pushdown | Triceps | SZ-Bar |
+| Dumbbell Cheat Curl | Biceps | Dumbbell |
+| Bizeps Curls Trifecta | Biceps | Dumbbell |
+| Rocking Triceps Pushdown | Triceps | SZ-Bar |
+| Bayesian Curl | Biceps | Cable |
+| DB Cross Body Hammer Curls | Biceps | Dumbbell |
+| Alternating dumbbell hammer curl | Biceps | Dumbbell |
+| Cable Tricep Kickback | Triceps | Cable |
+| Kong Curl | Biceps | Dumbbell |
+| Drop Curl | Biceps | Dumbbell |
+| Overhead Cable Tricep Extension | Triceps | Cable |
+| Overhead Triceps Extension | Trapezius | SZ-Bar |
+| Incline Skull Crush | Triceps | — |
+| Zottman curl | Biceps, Brachialis | Dumbbell |
+| Triceps Overhead (Dumbbell) | Triceps | Dumbbell |
+| Shoulder Press (Dumbbell) | Anterior deltoid | Dumbbell |
+| DB Skull Crushers | Triceps | Dumbbell |
+| Concentration Curl | Biceps | Dumbbell |
+| Overhand Cable Curl | Biceps | Cable |
+| One Arm Overhead Cable Tricep Extension | Triceps | Resistance band |
+| Arm Raises (T/Y/I) | Shoulders, Lats, Trapezius | Bodyweight |
+| Bodyweight Biceps Curl | Biceps | Bodyweight |
+| Australian pull-ups | Lats | Bodyweight |
+| Glute Bridge Single-Arm Press | Pectoralis major | Dumbbell |
+| Double Kettlebell Clean and Press | Anterior deltoid, Biceps, Trapezius, Triceps | Kettlebell |
+| Dumbell Tate Press | Triceps | Bench, Dumbbell |
+| Dumbbell Floor Press | Chest, Triceps | Dumbbell |
+| DB Wrist Extension | — | Dumbbell |
+| Forearm Curls (underhand grip) | — | Dumbbell |
+| Claps over the head | Shoulders | Bodyweight |
+### BACK
+| Exercise | Primary Muscles | Equipment |
+|---|---|---|
+| Single Arm Plank to Row | Shoulders, Biceps, Lats | Kettlebell |
+| Incline Bench Reverse Fly | Shoulders, Trapezius | Dumbbell |
+| Chin-ups | Latissimus dorsi | Pull-up bar |
+| Deadlifts | Latissimus dorsi | Barbell |
+| Deficit Deadlift | — | Barbell |
+| Pendelay Rows | Lats, Trapezius | Barbell |
+| Rack Deadlift | Glutes | Barbell |
+| Prone Scapular Retraction | Trapezius | Bodyweight |
+| Pull Ups on Machine | Lats | Machine |
+| Pull-ups | Lats | Pull-up bar |
+| Seated Cable Rows | Lats | Cable |
+| Seated Cable Row | Lats | Cable |
+| Muscle Up | Biceps | Pull-up bar |
+| 1-Arm Half-Kneeling Lat Pulldown | Lats | Cable |
+| Kroc Row | Lats, Trapezius | Dumbbell |
+| Alternating High Cable Row | Lats | Cable |
+| Hyper Y W Combo | Lats | — |
+| Dumbbell Pullover | Lats | Dumbbell |
+| High Row | Lats | Cable |
+| Remada unilateral no cabo | Lats | Cable |
+| Neutral Grip Lat Pulldown | Lats | Cable |
+| Alternative DB Gorilla rows | Lats | Dumbbell |
+| Dumbbell Bent Over Row | Shoulders, Biceps, Lats, Trapezius | Dumbbell |
+| Reverse Cable Flye | Shoulders | Cable |
+| Elevated Prayer Stretch | Latissimus dorsi | Bench |
+| Quadruped Thoracic Rotation Left | — | Bodyweight |
+| Quadruped Thoracic Rotation Right | — | Bodyweight |
+| Bent Over Row to External Rotation | — | Bodyweight |
+| YWTs | — | Bodyweight |
+| Dumbbell Hang Power Cleans | — | Dumbbell |
+| Front Neck Stretch | — | Bodyweight |
+| Unilateral Cable Row | Latissimus dorsi | Incline bench |
+| Lateral Walk | Glutes | Bodyweight |
+| Band pull-aparts | — | Resistance band |
+| Upper Back | Anterior deltoid, Trapezius | — |
+| Pullover Machine | Latissimus dorsi | Machine |
+| Sit & Reach | Biceps femoris | Gym mat |
+| Roll Down | — | Bodyweight |
+| Open Book | — | Bodyweight |
+| Trap-3 Raise | Trapezius | Bodyweight |
+| Side stretch | — | Bodyweight |
+| Banded Scapular Retraction | Shoulders, Trapezius | Resistance band |
+| Wide Grip Pull Up | Lats | Bodyweight |
+| Typewriter Pull-ups | Biceps, Lats | Bodyweight |
+| Assisted chin-ups | — | Machine |
+| Pull-Ups (Neutral Grip) | Lats | Bodyweight |
+| Wall Slides | Biceps, Chest, Trapezius | Bodyweight |
+| Yoga exercise: Cow-cat | Shoulders, Lats, Trapezius | Gym mat |
+| Lower Back Extensions | — | Machine |
+| Lat Pull Down (close grip) | — | Machine |
+| Face pulls with yellow/green band | Lats | Resistance band |
+| Unilateral Cable row | Lats, Serratus anterior | Bench |
+| Side Straight-Arm Pulldown (Cable) | Lats | Cable |
+| Straight-Arm Pulldown (Cable) | Lats | Cable |
+| Seated Row (Machine) | Lats | Machine |
+| Blackroll | — | — |
+### SHOULDERS
+| Exercise | Primary Muscles | Equipment |
+|---|---|---|
+| Cable Rear Delt Fly | Shoulders, Trapezius | Cable |
+| Handstand Push Up | Shoulders, Triceps | Bodyweight |
+| Arnold Shoulder Press | — | Dumbbell |
+| Face Pulls | Trapezius | Cable |
+| Butterfly Reverse | Anterior deltoid | — |
+| Push Press | Trapezius | Barbell |
+| Rear Delt Raises | — | Dumbbell |
+| Seated Dumbbell Side Lateral | Shoulders | Dumbbell |
+| Lying Rotator Cuff Exercise | — | Dumbbell |
+| Rear Delt Raise | Anterior deltoid, Trapezius | Dumbbell |
+| Arnold Press | — | Dumbbell |
+| Dumbbell Scaption | Trapezius | Dumbbell |
+| Shoulder Dumbbell Pendular Exercise | Shoulders, Lats, Chest, Trapezius | Dumbbell |
+| Shoulder External Rotation with Dumbbell | Shoulders, Brachialis | Dumbbell |
+| Dumbbell rear delt row | Shoulders, Trapezius | Dumbbell |
+| Hindu Pushups | Anterior deltoid, Chest | Bodyweight |
+| Shoulder Dislocates | — | Bodyweight |
+| Machine Lateral Raise | Anterior deltoid | Machine |
+| Dumbbell Shrug | — | Dumbbell |
+| Cable Lateral Raises (Single Arm) | Anterior deltoid | Cable |
+| Chest-Supported Rear Delt Raise | Shoulders | Bench, Dumbbell |
+| Band pull-apart with external rotation | Shoulders | Resistance band |
+| Banded Shoulder Drills | Shoulders, Chest, Trapezius | Resistance band |
+| External Rotation Stretch | Shoulders, Trapezius | Barbell |
+| Wall Angels | Trapezius | Bodyweight |
+| Incline DB Y-Raise | Shoulders | Dumbbell |
+| High-Cable Lateral Raise | Shoulders | Cable |
+| Snatch | Shoulders | Barbell |
+| Handstand | Shoulders | Bodyweight |
+| Dumbbel Bradford press | Shoulders | Dumbbell |
+| Reverse Fly Standing | Shoulders, Trapezius | Resistance band |
+| Horizontal Shoulder Flexion Stretch | Chest | — |
+| Shoulder Internal Rotation (Cable) | Shoulders | Cable |
+| Shoulder External Rotation (Cable) | Shoulders | Cable |
+| Front Raise (Cable) | Shoulders | Cable |
+| Side Lateral Raise (Cable) | Lats | Cable |
+| Cable Shrug-In | Trapezius | Cable |
+| W-Raise | Abs, Obliquus externus | Bodyweight |
+| Floor Glider Hamstring Curls | — | — |
+| Seated Shoulder Extension Stretch | Lats, Chest | Bodyweight |
+### LEGS
+| Exercise | Primary Muscles | Equipment |
+|---|---|---|
+| Barbell Hack Squats | — | Barbell |
+| Seated Hip Adduction | Glutes | Machine |
+| Barbell Lunges Standing | Quads | Barbell |
+| Barbell Lunges Walking | — | Barbell |
+| Leg Curls (standing) | Hamstrings | Machine |
+| Leg Press on Hackenschmidt Machine | Quads | Machine |
+| Leg Presses (narrow) | Quads | Machine |
+| Leg Presses (wide) | Quads | Machine |
+| Leg Press | Hamstrings, Calves, Glutes, Quads | Machine |
+| Pistol Squat | Hamstrings, Glutes | Bodyweight |
+| Barbell Hack Squats | — | Barbell |
+| Overhead Squat | — | Barbell |
+| Leg Extension | Quads | Machine |
+| Wall Squat | Quads, Hamstrings | Bodyweight |
+| Dumbbell Sumo Deadlift | — | Dumbbell |
+| Dumbbell Front Squat | Glutes, Quads | Dumbbell |
+| Kettlebell One Legged Deadlift | Glutes | Kettlebell |
+| Dumbbell Hip Thrust | Glutes, Quads | Dumbbell |
+| Dumbbell Rear Lunge | Glutes, Quads | Dumbbell |
+| Dumbbell Romanian Deadlift | Hamstrings, Glutes | Dumbbell |
+| Dumbbell Side Squat | Glutes, Quads | Bodyweight |
+| Dumbbell Frog Press | Glutes | Dumbbell |
+| Thruster | Anterior deltoid | Barbell |
+| Dumbbell Thruster | Hamstrings, Glutes, Quads | Dumbbell |
+| Dumbbell Split Squat | — | Dumbbell |
+| Dumbbell Deadlift | — | Dumbbell |
+| Calf Raise with machine (seated) | — | Machine |
+| Dumbbell Romanian Deadlifts | Quads | Dumbbell |
+| Seated Hip Abduction | Gluteus maximus | Machine |
+| Single Leg RDL | Hamstrings, Glutes | Bodyweight |
+| Hamstring Kicks | Biceps femoris | Bodyweight |
+| Toe Touch | Hamstrings, Glutes | Bodyweight |
+| Elephant Walks | Biceps femoris | Bodyweight |
+| Good Morning | Biceps femoris | Bodyweight |
+| Single Leg Hamstring Stretch | Biceps femoris | Bodyweight |
+| Crossbody Leg Swings | Biceps femoris | Bodyweight |
+| Standing Pancake | Biceps femoris | Bodyweight |
+| Hamstring Chokes | Biceps femoris | Bodyweight |
+| Crossbody Hamstring Stretch | Biceps femoris | Bodyweight |
+| Bodyweight lunge HD | Quads | Bodyweight |
+| Lateral Push Off | Gastrocnemius | Bodyweight |
+| Leg Swings (Front-Back) | Biceps femoris | Bodyweight |
+| Double Leg Calf Raise | Calves, Soleus | Bodyweight |
+| Exercise Band Dorsiflexion | Soleus | Resistance band |
+| Exercise Band Plantarflexion | Calves, Soleus | Resistance band |
+| Standing Calf Stretch | Calves | Bodyweight |
+| Standing Soleus Stretch | Soleus | Bodyweight |
+| Seated Dumbbell Calf Raise | Calves | Dumbbell |
+| Sitting Calf Raises | Calves | Machine |
+| Leg Press Toe Press | Calves | Machine |
+| Kettlebell sumo deadlift | Hamstrings, Glutes, Quads | Kettlebell |
+| Smith Machine Split Squat | Hamstrings, Quads | Barbell |
+| Sliding Lateral Lunge | Hamstrings, Glutes, Quads | Barbell |
+| Copenhagen Adduction Exercise | Glutes, Quads | Bench |
+| Single-Leg Lunge with Kettlebell | Calves, Glutes, Quads | Kettlebell |
+| Single-leg side glute press | Calves, Glutes, Quads | Incline bench |
+| Single-Leg Deadlift with Dumbbell | Hamstrings, Glutes | Dumbbell |
+| Dumbbell Hip Thrust | Glutes | Bench |
+| Glute Kickback (Machine) | Glutes | Machine |
+| Standing Adduction (Cable) | — | Cable |
+| Isometric Squat to Failure | Glutes, Quads | Bodyweight |
+| Standing IT Band Stretch | — | Bodyweight |
+| Pigeon Stretch | — | Bodyweight |
+| Quad Stretch | — | Bodyweight |
+| Runners Lunge Stretch | — | Bodyweight |
+| Lying Figure Four Stretch | — | Bodyweight |
+| Lying Hamstring Stretch with Band | — | Bodyweight |
+| Lying Knee to Chest Stretch | — | Bodyweight |
+| Hip Flexor Stretch | — | Bodyweight |
+| Lunge with Twist Stretch | — | Bodyweight |
+| Butterfly Stretch | — | Bodyweight |
+| Banded Ankle Mobility | — | Resistance band |
+| Ankle Roll | — | Bodyweight |
+| Hip Crossover | — | Bodyweight |
+| Hip Circles | — | Bodyweight |
+| Banded Clamshell | Glutes, Abs | Resistance band |
+| Standing Pancake Good Morning | Hamstrings | Bodyweight |
+| Seated Pancake Good Morning | Glutes | Bodyweight |
+| Horse Stance (Side Splits) | Glutes | Bodyweight |
+| Foam Roller Gluteus | Glutes | — |
+| Foam Roller Adductors | — | — |
+| Foam Roller quadriceps | Quads | — |
+| Foam Roller Iliotibial band | Quads | — |
+| Calves foam roller | Calves | — |
+| Hamstring Foam roller | — | — |
+| Landmine Squat to Press | Shoulders, Glutes, Quads | Barbell |
+| Barbell Step Back Lunge | Quads | Barbell |
+| Solo Hip Flexor Stretch | — | Bodyweight |
+| Bent-Leg Hamstring Stretch | — | Bodyweight |
+| Double Kettlebell Front Squat | Glutes, Quads | Kettlebell |
+| Australian pull-ups | Shoulders, Biceps, Lats | Bodyweight |
+| Dumbbell Single-leg Hip Thrust | Glutes | Barbell |
+| seated figure four | Gluteus maximus | Bench |
+### ABS / CORE
+| Exercise | Primary Muscles | Equipment |
+|---|---|---|
+| Commando Pull-ups | Shoulders, Biceps, Lats, Trapezius | Pull-up bar |
+| Abdominal Stabilization | Abs | Gym mat |
+| Kettlebell Swing | Shoulders, Glutes | Kettlebell |
+| Medicine ball booklet crunch | Abs | — |
+| Box squat | Glutes, Quads | Bodyweight |
+| Knee Raises | Abs | Pull-up bar |
+| Barbell Ab Rollout | Obliques | Barbell |
+| Ball Crunches | — | Swiss Ball |
+| Machine Crunches | Rectus abdominis | Machine |
+| Burpees | — | Bodyweight |
+| Incline Crunches | Rectus abdominis | Incline bench |
+| Crunches | Rectus abdominis | Gym mat |
+| Cable Woodchoppers | Obliquus externus | Cable |
+| Deadbug | — | Bodyweight |
+| Flutter Kicks | Obliquus externus, Rectus abdominis | Bodyweight |
+| Crunches With Legs Up | Rectus abdominis | Bodyweight |
+| 2 Handed Kettlebell Swing | — | Kettlebell |
+| L Sit | — | Bodyweight |
+| Rotary Torso Machine | Rectus abdominis | Machine |
+| TORSO TWIST | Rectus abdominis | Bodyweight |
+| Side Plank | Obliquus externus | Bodyweight |
+| Trunk Rotation With Cable | Obliquus externus | Cable |
+| Plate Twist | Obliquus externus, Rectus abdominis | Gym mat |
+| Medicine Ball Twist | Obliquus externus, Rectus abdominis | Swiss Ball |
+| Vpushup | Chest, Quads, Abs, Triceps | Bodyweight |
+| Plank Shoulder Taps | Anterior deltoid, Glutes, Abs | Gym mat |
+| Weighted Crunch | Obliquus externus | Dumbbell |
+| Dumbbell Side Bend | Obliquus externus | Dumbbell |
+| W-Raise | Abs, Obliquus externus | Bodyweight |
+| Black Widow Knee Slides | Abs, Obliquus externus | Bodyweight |
+| Butterfly Sit Up | Abs, Obliquus externus | Bodyweight |
+| Seated Corkscrew | Abs, Obliquus externus | Bodyweight |
+| Levitation Crunch | Abs | Bodyweight |
+| Sit Up Elbow Thrust | Abs, Obliquus externus | Bodyweight |
+| Plank Jacks | Abs, Obliquus externus, Glutes | Bodyweight |
+| Crunches With Cable | Abs | Cable |
+| Clamshell | Glutes, Abs | Bodyweight |
+| Double-Leg Abdominal Press | Abs | Gym mat |
+| Abdominal Draw-In | Abs | Bodyweight |
+| Bear crawl pull through | Anterior deltoid, Glutes, Quads, Abs | Dumbbell |
+| Straddle L-Sit | Abs | Bodyweight |
+| L-sit | Lats, Chest, Abs | Bodyweight |
+| L-Sit (Foot Supported) | Lats, Chest, Abs, Serratus anterior | Bodyweight |
+| Frog stand | Shoulders, Biceps, Brachialis, Abs | Bodyweight |
+### CARDIO
+| Exercise | Primary Muscles | Equipment |
+|---|---|---|
+| Zone 2 Running | — | Bodyweight |
+| Swimming 50m sprints | — | — |
+| Cycling | Obliquus externus, Trapezius | Bodyweight |
+| Rowing Machine | Full body | Machine |
+| Jumping Jacks | Gastrocnemius, Quads | Bodyweight |
+| Recumbent Bike | Hamstrings, Calves, Glutes, Quads | Machine |
+| box jumps | Gluteus maximus | Bodyweight |
+| Bag training | Shoulders, Chest, Trapezius | — |
+| Run - Treadmill | — | Machine |
+| Treadmill Cardio | — | Machine |
+| Cardio en bicicleta estática | — | Machine |
+### CALVES
+| Exercise | Primary Muscles | Equipment |
+|---|---|---|
+| Calf Raises on Hackenschmitt Machine | Gastrocnemius | Machine |
+| Standing Calf Stretch | Calves | Bodyweight |
+| Standing Soleus Stretch | Soleus | Bodyweight |
+| Supported Calf Stretch | — | Bodyweight |
+| Leg curl con elastico | Calves | Resistance band |

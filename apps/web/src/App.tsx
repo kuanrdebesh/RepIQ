@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type ReactNode } from "react";
 import {
   coachingSuggestionSchema,
   mediaConfigSchema,
@@ -70,8 +70,11 @@ type MotivationalWhy =
   | "fresh_start"         // "I'm starting fresh"
   | "feel_good";          // "I just want to feel good"
 
-type TrainingGoal = "muscle_strength" | "fat_loss" | "endurance" | "general_fitness";
-type ExperienceLevel = "beginner" | "intermediate" | "advanced";
+type TrainingGoal =
+  | "muscle_strength" | "fat_loss" | "endurance" | "general_fitness"  // legacy
+  | "build_muscle" | "get_stronger" | "improve_fitness" | "athletic_performance" | "stay_active"; // onboarding
+
+type ExperienceLevel = "never" | "beginner" | "intermediate" | "advanced" | "veteran";
 type EquipmentAccess = "full_gym" | "home_gym" | "bodyweight";
 type ScheduleCommitment = 2 | 3 | 4 | 5 | 6;
 
@@ -106,6 +109,24 @@ interface UserPsychProfile {
   equipmentAccess: EquipmentAccess | null;
   scheduleCommitment: ScheduleCommitment | null;
   onboardingCompletedAt: string | null;   // ISO timestamp
+  // ── Personal info collected at onboarding ──
+  name: string | null;
+  gender: "male" | "female" | "other" | null;
+  unitSystem: "metric" | "imperial";
+  heightCm: number | null;
+  weightKg: number | null;
+  age: number | null;
+  bodyFatBracket: string | null;
+  // ── Schedule preferences ──
+  daysPerWeekPref: number | null;
+  sessionLengthPref: number | null;
+  bestTimePref: string | null;
+  workoutStylePref: string | null;
+  // ── Mindset / psych ──
+  preWorkoutFeeling: string | null;
+  isReturningAfterBreak: boolean;
+  breakMonths: number | null;
+  successVision: string | null;
   lastGoalCheckAt: string | null;          // ISO timestamp — 90-day re-check prompt
   // Consent flags — each capture dimension can be individually disabled
   capturePostWorkoutMood: boolean;
@@ -194,6 +215,21 @@ const DEFAULT_PSYCH_PROFILE: UserPsychProfile = {
   equipmentAccess: null,
   scheduleCommitment: null,
   onboardingCompletedAt: null,
+  name: null,
+  gender: null,
+  unitSystem: "metric",
+  heightCm: null,
+  weightKg: null,
+  age: null,
+  bodyFatBracket: null,
+  daysPerWeekPref: null,
+  sessionLengthPref: null,
+  bestTimePref: null,
+  workoutStylePref: null,
+  preWorkoutFeeling: null,
+  isReturningAfterBreak: false,
+  breakMonths: null,
+  successVision: null,
   lastGoalCheckAt: null,
   capturePostWorkoutMood: true,
   capturePostWorkoutEnergy: true,
@@ -953,7 +989,11 @@ function createTemplateExercise({
   secondaryMuscles,
   howTo,
   videoLabel,
-  historySets
+  historySets,
+  movementPattern,
+  angle,
+  equipment,
+  difficultyLevel,
 }: {
   id: string;
   name: string;
@@ -968,7 +1008,11 @@ function createTemplateExercise({
   howTo: string[];
   videoLabel?: string;
   historySets: WorkoutSet[][];
-}): ExerciseDraft {
+  movementPattern?: MovementPattern;
+  angle?: ExerciseAngle;
+  equipment?: ExerciseEquipment;
+  difficultyLevel?: ExerciseDifficulty;
+}): ExerciseWithTaxonomy {
   const normalizedHistorySets =
     historySets.length >= 3
       ? historySets
@@ -1010,11 +1054,15 @@ function createTemplateExercise({
       { id: `${id}-1`, setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false },
       { id: `${id}-2`, setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false },
       { id: `${id}-3`, setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false }
-    ]
+    ],
+    movementPattern,
+    angle,
+    equipment,
+    difficultyLevel,
   };
 }
 
-const selectorCategorySamples: ExerciseDraft[] = [
+const selectorCategorySamples: ExerciseWithTaxonomy[] = [
   createTemplateExercise({
     id: "barbell-squat",
     name: "Barbell Squat",
@@ -1022,6 +1070,7 @@ const selectorCategorySamples: ExerciseDraft[] = [
     imageSrc: benchPressImage,
     primaryMuscle: "Quads",
     secondaryMuscles: ["Glutes", "Lower Back"],
+    movementPattern: "squat", angle: "none", equipment: "barbell", difficultyLevel: "advanced",
     howTo: [
       "Set the bar across the upper back and brace before unracking.",
       "Sit down between the hips while keeping the mid-foot pressure even.",
@@ -1050,6 +1099,7 @@ const selectorCategorySamples: ExerciseDraft[] = [
     imageSrc: genericExerciseImage,
     primaryMuscle: "Biceps",
     secondaryMuscles: ["Front Delts"],
+    movementPattern: "isolation_pull", angle: "none", equipment: "barbell", difficultyLevel: "beginner",
     howTo: [
       "Start tall with elbows slightly in front of the torso.",
       "Curl the bar without swinging the shoulders forward.",
@@ -1078,6 +1128,7 @@ const selectorCategorySamples: ExerciseDraft[] = [
     imageSrc: genericExerciseImage,
     primaryMuscle: "Triceps",
     secondaryMuscles: ["Front Delts"],
+    movementPattern: "isolation_push", angle: "none", equipment: "cable", difficultyLevel: "beginner",
     howTo: [
       "Lock the elbows near the ribs before starting the pushdown.",
       "Spread the rope slightly at the bottom without shrugging.",
@@ -1106,6 +1157,7 @@ const selectorCategorySamples: ExerciseDraft[] = [
     imageSrc: genericExerciseImage,
     primaryMuscle: "Chest",
     secondaryMuscles: ["Front Delts", "Triceps"],
+    movementPattern: "horizontal_push", angle: "flat", equipment: "bodyweight", difficultyLevel: "beginner",
     howTo: [
       "Set a long straight plank before the first rep.",
       "Lower as one unit until the chest nearly touches the floor.",
@@ -1134,6 +1186,7 @@ const selectorCategorySamples: ExerciseDraft[] = [
     imageSrc: genericExerciseImage,
     primaryMuscle: "Lats",
     secondaryMuscles: ["Upper Back", "Biceps"],
+    movementPattern: "vertical_pull", angle: "overhead", equipment: "bodyweight", difficultyLevel: "intermediate",
     howTo: [
       "Start from a dead hang with the ribs down.",
       "Drive elbows toward the hips instead of pulling with the neck.",
@@ -1163,6 +1216,7 @@ const selectorCategorySamples: ExerciseDraft[] = [
     imageSrc: genericExerciseImage,
     primaryMuscle: "Quads",
     secondaryMuscles: ["Calves", "Glutes"],
+    movementPattern: "cardio", angle: "none", equipment: "none", difficultyLevel: "beginner",
     howTo: [
       "Set the pace before stepping fully into the run.",
       "Keep the torso stacked and let the arms swing naturally.",
@@ -1192,6 +1246,7 @@ const selectorCategorySamples: ExerciseDraft[] = [
     imageSrc: genericExerciseImage,
     primaryMuscle: "Quads",
     secondaryMuscles: ["Glutes", "Calves"],
+    movementPattern: "cardio", angle: "none", equipment: "none", difficultyLevel: "beginner",
     howTo: [
       "Set the saddle height so the knee stays slightly bent at the bottom.",
       "Keep the cadence smooth and avoid rocking the hips.",
@@ -1271,7 +1326,7 @@ const selectorCategorySamples: ExerciseDraft[] = [
   })
 ];
 
-const expandedExerciseSamples: ExerciseDraft[] = [
+const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
   createTemplateExercise({
     id: "weighted-pull-up",
     name: "Weighted Pull-Up",
@@ -1281,6 +1336,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Back",
     secondaryMuscles: ["Biceps", "Middle Back", "Forearms"],
+    movementPattern: "vertical_pull", angle: "overhead", equipment: "bodyweight", difficultyLevel: "intermediate",
     howTo: [
       "Let the load hang still before starting the first rep.",
       "Pull the elbows down toward the hips instead of craning the neck.",
@@ -1311,6 +1367,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Chest",
     secondaryMuscles: ["Triceps", "Front Shoulders"],
+    movementPattern: "vertical_push", angle: "decline", equipment: "bodyweight", difficultyLevel: "intermediate",
     howTo: [
       "Lean slightly forward before starting the descent.",
       "Lower until the chest opens without shrugging the shoulders.",
@@ -1341,6 +1398,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Chest",
     secondaryMuscles: ["Triceps", "Front Shoulders"],
+    movementPattern: "vertical_push", angle: "decline", equipment: "bodyweight", difficultyLevel: "advanced",
     howTo: [
       "Let the load settle before lowering into the dip.",
       "Keep a slight forward lean so the chest stays the main driver.",
@@ -1371,6 +1429,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Abs / Core",
     secondaryMuscles: ["Obliques", "Glutes"],
+    movementPattern: "core_anterior", angle: "none", equipment: "bodyweight", difficultyLevel: "beginner",
     howTo: [
       "Brace the abs before lifting into position.",
       "Keep the ribs and hips stacked instead of sagging through the lower back.",
@@ -1401,6 +1460,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Abs / Core",
     secondaryMuscles: ["Obliques", "Glutes"],
+    movementPattern: "core_anterior", angle: "none", equipment: "bodyweight", difficultyLevel: "intermediate",
     howTo: [
       "Set the plate securely before lifting into the hold.",
       "Brace first so the torso stays locked from ribs to hips.",
@@ -1431,6 +1491,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Chest",
     secondaryMuscles: ["Triceps", "Front Shoulders"],
+    movementPattern: "horizontal_push", angle: "flat", equipment: "bodyweight", difficultyLevel: "intermediate",
     howTo: [
       "Set the load securely before taking the plank position.",
       "Lower as one unit until the chest nearly reaches the floor.",
@@ -1461,6 +1522,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Quads",
     secondaryMuscles: ["Glutes", "Abs / Core"],
+    movementPattern: "isolation_legs", angle: "none", equipment: "bodyweight", difficultyLevel: "beginner",
     howTo: [
       "Set the knees close to ninety degrees before starting the hold.",
       "Keep the full foot planted and the lower back supported by the wall.",
@@ -1491,6 +1553,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Quads",
     secondaryMuscles: ["Glutes", "Abs / Core"],
+    movementPattern: "isolation_legs", angle: "none", equipment: "bodyweight", difficultyLevel: "intermediate",
     howTo: [
       "Set the load securely before settling into the sit.",
       "Hold the knee angle steady rather than drifting upward.",
@@ -1521,6 +1584,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "unilateral",
     primaryMuscle: "Abductors",
     secondaryMuscles: ["Glutes"],
+    movementPattern: "isolation_legs", angle: "none", equipment: "cable", difficultyLevel: "beginner",
     howTo: [
       "Brace against the stack before moving the working leg out.",
       "Lead from the hip instead of swinging the foot.",
@@ -1551,6 +1615,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Calves",
     secondaryMuscles: ["Glutes"],
+    movementPattern: "isolation_legs", angle: "none", equipment: "machine", difficultyLevel: "beginner",
     howTo: [
       "Let the heels drop into a full stretch at the bottom.",
       "Drive up through the big toe and hold the top briefly.",
@@ -1581,6 +1646,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Forearms",
     secondaryMuscles: ["Biceps"],
+    movementPattern: "isolation_pull", angle: "none", equipment: "dumbbell", difficultyLevel: "beginner",
     howTo: [
       "Let the wrist extend first to find the full range.",
       "Curl through the forearm without lifting the whole arm.",
@@ -1611,6 +1677,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Middle Back",
     secondaryMuscles: ["Back", "Rear Delts", "Biceps"],
+    movementPattern: "horizontal_pull", angle: "prone", equipment: "dumbbell", difficultyLevel: "beginner",
     howTo: [
       "Set the chest firmly against the bench before pulling.",
       "Drive the elbows back without shrugging the shoulders.",
@@ -1636,11 +1703,12 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     id: "back-extension",
     name: "Back Extension",
     restTimer: "00:45",
-    exerciseType: "bodyweight_weighted",
+    exerciseType: "bodyweight_only",
     measurementType: "reps_volume",
     movementSide: "bilateral",
     primaryMuscle: "Lower Back",
     secondaryMuscles: ["Glutes", "Hamstrings"],
+    movementPattern: "hip_hinge", angle: "prone", equipment: "bodyweight", difficultyLevel: "beginner",
     howTo: [
       "Brace before hinging over the pad.",
       "Lift by extending through the hips and lower back together.",
@@ -1650,14 +1718,45 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     historySets: [
       [
         { weight: 0, reps: 10, set_type: "warmup", rpe: 5, failed: false },
-        { weight: 10, reps: 15, set_type: "normal", rpe: 7, failed: false },
-        { weight: 10, reps: 14, set_type: "normal", rpe: 7.5, failed: false },
-        { weight: 10, reps: 12, set_type: "normal", rpe: 8, failed: false }
+        { weight: 0, reps: 15, set_type: "normal", rpe: 7, failed: false },
+        { weight: 0, reps: 14, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 0, reps: 12, set_type: "normal", rpe: 8, failed: false }
+      ],
+      [
+        { weight: 0, reps: 10, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 0, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 0, reps: 12, set_type: "normal", rpe: 8, failed: false },
+        { weight: 0, reps: 10, set_type: "normal", rpe: 8.5, failed: false }
+      ]
+    ]
+  }),
+  createTemplateExercise({
+    id: "weighted-back-extension",
+    name: "Weighted Back Extension",
+    restTimer: "01:00",
+    exerciseType: "bodyweight_weighted",
+    measurementType: "reps_volume",
+    movementSide: "bilateral",
+    primaryMuscle: "Lower Back",
+    secondaryMuscles: ["Glutes", "Hamstrings"],
+    movementPattern: "hip_hinge", angle: "prone", equipment: "bodyweight", difficultyLevel: "intermediate",
+    howTo: [
+      "Hold a plate or dumbbell against the chest before setting up on the pad.",
+      "Brace the core and hinge down slowly under control.",
+      "Extend through the hips and lower back to a straight line — avoid hyperextending."
+    ],
+    videoLabel: "Weighted Back Extension Guide",
+    historySets: [
+      [
+        { weight: 0, reps: 10, set_type: "warmup", rpe: 5, failed: false },
+        { weight: 10, reps: 12, set_type: "normal", rpe: 7, failed: false },
+        { weight: 10, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
+        { weight: 10, reps: 10, set_type: "normal", rpe: 8, failed: false }
       ],
       [
         { weight: 0, reps: 10, set_type: "warmup", rpe: 5, failed: false },
         { weight: 15, reps: 12, set_type: "normal", rpe: 7.5, failed: false },
-        { weight: 15, reps: 12, set_type: "normal", rpe: 8, failed: false },
+        { weight: 15, reps: 11, set_type: "normal", rpe: 8, failed: false },
         { weight: 15, reps: 10, set_type: "normal", rpe: 8.5, failed: false }
       ]
     ]
@@ -1671,6 +1770,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Traps",
     secondaryMuscles: ["Forearms"],
+    movementPattern: "isolation_pull", angle: "none", equipment: "dumbbell", difficultyLevel: "beginner",
     howTo: [
       "Stand tall and let the shoulders settle before each rep.",
       "Lift the shoulders straight up without rolling them.",
@@ -1701,6 +1801,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Glutes",
     secondaryMuscles: ["Hamstrings", "Abs / Core"],
+    movementPattern: "hip_hinge", angle: "none", equipment: "barbell", difficultyLevel: "intermediate",
     howTo: [
       "Set the bench against the shoulder blades before unracking the bar.",
       "Drive through the heels and squeeze the glutes hard at the top.",
@@ -1731,6 +1832,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Abs / Core",
     secondaryMuscles: ["Obliques", "Hip Flexors"],
+    movementPattern: "core_anterior", angle: "none", equipment: "bodyweight", difficultyLevel: "intermediate",
     howTo: [
       "Set the ribs down before lifting the legs.",
       "Raise with the abs instead of swinging the torso.",
@@ -1761,6 +1863,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "unilateral",
     primaryMuscle: "Obliques",
     secondaryMuscles: ["Abs / Core", "Glutes"],
+    movementPattern: "core_rotational", angle: "none", equipment: "cable", difficultyLevel: "intermediate",
     howTo: [
       "Brace before rotating away from the stack.",
       "Turn through the torso, not just the arms.",
@@ -1791,6 +1894,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Rear Delts",
     secondaryMuscles: ["Middle Back", "Traps"],
+    movementPattern: "isolation_pull", angle: "prone", equipment: "machine", difficultyLevel: "beginner",
     howTo: [
       "Set the handles so the shoulders stay slightly below the ears.",
       "Sweep out and back without arching the lower back.",
@@ -1821,6 +1925,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
     movementSide: "bilateral",
     primaryMuscle: "Front Shoulders",
     secondaryMuscles: ["Upper Chest", "Side Delts"],
+    movementPattern: "isolation_push", angle: "flat", equipment: "dumbbell", difficultyLevel: "beginner",
     howTo: [
       "Lift with a soft elbow and a quiet torso.",
       "Raise only to shoulder height so the front delts stay loaded.",
@@ -1844,7 +1949,7 @@ const expandedExerciseSamples: ExerciseDraft[] = [
   })
 ];
 
-const seededCustomExercises: ExerciseDraft[] = [
+const seededCustomExercises: ExerciseWithTaxonomy[] = [
   createTemplateExercise({
     id: "custom-landmine-press",
     name: "Landmine Press",
@@ -1852,6 +1957,7 @@ const seededCustomExercises: ExerciseDraft[] = [
     imageSrc: genericExerciseImage,
     primaryMuscle: "Shoulders",
     secondaryMuscles: ["Upper Chest", "Triceps"],
+    movementPattern: "vertical_push", angle: "overhead", equipment: "landmine", difficultyLevel: "intermediate",
     howTo: [
       "Set the bar in the landmine and start with the elbow slightly in front.",
       "Press up and forward without over-arching the lower back.",
@@ -1880,6 +1986,7 @@ const seededCustomExercises: ExerciseDraft[] = [
     imageSrc: genericExerciseImage,
     primaryMuscle: "Adductors",
     secondaryMuscles: ["Glutes", "Quads"],
+    movementPattern: "lunge", angle: "none", equipment: "bodyweight", difficultyLevel: "intermediate",
     howTo: [
       "Shift into one hip while keeping the other leg long.",
       "Sit as deep as mobility allows without rounding the trunk.",
@@ -2030,7 +2137,7 @@ const exerciseLibrary: ExerciseWithTaxonomy[] = [
   }
 ];
 
-const exerciseTemplates: ExerciseDraft[] = [
+const exerciseTemplates: ExerciseWithTaxonomy[] = [
   ...exerciseLibrary,
   {
     id: "lat-pulldown",
@@ -2041,6 +2148,11 @@ const exerciseTemplates: ExerciseDraft[] = [
     imageSrc: inclineDumbbellPressImage,
     primaryMuscle: "Lats",
     secondaryMuscles: ["Upper Back", "Biceps"],
+    exerciseType: "machine" as const,
+    movementPattern: "vertical_pull" as const,
+    angle: "overhead" as const,
+    equipment: "cable" as const,
+    difficultyLevel: "beginner" as const,
     howTo: [
       "Set the thigh pad so you stay locked into the seat.",
       "Drive elbows down toward your ribs without swinging your torso.",
@@ -2087,6 +2199,10 @@ const exerciseTemplates: ExerciseDraft[] = [
     imageSrc: benchPressImage,
     primaryMuscle: "Upper Back",
     secondaryMuscles: ["Lats", "Biceps", "Rear Delts"],
+    movementPattern: "horizontal_pull" as const,
+    angle: "flat" as const,
+    equipment: "cable" as const,
+    difficultyLevel: "beginner" as const,
     howTo: [
       "Brace your feet and sit tall before starting the pull.",
       "Drive elbows back while keeping the chest lifted.",
@@ -2133,6 +2249,11 @@ const exerciseTemplates: ExerciseDraft[] = [
     imageSrc: inclineDumbbellPressImage,
     primaryMuscle: "Shoulders",
     secondaryMuscles: ["Triceps", "Upper Chest"],
+    exerciseType: "free_weights_accessories" as const,
+    movementPattern: "vertical_push" as const,
+    angle: "overhead" as const,
+    equipment: "dumbbell" as const,
+    difficultyLevel: "intermediate" as const,
     howTo: [
       "Stack wrists over elbows before pressing overhead.",
       "Keep the ribcage down instead of leaning back.",
@@ -2179,6 +2300,10 @@ const exerciseTemplates: ExerciseDraft[] = [
     imageSrc: benchPressImage,
     primaryMuscle: "Quads",
     secondaryMuscles: ["Glutes", "Adductors"],
+    movementPattern: "squat" as const,
+    angle: "none" as const,
+    equipment: "machine" as const,
+    difficultyLevel: "beginner" as const,
     howTo: [
       "Plant the full foot on the platform before unlocking.",
       "Lower until the knees and hips are deeply bent without the hips lifting.",
@@ -2225,6 +2350,11 @@ const exerciseTemplates: ExerciseDraft[] = [
     imageSrc: benchPressImage,
     primaryMuscle: "Hamstrings",
     secondaryMuscles: ["Glutes", "Lower Back"],
+    exerciseType: "barbell" as const,
+    movementPattern: "hip_hinge" as const,
+    angle: "none" as const,
+    equipment: "barbell" as const,
+    difficultyLevel: "intermediate" as const,
     howTo: [
       "Unlock the knees and push the hips back before the bar drifts forward.",
       "Keep the lats tight so the weight stays close to the legs.",
@@ -2271,6 +2401,10 @@ const exerciseTemplates: ExerciseDraft[] = [
     imageSrc: inclineDumbbellPressImage,
     primaryMuscle: "Side Delts",
     secondaryMuscles: ["Upper Traps"],
+    movementPattern: "isolation_push" as const,
+    angle: "none" as const,
+    equipment: "cable" as const,
+    difficultyLevel: "beginner" as const,
     howTo: [
       "Start slightly in front of the cable stack with a soft elbow.",
       "Raise out and slightly forward until the hand reaches shoulder height.",
@@ -2317,6 +2451,11 @@ const exerciseTemplates: ExerciseDraft[] = [
     imageSrc: benchPressImage,
     primaryMuscle: "Hamstrings",
     secondaryMuscles: ["Calves"],
+    exerciseType: "machine" as const,
+    movementPattern: "isolation_legs" as const,
+    angle: "prone" as const,
+    equipment: "machine" as const,
+    difficultyLevel: "beginner" as const,
     howTo: [
       "Set the machine so the pad sits just above the heels.",
       "Curl smoothly without lifting the hips off the bench.",
@@ -2555,6 +2694,333 @@ const replacementTemplates: Array<
     ]
   }
 ];
+
+// ── Exercise library enrichment ───────────────────────────────────────────────
+// Spreads smartReplaceCatalog + Hevy/FitBod-sourced exercises into
+// exerciseTemplates so they appear in the Add Exercise page.
+// Deduplication is by ID — exercises already in exerciseTemplates are skipped.
+{
+  const _additionalExercises: ExerciseWithTaxonomy[] = [
+
+    // ── CHEST ─────────────────────────────────────────────────────────────────
+    makeExercise("smith-machine-bench-press", "Smith Machine Bench Press", "Chest", ["Front Delts", "Triceps"], "horizontal_push", "flat", "smith_machine", "beginner", "machine", "01:30", ["Set safety stops, position bar over lower chest.", "Lower under control with the smith guiding the path.", "Press up to full extension without locking aggressively."]),
+    makeExercise("smith-machine-incline-press", "Smith Machine Incline Press", "Upper Chest", ["Front Delts", "Triceps"], "horizontal_push", "incline", "smith_machine", "beginner", "machine", "01:30", ["Set bench to 30-45 degrees inside the smith.", "Lower to upper chest under control.", "Press up focusing tension on the upper pec."]),
+    makeExercise("decline-machine-press", "Decline Machine Press", "Lower Chest", ["Triceps", "Front Delts"], "horizontal_push", "decline", "machine", "beginner", "machine", "01:00", ["Adjust seat so handles align with lower chest.", "Press without shrugging or losing lower back contact.", "Control the return to full stretch."]),
+    makeExercise("incline-cable-fly", "Incline Cable Fly", "Upper Chest", ["Front Delts"], "isolation_push", "incline", "cable", "beginner", "machine", "00:45", ["Set cables low, sit on incline bench.", "Arc the handles upward and together toward upper chest.", "Control the return to feel the full stretch."]),
+    makeExercise("decline-dumbbell-fly", "Decline Dumbbell Fly", "Lower Chest", ["Front Delts"], "isolation_push", "decline", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Set slight elbow bend, arms open wide on decline.", "Squeeze the lower chest as you bring the dumbbells together.", "Lower slowly to full stretch."]),
+    makeExercise("cable-crossover", "Cable Crossover", "Chest", ["Front Delts"], "isolation_push", "flat", "cable", "beginner", "machine", "00:45", ["Set cables high, step forward with a slight forward lean.", "Sweep hands together and slightly down in an arc.", "Control the return feeling the full chest stretch."]),
+    makeExercise("push-up-decline", "Decline Push-Up", "Lower Chest", ["Triceps", "Front Delts"], "horizontal_push", "decline", "bodyweight", "intermediate", "bodyweight_only", "00:45", ["Place feet elevated on a bench behind you.", "Lower as one unit keeping the core braced.", "Press away through the lower chest."]),
+    makeExercise("push-up-incline", "Incline Push-Up", "Upper Chest", ["Front Delts", "Triceps"], "horizontal_push", "incline", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Place hands on an elevated surface like a bench.", "Lower chest toward the surface keeping the body in a plank.", "Press back up through the upper chest."]),
+    makeExercise("svend-press", "Svend Press", "Chest", ["Front Delts"], "isolation_push", "flat", "none", "beginner", "free_weights_accessories", "00:45", ["Press two plates together with palms flat.", "Extend arms away from chest while squeezing the plates.", "Return slowly maintaining the squeeze."]),
+    makeExercise("reverse-grip-bench-press", "Reverse Grip Bench Press", "Upper Chest", ["Triceps", "Front Delts"], "horizontal_push", "flat", "barbell", "advanced", "barbell", "01:30", ["Grip the bar underhand slightly outside shoulder width.", "Lower to mid-chest keeping elbows closer to body.", "Press up driving through the upper chest."]),
+
+    // ── BACK ──────────────────────────────────────────────────────────────────
+    makeExercise("barbell-row-underhand", "Barbell Row (Underhand)", "Upper Back", ["Biceps", "Lats"], "horizontal_pull", "flat", "barbell", "intermediate", "barbell", "01:30", ["Hinge to about 45 degrees, underhand grip outside hips.", "Drive elbows back leading with the biceps.", "Lower under control to full extension."]),
+    makeExercise("wide-grip-pull-up", "Wide-Grip Pull-Up", "Lats", ["Upper Back", "Rear Delts"], "vertical_pull", "overhead", "bodyweight", "intermediate", "bodyweight_only", "01:15", ["Grip wider than shoulder width, dead hang start.", "Pull until chin clears the bar driving elbows down and back.", "Lower slowly to full extension."]),
+    makeExercise("weighted-chin-up", "Weighted Chin-Up", "Lats", ["Biceps", "Upper Back"], "vertical_pull", "overhead", "bodyweight", "advanced", "bodyweight_weighted", "01:30", ["Attach weight via belt or hold between feet.", "Underhand grip, pull chest to bar.", "Lower slowly under control."]),
+    makeExercise("single-arm-lat-pulldown", "Single-Arm Lat Pulldown", "Lats", ["Biceps"], "vertical_pull", "overhead", "cable", "beginner", "machine", "00:45", ["Grip a single handle with one hand, sit tall.", "Pull down to shoulder level driving the elbow toward the hip.", "Return slowly and feel the full lat stretch."]),
+    makeExercise("meadows-row", "Meadows Row", "Upper Back", ["Lats", "Rear Delts", "Biceps"], "horizontal_pull", "flat", "barbell", "advanced", "barbell", "01:00", ["Stagger stance perpendicular to the bar, grip the far end.", "Row the bar to your hip in a high arc.", "Lower under control to full stretch."]),
+    makeExercise("cable-shrug", "Cable Shrug", "Traps", [], "isolation_pull", "none", "cable", "beginner", "machine", "00:45", ["Set cable low or at waist height, grab straight bar.", "Shrug straight up without rolling the shoulders.", "Pause briefly at the top before lowering."]),
+    makeExercise("dumbbell-deadlift", "Dumbbell Deadlift", "Hamstrings", ["Glutes", "Lower Back", "Traps"], "hip_hinge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Hold dumbbells at thighs, soft knees, brace.", "Push hips back and lower dumbbells along legs.", "Drive hips forward and squeeze glutes at the top."]),
+    makeExercise("trap-bar-deadlift", "Trap Bar Deadlift", "Hamstrings", ["Glutes", "Traps", "Quads"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "01:30", ["Stand inside the hex bar, grip the handles.", "Brace hard and drive the floor away.", "Lock out hips and knees at the top."]),
+    makeExercise("deficit-deadlift", "Deficit Deadlift", "Hamstrings", ["Glutes", "Lower Back"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Stand on a plate or platform to increase range of motion.", "Brace hard, keep bar close through the longer pull.", "Lock out at the top."]),
+    makeExercise("stiff-leg-deadlift", "Stiff-Leg Deadlift", "Hamstrings", ["Lower Back", "Glutes"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "01:30", ["Keep legs nearly straight — only a soft unlock.", "Hinge at the hips lowering bar along the legs.", "Drive hips forward to stand without using knee drive."]),
+    makeExercise("landmine-row", "Landmine Row", "Upper Back", ["Lats", "Biceps"], "horizontal_pull", "flat", "landmine", "beginner", "barbell", "01:00", ["Stagger stance, hinge slightly forward.", "Row the loaded end toward your hip.", "Lower with control to full stretch."]),
+    makeExercise("dumbbell-sumo-deadlift", "Dumbbell Sumo Deadlift", "Hamstrings", ["Glutes", "Inner Thigh"], "hip_hinge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Stand wide with toes turned out, dumbbell between legs.", "Brace and pull up by driving hips forward.", "Squeeze glutes at the top."]),
+
+    // ── SHOULDERS ─────────────────────────────────────────────────────────────
+    makeExercise("push-press", "Push Press", "Shoulders", ["Triceps", "Traps", "Quads"], "vertical_push", "overhead", "barbell", "intermediate", "barbell", "01:30", ["Slight knee dip to load the legs.", "Drive the bar overhead using leg momentum.", "Lock out overhead controlling the descent."]),
+    makeExercise("smith-machine-overhead-press", "Smith Machine Overhead Press", "Shoulders", ["Triceps"], "vertical_push", "overhead", "smith_machine", "beginner", "machine", "01:00", ["Set bench upright inside the smith, bar at upper chest.", "Press overhead without excessive lean.", "Lower under control to start."]),
+    makeExercise("z-press", "Z-Press", "Shoulders", ["Core", "Triceps"], "vertical_push", "overhead", "barbell", "advanced", "barbell", "01:30", ["Sit on the floor with legs extended, bar on shoulders.", "Press overhead keeping the torso strictly upright.", "Lower under control requiring full shoulder mobility."]),
+    makeExercise("dumbbell-upright-row", "Dumbbell Upright Row", "Traps", ["Side Delts", "Biceps"], "isolation_pull", "none", "dumbbell", "intermediate", "free_weights_accessories", "00:45", ["Hold dumbbells in front of thighs.", "Pull upward leading with the elbows.", "Lower slowly keeping control."]),
+    makeExercise("barbell-front-raise", "Barbell Front Raise", "Front Delts", ["Upper Chest"], "isolation_push", "none", "barbell", "beginner", "barbell", "00:45", ["Grip bar at shoulder width, arms extended.", "Raise to shoulder height with a soft elbow.", "Lower slowly under control."]),
+    makeExercise("plate-front-raise", "Plate Front Raise", "Front Delts", ["Upper Chest"], "isolation_push", "none", "none", "beginner", "free_weights_accessories", "00:45", ["Hold a plate with both hands at hip level.", "Raise to shoulder height with straight arms.", "Lower slowly without swinging."]),
+    makeExercise("cable-rear-delt-fly", "Cable Rear Delt Fly", "Rear Delts", ["Traps", "Upper Back"], "isolation_pull", "prone", "cable", "beginner", "machine", "00:45", ["Cross the cables at face height, grab opposite handles.", "Open arms wide squeezing the rear delts.", "Control the return without letting cables pull you forward."]),
+    makeExercise("landmine-lateral-raise", "Landmine Lateral Raise", "Side Delts", ["Traps"], "isolation_push", "none", "landmine", "intermediate", "barbell", "00:45", ["Stand beside the landmine, hold the loaded end.", "Raise laterally to shoulder height keeping elbow soft.", "Lower under control."]),
+    makeExercise("cable-external-rotation", "Cable External Rotation", "Rotator Cuff", ["Rear Delts"], "isolation_pull", "none", "cable", "beginner", "machine", "00:45", ["Set cable at elbow height, arm at 90 degrees.", "Rotate the forearm outward keeping the elbow fixed.", "Return slowly."]),
+
+    // ── BICEPS ────────────────────────────────────────────────────────────────
+    makeExercise("zottman-curl", "Zottman Curl", "Biceps", ["Forearms", "Brachialis"], "isolation_pull", "none", "dumbbell", "intermediate", "free_weights_accessories", "00:45", ["Curl with a supinated grip up to full contraction.", "Rotate to a pronated grip at the top.", "Lower with palms facing down for forearm work."]),
+    makeExercise("bayesian-curl", "Bayesian Curl", "Biceps", ["Forearms"], "isolation_pull", "incline", "cable", "intermediate", "machine", "00:45", ["Set cable low behind you, arm extended back.", "Curl from a fully stretched position through the full arc.", "Lower back to full stretch."]),
+    makeExercise("drag-curl", "Drag Curl", "Biceps", [], "isolation_pull", "none", "barbell", "intermediate", "barbell", "00:45", ["Instead of arcing forward, drag the bar up the body.", "Keep elbows moving back as you curl.", "Lower along the same path."]),
+    makeExercise("reverse-curl", "Reverse Curl", "Forearms", ["Biceps", "Brachialis"], "isolation_pull", "none", "barbell", "beginner", "barbell", "00:45", ["Grip overhand at shoulder width.", "Curl to full contraction without swinging.", "Lower under control to full extension."]),
+    makeExercise("cross-body-hammer-curl", "Cross-Body Hammer Curl", "Biceps", ["Brachialis", "Forearms"], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hold dumbbell at side with a neutral grip.", "Curl across the body toward the opposite shoulder.", "Lower slowly and alternate."]),
+    makeExercise("cable-hammer-curl", "Cable Hammer Curl", "Biceps", ["Brachialis", "Forearms"], "isolation_pull", "none", "cable", "beginner", "machine", "00:45", ["Attach a rope, stand facing the cable.", "Curl with neutral grip, thumbs up throughout.", "Lower slowly keeping elbows fixed."]),
+    makeExercise("seated-dumbbell-curl", "Seated Dumbbell Curl", "Biceps", ["Forearms"], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Sit upright on a bench, dumbbells at sides.", "Curl and supinate at the top of the movement.", "Lower under control without swinging."]),
+    makeExercise("spider-curl", "Spider Curl", "Biceps", ["Forearms"], "isolation_pull", "incline", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Lie chest-down on an incline bench, arms hanging freely.", "Curl both dumbbells keeping elbows still.", "Lower slowly to full stretch."]),
+    makeExercise("preacher-curl", "Preacher Curl", "Biceps", ["Forearms"], "isolation_pull", "incline", "barbell", "beginner", "free_weights_accessories", "00:45", ["Lock upper arms flat on the pad before starting.", "Curl slowly to full contraction without swinging.", "Lower under control to full extension."]),
+
+    // ── TRICEPS ───────────────────────────────────────────────────────────────
+    makeExercise("barbell-skull-crusher", "Barbell Skull Crusher", "Triceps", ["Front Delts"], "isolation_push", "flat", "barbell", "intermediate", "barbell", "01:00", ["Lie flat, grip shoulder-width on a straight bar.", "Lower by bending only at the elbows toward the forehead.", "Press back through the triceps keeping elbows pinned."]),
+    makeExercise("dumbbell-tricep-kickback", "Dumbbell Tricep Kickback", "Triceps", [], "isolation_push", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hinge forward with upper arm parallel to the floor.", "Extend the elbow fully pressing the dumbbell back.", "Return slowly keeping the upper arm completely still."]),
+    makeExercise("cable-tricep-kickback", "Cable Tricep Kickback", "Triceps", [], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Hinge forward, upper arm parallel to the floor.", "Extend the elbow fully pressing back.", "Return slowly keeping the upper arm still."]),
+    makeExercise("lying-tricep-extension", "Lying Tricep Extension", "Triceps", [], "isolation_push", "flat", "barbell", "beginner", "barbell", "00:45", ["Lie flat, arms extended over face with barbell.", "Lower by bending at the elbows toward the forehead.", "Press back to full extension through the triceps."]),
+    makeExercise("single-arm-tricep-extension", "Single-Arm Overhead Tricep Extension", "Triceps", [], "isolation_push", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hold dumbbell behind the head with one arm, elbow pointing up.", "Extend the arm fully pressing overhead.", "Lower under control to full stretch."]),
+    makeExercise("tricep-dip", "Tricep Dip", "Triceps", ["Chest", "Shoulders"], "vertical_push", "decline", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["Keep the torso upright to bias the triceps.", "Lower until the elbows reach 90 degrees.", "Press back up through the triceps."]),
+    makeExercise("jm-press", "JM Press", "Triceps", ["Chest"], "isolation_push", "flat", "barbell", "advanced", "barbell", "01:00", ["Half skull crusher, half close-grip press.", "Lower bar to throat with elbows flared at 45 degrees.", "Press back up through the triceps."]),
+    makeExercise("tate-press", "Tate Press", "Triceps", [], "isolation_push", "flat", "dumbbell", "intermediate", "free_weights_accessories", "00:45", ["Lie flat, dumbbells above chest pointing outward.", "Tip the dumbbells toward the chest bending only the elbows.", "Extend back up squeezing the triceps."]),
+    makeExercise("ring-dip", "Ring Dip", "Triceps", ["Chest", "Shoulders"], "vertical_push", "decline", "bodyweight", "advanced", "bodyweight_only", "01:30", ["Support on rings with arms locked out.", "Lower under control stabilizing the rings.", "Press back up to lockout."]),
+
+    // ── QUADS / LEGS ──────────────────────────────────────────────────────────
+    makeExercise("pistol-squat", "Pistol Squat", "Quads", ["Glutes", "Core"], "squat", "none", "bodyweight", "advanced", "bodyweight_only", "01:00", ["Extend one leg forward, arms out for balance.", "Sit down on one leg to full depth.", "Drive through the heel to stand."]),
+    makeExercise("barbell-hack-squat", "Barbell Hack Squat", "Quads", ["Glutes"], "squat", "none", "barbell", "advanced", "barbell", "01:30", ["Hold bar behind the legs at arm's length.", "Squat down keeping torso upright.", "Drive up through the heels."]),
+    makeExercise("zercher-squat", "Zercher Squat", "Quads", ["Glutes", "Core", "Upper Back"], "squat", "none", "barbell", "advanced", "barbell", "01:30", ["Cradle bar in the crook of the elbows.", "Keep the torso upright as you descend to full depth.", "Drive up through the floor."]),
+    makeExercise("pause-squat", "Pause Squat", "Quads", ["Glutes", "Core"], "squat", "none", "barbell", "advanced", "barbell", "02:00", ["Squat to the bottom position and hold for 2-3 seconds.", "Stay braced through the pause — do not relax.", "Drive up explosively after the pause."]),
+    makeExercise("overhead-squat", "Overhead Squat", "Quads", ["Shoulders", "Core", "Glutes"], "squat", "overhead", "barbell", "advanced", "barbell", "02:00", ["Hold bar locked out overhead with a wide grip.", "Descend keeping the bar stacked over mid-foot.", "Drive up maintaining the overhead position."]),
+    makeExercise("safety-bar-squat", "Safety Bar Squat", "Quads", ["Glutes", "Upper Back"], "squat", "none", "barbell", "intermediate", "barbell", "01:30", ["The cambered bar rests on the traps, handles at the front.", "Descend keeping the torso more upright than a back squat.", "Drive up through the floor."]),
+    makeExercise("belt-squat", "Belt Squat", "Quads", ["Glutes"], "squat", "none", "machine", "intermediate", "machine", "01:30", ["Load hangs from a belt around the hips — no spinal load.", "Squat freely with hands free to assist balance.", "Drive up through the heels."]),
+    makeExercise("sumo-squat", "Sumo Squat", "Quads", ["Glutes", "Inner Thigh"], "squat", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Wide stance, toes turned out, hold dumbbell between legs.", "Sit down keeping knees tracking toes.", "Drive up through the heels."]),
+    makeExercise("landmine-squat", "Landmine Squat", "Quads", ["Glutes", "Core"], "squat", "none", "landmine", "beginner", "barbell", "01:00", ["Hold loaded end at chest height with both hands.", "Squat freely — landmine acts as a counterbalance.", "Drive up to standing."]),
+    makeExercise("wall-ball", "Wall Ball", "Quads", ["Shoulders", "Glutes", "Core"], "squat", "overhead", "none", "intermediate", "free_weights_accessories", "01:00", ["Hold medicine ball at chest, face the wall.", "Squat and drive upward throwing the ball to a target.", "Catch it and go directly into the next rep."]),
+    makeExercise("thruster", "Thruster", "Quads", ["Shoulders", "Glutes", "Core"], "squat", "overhead", "barbell", "advanced", "barbell", "01:30", ["Hold bar in the front rack position.", "Squat to depth and drive up explosively.", "Use the momentum to press the bar overhead in one motion."]),
+    makeExercise("burpee", "Burpee", "Quads", ["Shoulders", "Core", "Chest"], "squat", "none", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["Squat down and jump feet back to plank.", "Perform a push-up, jump feet forward.", "Explode up and clap overhead."]),
+
+    // ── HAMSTRINGS / GLUTES ───────────────────────────────────────────────────
+    makeExercise("nordic-curl", "Nordic Curl", "Hamstrings", ["Glutes", "Lower Back"], "hip_hinge", "none", "bodyweight", "advanced", "bodyweight_only", "01:30", ["Anchor feet securely, kneel tall with arms crossed.", "Lower your body under control as far as possible.", "Catch yourself and use your hands to reset."]),
+    makeExercise("glute-bridge", "Glute Bridge", "Glutes", ["Hamstrings", "Core"], "hip_hinge", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie on your back, feet flat near your glutes.", "Drive through heels and squeeze fully at the top.", "Lower slowly with control."]),
+    makeExercise("single-leg-glute-bridge", "Single-Leg Glute Bridge", "Glutes", ["Hamstrings", "Core"], "hip_hinge", "none", "bodyweight", "intermediate", "bodyweight_only", "00:45", ["Lie on your back, one leg extended, one foot flat.", "Drive through the planted heel squeezing the glute.", "Lower slowly and repeat before switching."]),
+    makeExercise("banded-hip-thrust", "Banded Hip Thrust", "Glutes", ["Hamstrings"], "hip_hinge", "none", "resistance_band", "beginner", "free_weights_accessories", "01:00", ["Loop band across hips, upper back on bench.", "Drive through heels squeezing glutes at the top.", "Lower slowly — band adds resistance in both directions."]),
+    makeExercise("frog-pump", "Frog Pump", "Glutes", ["Inner Thigh"], "hip_hinge", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie on back, soles of feet together and pulled toward glutes.", "Drive hips up squeezing the glutes fully.", "Lower slowly and repeat."]),
+    makeExercise("glute-kickback-machine", "Glute Kickback Machine", "Glutes", ["Hamstrings"], "hip_hinge", "none", "machine", "beginner", "machine", "00:45", ["Position the pad behind the knee, grip handles.", "Kick leg back until the hip is fully extended.", "Return slowly under control."]),
+    makeExercise("standing-leg-curl", "Standing Leg Curl", "Hamstrings", ["Calves"], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Stand with pad behind ankle, grip handles for support.", "Curl the heel toward the glute.", "Lower slowly to full extension."]),
+    makeExercise("b-stance-rdl", "B-Stance Romanian Deadlift", "Hamstrings", ["Glutes"], "hip_hinge", "none", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Lead leg carries most weight, back leg lightly touches the floor.", "Hinge at the hips lowering dumbbells.", "Drive through the lead heel to stand."]),
+    makeExercise("reverse-hyperextension", "Reverse Hyperextension", "Glutes", ["Hamstrings", "Lower Back"], "hip_hinge", "prone", "machine", "intermediate", "machine", "00:45", ["Lie face down on the bench with hips at the edge.", "Raise both legs until they are parallel to the floor.", "Lower slowly without swinging."]),
+    makeExercise("glute-kickback-cable", "Cable Glute Kickback", "Glutes", ["Hamstrings"], "hip_hinge", "none", "cable", "beginner", "machine", "00:45", ["Attach ankle cuff, face the cable tower.", "Kick the leg back squeezing the glute fully.", "Lower slowly and switch sides."]),
+
+    // ── CALVES ────────────────────────────────────────────────────────────────
+    makeExercise("single-leg-calf-raise", "Single-Leg Calf Raise", "Calves", [], "isolation_legs", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stand on one foot on an elevated surface, hold for balance.", "Lower the heel below the step for full stretch.", "Drive up on the big toe and hold briefly."]),
+    makeExercise("donkey-calf-raise", "Donkey Calf Raise", "Calves", [], "isolation_legs", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Hinge forward with hands on a surface.", "Let heels drop low for a full stretch.", "Drive up through the balls of the feet."]),
+    makeExercise("leg-press-calf-raise", "Leg Press Calf Raise", "Calves", [], "isolation_legs", "none", "machine", "beginner", "machine", "00:30", ["Set only the balls of the feet on the bottom of the platform.", "Lower the carriage to fully stretch the calves.", "Drive up through the forefoot and hold briefly."]),
+    makeExercise("tibia-raise", "Tibia Raise", "Calves", [], "isolation_legs", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stand with heels against a wall or elevated.", "Raise the toes upward as high as possible.", "Lower slowly to full plantarflexion."]),
+    makeExercise("seated-dumbbell-calf-raise", "Seated Dumbbell Calf Raise", "Calves", [], "isolation_legs", "none", "dumbbell", "beginner", "free_weights_accessories", "00:30", ["Sit on a bench with dumbbells balanced on knees.", "Lower heels to a full stretch.", "Drive up through the forefoot squeezing at the top."]),
+
+    // ── CORE ──────────────────────────────────────────────────────────────────
+    makeExercise("floor-leg-raise", "Floor Leg Raise", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie flat, lower back pressed into the floor.", "Raise legs together to vertical without lifting the lower back.", "Lower slowly without touching the floor."]),
+    makeExercise("flutter-kicks", "Flutter Kicks", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie flat, legs elevated a few inches off the floor.", "Alternate kicking up and down in small controlled arcs.", "Keep the lower back pressed down throughout."]),
+    makeExercise("scissor-kicks", "Scissor Kicks", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie flat with legs raised, criss-cross them side to side.", "Keep the movement controlled and the lower back flat.", "Hold the top position briefly on each cross."]),
+    makeExercise("sit-up", "Sit-Up", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie on back, knees bent, hands behind ears.", "Curl the torso all the way up to the knees.", "Lower slowly under control."]),
+    makeExercise("decline-crunch", "Decline Crunch", "Abs / Core", [], "core_anterior", "decline", "bodyweight", "intermediate", "bodyweight_only", "00:30", ["Anchor feet on a decline bench, hands behind head.", "Curl the rib cage toward the pelvis.", "Lower under control."]),
+    makeExercise("machine-crunch", "Machine Crunch", "Abs / Core", [], "core_anterior", "none", "machine", "beginner", "machine", "00:30", ["Grip the handles, feet under the pad.", "Crunch down pulling the ribcage toward the hips.", "Control the return to full extension."]),
+    makeExercise("l-sit", "L-Sit", "Abs / Core", ["Triceps", "Hip Flexors"], "core_anterior", "none", "bodyweight", "advanced", "bodyweight_only", "00:45", ["Support on parallel bars or floor with arms locked out.", "Raise legs to parallel with the floor.", "Hold the position breathing steadily."]),
+    makeExercise("bird-dog", "Bird Dog", "Abs / Core", ["Glutes", "Lower Back"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["On hands and knees, brace the core.", "Extend opposite arm and leg simultaneously.", "Return and repeat on the other side."]),
+    makeExercise("ghd-sit-up", "GHD Sit-Up", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "machine", "advanced", "machine", "01:00", ["Sit on the GHD with hips at the pad edge.", "Lower back freely until parallel to the floor.", "Pull back up using the abs and hip flexors."]),
+    makeExercise("landmine-rotation", "Landmine Rotation", "Obliques", ["Core", "Shoulders"], "core_rotational", "none", "landmine", "beginner", "barbell", "00:45", ["Hold the loaded end with both hands, arms extended.", "Rotate the bar in an arc from side to side.", "Keep hips stable and rotate through the thoracic spine."]),
+    makeExercise("copenhagen-plank", "Copenhagen Plank", "Core", ["Inner Thigh", "Glutes"], "core_anterior", "none", "bodyweight", "advanced", "bodyweight_only", "00:45", ["Side plank with top foot on a bench.", "Lift the bottom leg to meet the bench.", "Hold the top position or add reps."]),
+    makeExercise("bicycle-crunch", "Bicycle Crunch", "Abs / Core", ["Obliques"], "core_rotational", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie flat, hands behind head.", "Bring opposite elbow to opposite knee in a cycling motion.", "Keep the lower back from arching."]),
+    makeExercise("mountain-climber", "Mountain Climber", "Abs / Core", ["Shoulders", "Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Hold a push-up position with a braced core.", "Drive knees toward the chest alternately.", "Keep the hips level throughout."]),
+    makeExercise("dragon-flag", "Dragon Flag", "Abs / Core", ["Lats"], "core_anterior", "none", "bodyweight", "advanced", "bodyweight_only", "01:00", ["Grip a fixed point behind the head.", "Lift the body to vertical as one unit.", "Lower as slowly as possible."]),
+    makeExercise("toes-to-bar", "Toes-to-Bar", "Abs / Core", ["Hip Flexors", "Lats"], "core_anterior", "none", "bodyweight", "advanced", "bodyweight_only", "01:00", ["Dead hang from the bar with ribs down.", "Raise toes to the bar keeping legs straight.", "Lower slowly under control."]),
+    makeExercise("v-up", "V-Up", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "intermediate", "bodyweight_only", "00:30", ["Lie flat, arms overhead.", "Simultaneously raise legs and torso reaching hands to feet.", "Lower under control."]),
+    makeExercise("pallof-press", "Pallof Press", "Abs / Core", ["Obliques"], "core_rotational", "none", "cable", "beginner", "machine", "00:45", ["Stand sideways to the cable, cable at chest height.", "Press straight out and hold briefly.", "Return without letting the cable rotate you."]),
+
+    // ── OLYMPIC / POWER ───────────────────────────────────────────────────────
+    makeExercise("power-clean", "Power Clean", "Hamstrings", ["Glutes", "Traps", "Shoulders"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Start with bar over mid-foot, brace hard.", "Drive legs and hips explosively to get the bar moving.", "Catch in a partial squat as the bar reaches the shoulders."]),
+    makeExercise("hang-power-clean", "Hang Power Clean", "Hamstrings", ["Glutes", "Traps", "Shoulders"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Start with bar at hang position above the knees.", "Explosively extend the hips and shrug.", "Catch in a partial squat at the shoulders."]),
+    makeExercise("clean-and-jerk", "Clean and Jerk", "Hamstrings", ["Shoulders", "Glutes", "Traps"], "hip_hinge", "overhead", "barbell", "advanced", "barbell", "02:00", ["Clean the bar to the shoulders in one pull.", "Dip and drive the bar overhead with a split or squat.", "Lock out and stand to complete the lift."]),
+    makeExercise("snatch-barbell", "Snatch", "Hamstrings", ["Shoulders", "Glutes", "Core"], "hip_hinge", "overhead", "barbell", "advanced", "barbell", "02:00", ["Wide grip, bar over mid-foot.", "Pull explosively and get under the bar with arms locked.", "Stand up from the catch position."]),
+    makeExercise("muscle-up", "Muscle-Up", "Lats", ["Chest", "Triceps", "Shoulders"], "vertical_pull", "overhead", "bodyweight", "advanced", "bodyweight_only", "01:30", ["Dead hang with a false grip.", "Pull explosively and transition over the bar at the top.", "Press out to lockout as in a dip."]),
+    makeExercise("battle-ropes", "Battle Ropes", "Shoulders", ["Core", "Back"], "cardio", "none", "none", "intermediate", "machine", "01:00", ["Stand in an athletic stance gripping one end of each rope.", "Alternate or simultaneous waves with power.", "Keep the core braced throughout."]),
+    makeExercise("turkish-get-up", "Turkish Get-Up", "Shoulders", ["Core", "Glutes", "Hips"], "carry", "none", "kettlebell", "advanced", "free_weights_accessories", "01:30", ["Start lying down, weight pressed straight overhead.", "Navigate through each position keeping the weight locked out.", "Reverse the sequence back to the floor."]),
+    makeExercise("bear-crawl", "Bear Crawl", "Shoulders", ["Core", "Quads", "Hip Flexors"], "cardio", "none", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["On hands and feet with knees hovering an inch off the floor.", "Move opposite hand and foot simultaneously.", "Keep the hips low and core braced throughout."]),
+    makeExercise("ski-erg", "Ski Erg", "Back", ["Core", "Shoulders", "Lats"], "cardio", "none", "machine", "intermediate", "machine", "00:30", ["Grip handles overhead, stand tall.", "Pull down and back driving handles to hips.", "Return to overhead under control and repeat."]),
+
+    // ── KETTLEBELL ────────────────────────────────────────────────────────────
+    makeExercise("kettlebell-swing", "Kettlebell Swing", "Glutes", ["Hamstrings", "Core", "Shoulders"], "hip_hinge", "none", "kettlebell", "intermediate", "free_weights_accessories", "01:00", ["Hike the bell back between legs with a snap.", "Drive the hips forward explosively.", "Let the bell float to chest height — power comes from hips not arms."]),
+    makeExercise("kettlebell-snatch", "Kettlebell Snatch", "Glutes", ["Shoulders", "Core", "Hamstrings"], "hip_hinge", "overhead", "kettlebell", "advanced", "free_weights_accessories", "01:30", ["Swing the bell up and punch through at the top.", "Receive with the arm locked overhead.", "Lower under control to the swing position."]),
+    makeExercise("kettlebell-clean-and-press", "Kettlebell Clean and Press", "Shoulders", ["Glutes", "Core", "Triceps"], "vertical_push", "overhead", "kettlebell", "advanced", "free_weights_accessories", "01:30", ["Clean the bell to the rack position in one motion.", "Press overhead to full lockout.", "Lower and return to the clean position."]),
+    makeExercise("kettlebell-deadlift", "Kettlebell Deadlift", "Hamstrings", ["Glutes", "Lower Back"], "hip_hinge", "none", "kettlebell", "beginner", "free_weights_accessories", "01:00", ["Straddle the kettlebell, hinge and grip the handle.", "Brace and stand driving through the heels.", "Lower back to the floor with control."]),
+    makeExercise("kettlebell-row", "Kettlebell Row", "Upper Back", ["Biceps", "Rear Delts"], "horizontal_pull", "flat", "kettlebell", "beginner", "free_weights_accessories", "01:00", ["Hinge forward supporting with one hand, KB in the other.", "Row to the hip driving the elbow back.", "Lower slowly to full stretch."]),
+    makeExercise("kettlebell-press", "Kettlebell Press", "Shoulders", ["Triceps"], "vertical_push", "overhead", "kettlebell", "intermediate", "free_weights_accessories", "01:00", ["Clean the bell to the rack position.", "Press overhead to lockout.", "Lower back to rack under control."]),
+    makeExercise("kettlebell-goblet-squat", "Kettlebell Goblet Squat", "Quads", ["Glutes", "Core"], "squat", "none", "kettlebell", "beginner", "free_weights_accessories", "01:00", ["Hold the horns of the bell at chest height.", "Squat deep keeping elbows inside the knees.", "Drive up through the floor."]),
+    makeExercise("kettlebell-figure-8", "Kettlebell Figure-8", "Core", ["Shoulders", "Glutes"], "core_rotational", "none", "kettlebell", "intermediate", "free_weights_accessories", "01:00", ["Straddle the bell in an athletic hinge.", "Pass the bell in a figure-8 pattern between and around the legs.", "Keep the torso stable while the hips rotate."]),
+    makeExercise("kettlebell-windmill", "Kettlebell Windmill", "Core", ["Shoulders", "Glutes", "Hips"], "carry", "none", "kettlebell", "advanced", "free_weights_accessories", "01:00", ["Press the bell overhead and lock the arm.", "Hinge to one side, rotating the floor hand toward the foot.", "Return to standing with the bell locked out."]),
+
+    // ── CARRY ─────────────────────────────────────────────────────────────────
+    makeExercise("farmers-carry", "Farmer's Carry", "Forearms", ["Traps", "Core", "Glutes"], "carry", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Pick up heavy dumbbells with a tight core and packed shoulders.", "Walk steady keeping the torso upright.", "Set down with control at the end of the run."]),
+    makeExercise("suitcase-carry", "Suitcase Carry", "Core", ["Traps", "Glutes"], "carry", "none", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Hold a heavy dumbbell in one hand at your side.", "Walk without tilting the torso to the loaded side.", "Complete the run then switch hands."]),
+    makeExercise("overhead-carry", "Overhead Carry", "Shoulders", ["Traps", "Core"], "carry", "none", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Press the dumbbell overhead and lock the arm.", "Walk steadily without letting the shoulder collapse.", "Keep the core braced throughout."]),
+    makeExercise("yoke-carry", "Yoke Carry", "Traps", ["Glutes", "Core", "Quads"], "carry", "none", "none", "advanced", "machine", "01:00", ["Load the yoke and step underneath it.", "Walk with short powerful steps keeping a braced trunk.", "Set it down with control."]),
+
+    // ── FOREARMS ──────────────────────────────────────────────────────────────
+    makeExercise("wrist-extension", "Wrist Extension", "Forearms", [], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:30", ["Rest forearms on a bench, palms facing down.", "Extend the wrists upward against the weight.", "Lower slowly under control."]),
+    makeExercise("wrist-roller", "Wrist Roller", "Forearms", [], "isolation_pull", "none", "none", "beginner", "free_weights_accessories", "00:30", ["Hold the roller at arm's length with palms down.", "Roll the weight up by alternating wrist flexion and extension.", "Reverse the direction to lower."]),
+    makeExercise("plate-pinch", "Plate Pinch", "Forearms", ["Traps"], "carry", "none", "none", "beginner", "free_weights_accessories", "01:00", ["Pinch a plate between thumb and fingers at the side.", "Hold without letting the plate slip.", "Switch hands after each set."]),
+
+    // ── CARDIO / CONDITIONING ─────────────────────────────────────────────────
+    makeExercise("rowing-machine", "Rowing Machine", "Back", ["Hamstrings", "Core", "Shoulders"], "cardio", "none", "machine", "beginner", "machine", "00:30", ["Drive through the legs first, then lean back, then pull arms.", "Return in the opposite order — arms, body, legs.", "Keep a steady rhythm and a braced core."]),
+    makeExercise("jump-rope", "Jump Rope", "Calves", ["Shoulders", "Core"], "cardio", "none", "none", "beginner", "bodyweight_only", "00:30", ["Keep elbows close to the body, wrists doing the turning.", "Land lightly on the balls of your feet.", "Keep a consistent rhythm."]),
+    makeExercise("double-under", "Double Under", "Calves", ["Shoulders", "Core"], "cardio", "none", "none", "intermediate", "bodyweight_only", "00:30", ["Jump higher than a single under to allow two rope passes.", "Keep the wrist rotation fast and tight.", "Land softly absorbing through the ankles and knees."]),
+    makeExercise("elliptical", "Elliptical", "Quads", ["Glutes", "Calves"], "cardio", "none", "machine", "beginner", "machine", "00:30", ["Set resistance before stepping on.", "Drive through the full foot and engage the arms.", "Maintain upright posture throughout."]),
+    makeExercise("assault-bike", "Assault Bike", "Quads", ["Shoulders", "Core"], "cardio", "none", "machine", "intermediate", "machine", "00:30", ["Push and pull the handles equally.", "Drive through the full pedal stroke.", "Set a pace you can sustain through the interval."]),
+    makeExercise("stair-climber", "Stair Climber", "Glutes", ["Quads", "Calves"], "cardio", "none", "machine", "beginner", "machine", "00:30", ["Set a steady pace before letting go of the rails.", "Push through the full step keeping the torso upright.", "Avoid leaning heavily on the handrails."]),
+    makeExercise("sled-push", "Sled Push", "Quads", ["Glutes", "Core"], "cardio", "none", "none", "intermediate", "bodyweight_only", "01:00", ["Lean forward from the ankles maintaining a rigid core.", "Drive through the legs with short powerful steps.", "Keep the arms straight into the sled."]),
+    makeExercise("sled-pull", "Sled Pull", "Hamstrings", ["Glutes", "Back"], "cardio", "none", "none", "intermediate", "bodyweight_only", "01:00", ["Face away from the sled with the rope over the shoulder.", "Drive forward with power steps pulling the sled.", "Keep the core braced and the torso upright."]),
+    makeExercise("box-step-up", "Box Step-Up", "Quads", ["Glutes"], "lunge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Hold dumbbells at sides, step onto the box with one foot.", "Drive through the heel to lift the full body.", "Step back down under control and switch."]),
+    makeExercise("jump-box", "Depth Jump", "Quads", ["Glutes", "Calves"], "squat", "none", "bodyweight", "advanced", "bodyweight_only", "01:30", ["Step off a box, land softly and immediately rebound up.", "Minimize ground contact time.", "Land softly again after the jump."]),
+  ];
+
+  const _etIds = new Set(exerciseTemplates.map((e) => e.id));
+  exerciseTemplates.push(
+    ...smartReplaceCatalog.filter((e) => !_etIds.has(e.id)),
+    ..._additionalExercises.filter((e) => !_etIds.has(e.id))
+  );
+}
+
+// ── Exercise library — final top-up (gap-closing exercises) ──────────────────
+{
+  const _finalExercises: ExerciseWithTaxonomy[] = [
+    // Chest
+    makeExercise("deficit-push-up", "Deficit Push-Up", "Chest", ["Triceps", "Front Delts"], "horizontal_push", "flat", "bodyweight", "intermediate", "bodyweight_only", "00:45", ["Place hands on raised surfaces to increase range of motion.", "Lower chest past the level of the hands.", "Press away feeling the greater stretch."]),
+    makeExercise("archer-push-up", "Archer Push-Up", "Chest", ["Triceps", "Shoulders"], "horizontal_push", "flat", "bodyweight", "advanced", "bodyweight_only", "00:45", ["Wide push-up position, shift weight to one arm.", "Lower toward the bent arm while the other stays nearly straight.", "Press back to center and repeat on the other side."]),
+    makeExercise("pin-press", "Pin Press", "Chest", ["Triceps", "Front Delts"], "horizontal_push", "flat", "barbell", "advanced", "barbell", "01:30", ["Set safety pins at the sticking point of your bench press.", "Start each rep from the dead stop on the pins.", "Drive through the sticking point to lockout."]),
+
+    // Back / Pull
+    makeExercise("wide-grip-cable-row", "Wide-Grip Cable Row", "Upper Back", ["Rear Delts", "Lats"], "horizontal_pull", "flat", "cable", "beginner", "machine", "01:00", ["Attach a wide bar, sit tall with a slight lean.", "Drive elbows wide and back squeezing the upper back.", "Let the shoulder blades protract under control."]),
+    makeExercise("close-grip-cable-row", "Close-Grip Cable Row", "Lats", ["Upper Back", "Biceps"], "horizontal_pull", "flat", "cable", "beginner", "machine", "01:00", ["Use a V-bar or narrow handle.", "Pull to the lower abdomen driving elbows close to the body.", "Control the return to full stretch."]),
+    makeExercise("reverse-grip-lat-pulldown", "Reverse Grip Lat Pulldown", "Lats", ["Biceps", "Upper Back"], "vertical_pull", "overhead", "cable", "beginner", "machine", "01:00", ["Underhand grip slightly inside shoulder width.", "Pull to upper chest keeping elbows close.", "Control the return."]),
+    makeExercise("single-arm-cable-row", "Single-Arm Cable Row", "Upper Back", ["Lats", "Biceps"], "horizontal_pull", "flat", "cable", "beginner", "machine", "00:45", ["Sit side-on or face-on with one hand on the handle.", "Row to the hip rotating slightly through the torso.", "Control the return."]),
+    makeExercise("dead-hang", "Dead Hang", "Lats", ["Forearms", "Shoulders"], "vertical_pull", "overhead", "bodyweight", "beginner", "bodyweight_only", "01:00", ["Grip the bar with both hands, fully relax the body.", "Let the shoulders decompress fully.", "Breathe and hold for the target duration."]),
+    makeExercise("jefferson-curl", "Jefferson Curl", "Hamstrings", ["Lower Back", "Glutes"], "hip_hinge", "none", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Stand on a box, hold weight at arms length.", "Curl the spine down vertebra by vertebra.", "Uncurl slowly back to standing — a mobility deadlift."]),
+    makeExercise("glute-ham-raise", "Glute-Ham Raise", "Hamstrings", ["Glutes", "Lower Back"], "hip_hinge", "none", "bodyweight", "advanced", "machine", "01:30", ["Lock feet into the GHD, start horizontal.", "Curl body up using the hamstrings.", "Lower with control."]),
+    makeExercise("single-leg-leg-press", "Single-Leg Leg Press", "Quads", ["Glutes", "Hamstrings"], "squat", "none", "machine", "intermediate", "machine", "01:00", ["Place one foot in the center of the platform.", "Lower under control without the knee caving.", "Drive through the heel to full extension."]),
+
+    // Legs — missing patterns
+    makeExercise("lateral-lunge", "Lateral Lunge", "Quads", ["Glutes", "Inner Thigh"], "lunge", "none", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Stand feet together, step wide to one side.", "Sit into the bent leg while keeping the other straight.", "Push through the bent heel to return."]),
+    makeExercise("curtsy-lunge", "Curtsy Lunge", "Glutes", ["Quads", "Inner Thigh"], "lunge", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Step one foot behind and across the other.", "Lower into a curtsy keeping the front knee over the toe.", "Drive through the front heel to return."]),
+    makeExercise("cossack-squat", "Cossack Squat", "Adductors", ["Glutes", "Quads"], "lunge", "none", "bodyweight", "intermediate", "bodyweight_only", "00:45", ["Shift into one hip while keeping the other leg long.", "Sit as deep as mobility allows without rounding the trunk.", "Push through the bent leg to return to center."]),
+    makeExercise("box-squat", "Box Squat", "Quads", ["Glutes", "Hamstrings"], "squat", "none", "barbell", "intermediate", "barbell", "01:30", ["Squat to a box set at parallel or below.", "Sit on the box briefly without relaxing the core.", "Drive up explosively through the heels."]),
+    makeExercise("jump-lunge", "Jump Lunge", "Quads", ["Glutes", "Calves"], "lunge", "none", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["Start in a lunge position.", "Explosively jump switching legs in mid-air.", "Land softly and immediately into the next rep."]),
+    makeExercise("reverse-nordic-curl", "Reverse Nordic Curl", "Quads", ["Hip Flexors"], "squat", "none", "bodyweight", "advanced", "bodyweight_only", "01:30", ["Kneel with feet anchored, body upright.", "Lean backward as far as control allows.", "Pull back to upright using the quads."]),
+    makeExercise("banded-lateral-walk", "Banded Lateral Walk", "Glutes", ["Abductors"], "isolation_legs", "none", "resistance_band", "beginner", "free_weights_accessories", "00:30", ["Loop band around ankles or above knees.", "Step sideways maintaining tension on the band.", "Keep a soft knee bend and upright torso throughout."]),
+    makeExercise("banded-clamshell", "Banded Clamshell", "Glutes", ["Abductors"], "isolation_legs", "none", "resistance_band", "beginner", "free_weights_accessories", "00:30", ["Lie on your side with band above the knees.", "Open the top knee while keeping feet together.", "Return slowly without letting the hips rock."]),
+    makeExercise("cable-hip-flexor", "Cable Hip Flexor Raise", "Hip Flexors", ["Abs / Core"], "isolation_legs", "none", "cable", "beginner", "machine", "00:30", ["Attach ankle cuff to low cable, face away.", "Raise the knee to hip height in a controlled arc.", "Lower slowly and repeat."]),
+
+    // Core — final additions
+    makeExercise("hollow-body-rock", "Hollow Body Rock", "Abs / Core", [], "core_anterior", "none", "bodyweight", "intermediate", "bodyweight_only", "00:30", ["Compress into the hollow body position.", "Rock forward and back like a rocking chair.", "Maintain the compressed position throughout."]),
+    makeExercise("captain-chair-knee-raise", "Captain's Chair Knee Raise", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Brace on the captain's chair with forearms on pads.", "Raise knees to hip height keeping the back against the pad.", "Lower slowly under control."]),
+    makeExercise("windshield-wiper", "Windshield Wiper", "Obliques", ["Abs / Core"], "core_rotational", "none", "bodyweight", "advanced", "bodyweight_only", "00:45", ["Hang from a bar, raise legs to vertical.", "Rotate legs side to side in a controlled arc.", "Control the rotation — do not swing."]),
+
+    // Olympic / Power
+    makeExercise("hang-clean", "Hang Clean", "Hamstrings", ["Traps", "Shoulders", "Glutes"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Start with bar at the hang above knees.", "Extend the hips explosively and shrug.", "Receive in a front squat or power position at the shoulders."]),
+    makeExercise("clean-pull", "Clean Pull", "Hamstrings", ["Traps", "Glutes"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Pull the bar as in a clean but don't receive it.", "Finish with triple extension — ankles, knees, hips.", "Lower under control to the floor."]),
+    makeExercise("sumo-deadlift-high-pull", "Sumo Deadlift High Pull", "Hamstrings", ["Traps", "Shoulders", "Glutes"], "hip_hinge", "none", "barbell", "advanced", "barbell", "01:30", ["Sumo stance, grip inside the legs.", "Pull the bar and lead the elbows high finishing at chin level.", "Lower under control."]),
+    makeExercise("med-ball-slam", "Med Ball Slam", "Core", ["Shoulders", "Back"], "core_rotational", "none", "none", "intermediate", "free_weights_accessories", "01:00", ["Hold the ball overhead fully extended.", "Slam it into the ground with maximum force.", "Pick it up and repeat without hesitation."]),
+    makeExercise("box-jump-weighted", "Weighted Box Jump", "Quads", ["Glutes", "Calves"], "squat", "none", "dumbbell", "advanced", "free_weights_accessories", "01:30", ["Hold light dumbbells, stand arm's length from the box.", "Swing arms and explode up.", "Land softly and step back down."]),
+
+    // Weighted bodyweight variations
+    makeExercise("weighted-dip", "Weighted Dip", "Chest", ["Triceps", "Front Delts"], "vertical_push", "decline", "bodyweight", "advanced", "bodyweight_weighted", "01:30", ["Attach weight via belt and hang still before starting.", "Lower with slight forward lean for chest emphasis.", "Press back up to full lockout."]),
+    makeExercise("kipping-pull-up", "Kipping Pull-Up", "Lats", ["Shoulders", "Core"], "vertical_pull", "overhead", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["Use a controlled hip drive to generate momentum.", "Pull as the hips swing forward.", "Cycle smoothly between reps."]),
+    makeExercise("assisted-tricep-dip", "Assisted Tricep Dip", "Triceps", ["Chest"], "vertical_push", "decline", "bodyweight", "beginner", "machine", "00:45", ["Set the assistance weight, grip the handles.", "Lower until elbows hit 90 degrees.", "Press back to full extension."]),
+    makeExercise("machine-preacher-curl", "Machine Preacher Curl", "Biceps", ["Forearms"], "isolation_pull", "incline", "machine", "beginner", "machine", "00:45", ["Adjust pad height, grip the handles.", "Curl through full range without swinging.", "Lower slowly to full extension."]),
+    makeExercise("cable-preacher-curl", "Cable Preacher Curl", "Biceps", ["Forearms"], "isolation_pull", "incline", "cable", "beginner", "machine", "00:45", ["Set low cable, brace arm on the angled pad.", "Curl to full contraction under constant tension.", "Lower slowly."]),
+    makeExercise("banded-pull-through", "Banded Pull-Through", "Glutes", ["Hamstrings"], "hip_hinge", "none", "resistance_band", "beginner", "free_weights_accessories", "00:45", ["Stand facing away from anchor, band between legs.", "Hinge forward letting the band pull through.", "Drive hips forward to stand squeezing the glutes."]),
+    makeExercise("landmine-hip-thrust", "Landmine Hip Thrust", "Glutes", ["Hamstrings"], "hip_hinge", "none", "landmine", "beginner", "barbell", "01:00", ["Sit with upper back on bench, bar end over hips.", "Drive through heels squeezing glutes at the top.", "Lower slowly."]),
+    makeExercise("single-arm-dumbbell-press", "Single-Arm Dumbbell Press", "Chest", ["Triceps", "Core"], "horizontal_push", "flat", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Lie flat with one dumbbell, non-working arm to the side.", "Press the dumbbell up keeping the torso stable.", "Lower under control."]),
+  ];
+
+  const _topUpIds = new Set(exerciseTemplates.map((e) => e.id));
+  exerciseTemplates.push(..._finalExercises.filter((e) => !_topUpIds.has(e.id)));
+}
+
+// ── Strong-app gap-fill ───────────────────────────────────────────────────────
+{
+  const _strongExercises: ExerciseWithTaxonomy[] = [
+    // ── Core ─────────────────────────────────────────────────────────────────
+    makeExercise("reverse-crunch", "Reverse Crunch", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie flat, knees bent at 90 degrees.", "Curl the hips up and toward the chest using the lower abs.", "Lower slowly without letting the lower back arch."]),
+    makeExercise("hanging-knee-raise", "Hanging Knee Raise", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Dead hang from a pull-up bar with ribs down.", "Drive knees toward the chest without swinging.", "Lower slowly under control."]),
+    makeExercise("oblique-crunch", "Oblique Crunch", "Obliques", ["Abs / Core"], "core_rotational", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie on your side, knees bent, hand behind head.", "Crunch the top elbow toward the top hip.", "Lower under control and repeat."]),
+    makeExercise("jackknife-sit-up", "Jackknife Sit-Up", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "intermediate", "bodyweight_only", "00:30", ["Lie flat, arms overhead, legs straight.", "Simultaneously raise arms and legs meeting in the middle.", "Lower both back to the floor under control."]),
+    makeExercise("decline-sit-up", "Decline Sit-Up", "Abs / Core", ["Hip Flexors"], "core_anterior", "decline", "bodyweight", "intermediate", "bodyweight_only", "00:30", ["Anchor feet on decline bench, hands behind ears.", "Curl all the way up to vertical.", "Lower under control to flat."]),
+    makeExercise("superman", "Superman", "Lower Back", ["Glutes", "Hamstrings"], "hip_hinge", "prone", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie face down, arms extended overhead.", "Raise arms and legs simultaneously squeezing the glutes.", "Hold briefly and lower."]),
+    makeExercise("hip-circle", "Hip Circle", "Hip Flexors", ["Glutes", "Abs / Core"], "isolation_legs", "none", "none", "beginner", "bodyweight_only", "00:30", ["Stand upright, hands on hips.", "Rotate the hips in a large circle keeping the torso still.", "Complete full circles each direction."]),
+
+    // ── Triceps ───────────────────────────────────────────────────────────────
+    makeExercise("ez-bar-skull-crusher", "EZ Bar Skull Crusher", "Triceps", [], "isolation_push", "flat", "barbell", "intermediate", "free_weights_accessories", "01:00", ["Lie flat, EZ bar over face with a close grip.", "Lower by bending only at the elbows toward the forehead.", "Press back through the triceps keeping elbows pinned."]),
+    makeExercise("reverse-grip-pushdown", "Reverse Grip Tricep Pushdown", "Triceps", [], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Underhand grip on the straight bar at the cable.", "Lock elbows at the sides and push down to full extension.", "Return slowly keeping elbows fixed."]),
+    makeExercise("one-arm-cable-pushdown", "One-Arm Cable Pushdown", "Triceps", [], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Single handle on a high cable, elbow at the side.", "Push down to full extension and squeeze.", "Return slowly."]),
+    makeExercise("v-bar-pushdown", "V-Bar Pushdown", "Triceps", [], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Attach V-bar to high cable, grip with neutral hands.", "Lock elbows at sides and press to full extension.", "Control the return without letting elbows flare."]),
+    makeExercise("overhead-ez-bar-extension", "Overhead EZ Bar Tricep Extension", "Triceps", [], "isolation_push", "none", "barbell", "beginner", "free_weights_accessories", "00:45", ["Hold EZ bar overhead with a close grip, elbows pointing up.", "Lower behind the head bending only at the elbows.", "Extend back to lockout."]),
+    makeExercise("incline-tricep-extension", "Incline Tricep Extension", "Triceps", [], "isolation_push", "incline", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Lie on an incline bench, dumbbells over face.", "Lower by bending only the elbows.", "Press back up through the triceps."]),
+
+    // ── Biceps ────────────────────────────────────────────────────────────────
+    makeExercise("barbell-21s", "Barbell 21s", "Biceps", ["Forearms"], "isolation_pull", "none", "barbell", "intermediate", "barbell", "00:45", ["7 reps lower half (bottom to 90°), 7 reps upper half (90° to top), 7 full reps.", "Keep elbows pinned throughout all 21 reps.", "Use a lighter weight than a standard curl."]),
+    makeExercise("single-leg-curl", "Single-Leg Curl", "Hamstrings", [], "isolation_legs", "prone", "machine", "beginner", "machine", "00:45", ["Set pad above the ankle of one leg.", "Curl the heel toward the glute without letting the hip rise.", "Lower slowly to full extension."]),
+
+    // ── Shoulders ─────────────────────────────────────────────────────────────
+    makeExercise("cuban-press", "Cuban Press", "Shoulders", ["Rotator Cuff", "Traps"], "isolation_push", "overhead", "dumbbell", "intermediate", "free_weights_accessories", "00:45", ["Upright row to 90°, then externally rotate forearms to vertical.", "Press overhead from the rotated position.", "Reverse the sequence on the way down."]),
+    makeExercise("bradford-press", "Bradford Press", "Shoulders", ["Traps", "Triceps"], "vertical_push", "overhead", "barbell", "intermediate", "barbell", "01:00", ["Start with bar at upper chest.", "Press just over the top of the head and lower behind the neck.", "Alternate front and back without stopping at lockout."]),
+
+    // ── Chest ─────────────────────────────────────────────────────────────────
+    makeExercise("low-to-high-cable-fly", "Low-to-High Cable Fly", "Upper Chest", ["Front Delts"], "isolation_push", "incline", "cable", "beginner", "machine", "00:45", ["Set cables low, lean slightly forward.", "Arc handles upward and together toward upper chest.", "Control the return with a full stretch."]),
+    makeExercise("high-to-low-cable-fly", "High-to-Low Cable Fly", "Lower Chest", ["Front Delts"], "isolation_push", "decline", "cable", "beginner", "machine", "00:45", ["Set cables high, lean slightly forward.", "Arc handles downward and together toward lower chest.", "Control the return to full stretch."]),
+    makeExercise("dumbbell-squeeze-press", "Dumbbell Squeeze Press", "Chest", ["Triceps"], "isolation_push", "flat", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hold dumbbells pressed together over the chest.", "Maintain inward pressure throughout the entire rep.", "Press and lower keeping the dumbbells in contact."]),
+
+    // ── Back / Hips ───────────────────────────────────────────────────────────
+    makeExercise("banded-deadlift", "Banded Deadlift", "Hamstrings", ["Glutes", "Lower Back", "Traps"], "hip_hinge", "none", "resistance_band", "intermediate", "free_weights_accessories", "01:30", ["Stand on bands with feet hip-width, grip at sides.", "Brace and stand — resistance increases as you rise.", "Lower under control against the band tension."]),
+    makeExercise("seated-good-morning", "Seated Good Morning", "Hamstrings", ["Lower Back", "Glutes"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "01:00", ["Sit on a bench, bar across upper back.", "Hinge forward at the hips keeping the back neutral.", "Drive back to upright using the hamstrings."]),
+    makeExercise("cable-leg-curl", "Cable Leg Curl", "Hamstrings", [], "isolation_legs", "none", "cable", "beginner", "machine", "00:45", ["Attach ankle cuff to a low cable, lie face down or stand.", "Curl the heel toward the glute through full range.", "Lower slowly under control."]),
+
+    // ── Quads / Legs ──────────────────────────────────────────────────────────
+    makeExercise("split-squat", "Split Squat", "Quads", ["Glutes", "Hamstrings"], "lunge", "none", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Take a long stride forward, both feet flat.", "Lower the back knee toward the floor in a static split.", "Drive through the front heel to return."]),
+    makeExercise("pendulum-squat", "Pendulum Squat", "Quads", ["Glutes"], "squat", "none", "machine", "intermediate", "machine", "01:30", ["Load the machine, lean back against the pad.", "Lower into a deep squat with an upright torso.", "Drive up through the heels."]),
+    makeExercise("high-knees", "High Knees", "Quads", ["Hip Flexors", "Calves"], "cardio", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Run in place driving knees up to hip height.", "Pump arms in opposition to the legs.", "Keep a fast rhythm and stay on the balls of the feet."]),
+  ];
+
+  const _strongIds = new Set(exerciseTemplates.map((e) => e.id));
+  exerciseTemplates.push(..._strongExercises.filter((e) => !_strongIds.has(e.id)));
+}
+
+// ── User-requested exercise additions ─────────────────────────────────────────
+{
+  const _userExercises: ExerciseWithTaxonomy[] = [
+    // ── Chest ──────────────────────────────────────────────────────────────────
+    makeExercise("bear-walk", "Bear Walk", "Chest", ["Shoulders", "Core", "Triceps"], "horizontal_push", "flat", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Start on all fours with knees hovering an inch off the floor.", "Walk forward by moving opposite hand and foot simultaneously.", "Keep hips level and core braced throughout."]),
+    makeExercise("butterfly-machine", "Butterfly Machine", "Chest", ["Front Delts"], "isolation_push", "flat", "machine", "beginner", "machine", "00:45", ["Adjust the seat so arms open at chest height.", "Squeeze the pads together through the full arc.", "Return with control — don't let the stack crash."]),
+    makeExercise("dumbbell-pullover-chest", "Dumbbell Pullover (Chest)", "Chest", ["Lats", "Triceps"], "horizontal_push", "flat", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Lie perpendicular on a bench, hips below bench level.", "Lower the dumbbell behind your head with a slight elbow bend.", "Pull back over the chest by squeezing the pecs — not the lats."]),
+    makeExercise("pause-bench-press", "Pause Bench Press", "Chest", ["Front Delts", "Triceps"], "horizontal_push", "flat", "barbell", "intermediate", "barbell", "02:00", ["Lower the bar to mid-chest and hold for 2–3 seconds with full muscle tension.", "No bounce — eliminate all stretch reflex before pressing.", "Drive up explosively once the pause is complete."]),
+    // ── Arms ───────────────────────────────────────────────────────────────────
+    makeExercise("axe-hold", "Axe Hold", "Forearms", ["Shoulders", "Biceps"], "carry", "flat", "dumbbell", "beginner", "free_weights_accessories", "00:30", ["Hold a dumbbell at arm's length in front of you at shoulder height.", "Keep the wrist neutral and the shoulder packed.", "Hold for the target duration without letting the elbow bend or dip."]),
+    makeExercise("deadhang", "Deadhang", "Forearms", ["Lats", "Shoulders"], "vertical_pull", "overhead", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Grip the bar slightly wider than shoulder width.", "Let the body hang completely — no engagement in the shoulder girdle.", "Breathe steadily and hold for the target time."]),
+    makeExercise("australian-pull-up", "Australian Pull-Up", "Upper Back", ["Biceps", "Rear Delts"], "horizontal_pull", "flat", "bodyweight", "beginner", "bodyweight_only", "01:00", ["Set a bar at hip height, hang underneath with straight body.", "Pull your chest to the bar driving elbows back.", "Lower slowly to full arm extension keeping the body rigid."]),
+    makeExercise("drag-pushdown", "Drag Pushdown", "Triceps", ["Lats"], "isolation_push", "none", "cable", "intermediate", "free_weights_accessories", "00:45", ["Grip a straight bar at a high cable, pin elbows at the sides.", "Drag the bar down the body — elbows travel back as they extend.", "Squeeze the triceps at the bottom before returning."]),
+    makeExercise("kong-curl", "Kong Curl", "Biceps", ["Forearms", "Brachialis"], "isolation_pull", "flat", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hold dumbbells supinated, curl both arms simultaneously.", "Lean the torso very slightly forward as you curl.", "Squeeze at the top and lower under full control."]),
+    // ── Back ───────────────────────────────────────────────────────────────────
+    makeExercise("rack-deadlift", "Rack Deadlift", "Lower Back", ["Glutes", "Hamstrings", "Traps"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "02:00", ["Set the safety pins at knee or mid-shin height.", "Brace hard before every rep — treat each pull as a max effort.", "Lock out with hips and knees simultaneously, don't hyperextend."]),
+    makeExercise("kroc-row", "Kroc Row", "Lats", ["Upper Back", "Biceps", "Rear Delts"], "horizontal_pull", "flat", "dumbbell", "advanced", "free_weights_accessories", "01:30", ["Brace on a bench, heavy dumbbell in one hand.", "Row explosively to the hip allowing slight torso rotation.", "Lower under control and repeat for high reps."]),
+    makeExercise("high-row-cable", "High Row (Cable)", "Upper Back", ["Rear Delts", "Biceps", "Rhomboids"], "horizontal_pull", "flat", "cable", "beginner", "free_weights_accessories", "01:00", ["Set the cable above head height with a rope or wide handle.", "Pull to the upper chest driving elbows wide and back.", "Control the return letting the shoulder blades protract fully."]),
+    makeExercise("reverse-cable-flye", "Reverse Cable Flye", "Rear Delts", ["Rhomboids", "Traps"], "horizontal_pull", "flat", "cable", "beginner", "free_weights_accessories", "00:45", ["Cross cables at chest height, grab opposite handles.", "Open arms wide in a reverse fly arc squeezing the rear delts.", "Control the return without letting the cables yank you forward."]),
+    makeExercise("dumbbell-pullover-back", "Dumbbell Pullover (Back)", "Lats", ["Chest", "Serratus", "Triceps"], "vertical_pull", "flat", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Lie perpendicular on a bench, hips dropped for a full stretch.", "Lower the dumbbell behind the head pulling from the lats.", "Think elbows toward hips to bias the lats over the chest."]),
+    makeExercise("straight-arm-lat-pulldown-cable", "Straight Arm Lat Pulldown (Cable)", "Lats", ["Core", "Rear Delts"], "vertical_pull", "overhead", "cable", "intermediate", "free_weights_accessories", "01:00", ["Set a high cable, grip a straight bar with arms extended.", "Pull down in an arc keeping arms straight throughout.", "Squeeze the lats at the bottom before returning with control."]),
+    makeExercise("straight-arm-lat-pulldown-rope", "Straight Arm Lat Pulldown (Rope)", "Lats", ["Core", "Rear Delts"], "vertical_pull", "overhead", "cable", "intermediate", "free_weights_accessories", "01:00", ["Set a high cable with a rope, split the ends at the bottom.", "Pull down and slightly back keeping arms straight.", "Control the return to feel the full lat stretch at the top."]),
+    // ── Shoulders ──────────────────────────────────────────────────────────────
+    makeExercise("rear-delt-raise", "Rear Delt Raise", "Rear Delts", ["Upper Back", "Rhomboids"], "isolation_pull", "prone", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hinge forward until torso is near parallel, or lie prone on incline.", "Raise arms out to the sides with a soft elbow bend.", "Control the lowering — don't let momentum take over."]),
+    makeExercise("dumbbell-scaption", "Dumbbell Scaption", "Shoulders", ["Rotator Cuff", "Serratus"], "isolation_push", "incline", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Stand tall, thumbs pointing up and arms at 30–45 degrees from the front plane.", "Raise to shoulder height in the scapular plane — not directly in front.", "Lower slowly maintaining the 30-degree angle throughout."]),
+    makeExercise("wall-angels", "Wall Angels", "Shoulders", ["Rotator Cuff", "Upper Back", "Thoracic Spine"], "isolation_push", "flat", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stand flat against a wall — head, upper back and lower back all in contact.", "Slide arms up and down the wall like a snow angel motion.", "Maintain full wall contact throughout — don't let the lower back arch off."]),
+    makeExercise("handstand", "Handstand", "Shoulders", ["Triceps", "Core", "Upper Back"], "vertical_push", "overhead", "bodyweight", "advanced", "bodyweight_only", "00:30", ["Kick up against a wall for support, hands shoulder-width.", "Stack wrists, shoulders, hips and heels in one vertical line.", "Spread the fingers and press actively through the floor to stabilise."]),
+    makeExercise("seated-dumbbell-lateral-raise", "Seated Dumbbell Lateral Raise", "Side Delts", ["Traps"], "isolation_push", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Sit upright at the edge of a bench, dumbbells at sides.", "Raise laterally to shoulder height with a soft elbow — no momentum from legs.", "Lower slowly keeping shoulder blades neutral."]),
+    // ── Legs ───────────────────────────────────────────────────────────────────
+    makeExercise("barbell-walking-lunge", "Barbell Walking Lunge", "Quads", ["Glutes", "Hamstrings", "Core"], "lunge", "none", "barbell", "intermediate", "barbell", "01:30", ["Place the bar across the upper back, brace core before stepping.", "Step forward, lower the back knee toward the floor.", "Drive through the front heel and step the back foot forward — do not stop between reps."]),
+    makeExercise("wall-squat", "Wall Squat", "Quads", ["Glutes", "Hamstrings"], "squat", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stand with back flat against a wall, feet 12–18 inches out.", "Slide down until thighs are parallel to the floor.", "Hold with arms crossed or extended, breathing normally."]),
+    makeExercise("dumbbell-thruster", "Dumbbell Thruster", "Quads", ["Shoulders", "Glutes", "Triceps"], "squat", "overhead", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Hold dumbbells at shoulder height, squat to parallel.", "Drive up explosively and press overhead in one fluid motion.", "Lock out overhead before bringing the dumbbells back to shoulders."]),
+    makeExercise("hamstring-kicks", "Hamstring Kicks", "Hamstrings", ["Glutes", "Hip Flexors"], "hip_hinge", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stand on one leg or use a wall for balance.", "Kick the heel toward the glute in a controlled arc.", "Pause briefly at the top and lower with control."]),
+    makeExercise("leg-swings-front-back", "Leg Swings (Front-Back)", "Hip Flexors", ["Hamstrings", "Glutes"], "hip_hinge", "none", "bodyweight", "beginner", "bodyweight_only", "00:20", ["Hold a wall or post for balance on one leg.", "Swing the free leg forward and back through its natural range.", "Gradually increase amplitude over each rep — keep the torso still."]),
+    // ── Abs / Core ─────────────────────────────────────────────────────────────
+    makeExercise("weighted-crunch", "Weighted Crunch", "Abs", ["Obliques"], "core_anterior", "none", "dumbbell", "intermediate", "bodyweight_weighted", "00:30", ["Hold a weight plate or dumbbell against the chest or behind the head.", "Curl the rib cage toward the pelvis, not the head toward the knees.", "Lower under full control to avoid momentum."]),
+    makeExercise("dumbbell-side-bend", "Dumbbell Side Bend", "Obliques", ["Core", "Quadratus Lumborum"], "core_rotational", "none", "dumbbell", "beginner", "free_weights_accessories", "00:30", ["Hold a dumbbell in one hand, stand tall.", "Bend laterally toward the dumbbell side, then return upright.", "Avoid leaning forward or back — movement is purely lateral."]),
+    makeExercise("plank-shoulder-taps", "Plank Shoulder Taps", "Core", ["Shoulders", "Obliques"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Set a high plank position, feet slightly wider for stability.", "Tap one shoulder with the opposite hand, then alternate.", "Resist rotation — keep hips level and square throughout."]),
+    // ── Cardio ─────────────────────────────────────────────────────────────────
+    makeExercise("zone-2-running", "Zone 2 Running", "Cardio", ["Quads", "Calves", "Glutes"], "cardio", "none", "none", "beginner", "freestyle_cardio", "00:00", ["Keep heart rate in zone 2 (60–70% max HR) — conversational pace.", "Maintain a natural midfoot strike and relaxed arm swing.", "Log duration and distance rather than pace — consistency is the goal."]),
+    makeExercise("swimming", "Swimming", "Cardio", ["Lats", "Shoulders", "Core", "Legs"], "cardio", "none", "none", "beginner", "freestyle_cardio", "00:00", ["Choose a stroke and maintain controlled breathing rhythm.", "Focus on long, efficient pulls and a steady kick.", "Log laps and duration to track aerobic improvement."]),
+    makeExercise("cycling", "Cycling", "Cardio", ["Quads", "Glutes", "Calves"], "cardio", "none", "none", "beginner", "freestyle_cardio", "00:00", ["Set seat height so the knee has a slight bend at the bottom of the pedal stroke.", "Maintain a cadence of 70–100 rpm for aerobic training.", "Log duration, distance, or average power."]),
+    makeExercise("jumping-jacks", "Jumping Jacks", "Cardio", ["Shoulders", "Legs", "Calves"], "cardio", "none", "bodyweight", "beginner", "bodyweight_only", "00:20", ["Start standing, jump feet out while raising arms overhead.", "Jump back to starting position and repeat rhythmically.", "Land softly on the balls of the feet to absorb impact."]),
+    makeExercise("recumbent-bike", "Recumbent Bike", "Cardio", ["Quads", "Hamstrings", "Glutes"], "cardio", "none", "machine", "beginner", "machine", "00:00", ["Adjust the seat so the knee has a slight bend at full extension.", "Push through the full pedal stroke — don't just push the top.", "Log duration and distance; adjust resistance to target heart rate zone."]),
+    makeExercise("box-jump", "Box Jump", "Quads", ["Glutes", "Calves", "Hamstrings"], "squat", "none", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["Stand an arm's length from the box, feet hip width.", "Swing arms back, dip briefly and explode upward.", "Land softly with knees tracking the toes, then step back down."]),
+    makeExercise("outdoor-run", "Outdoor Run", "Cardio", ["Quads", "Calves", "Glutes", "Hamstrings"], "cardio", "none", "none", "beginner", "freestyle_cardio", "00:00", ["Start at an easy pace and warm up for the first few minutes.", "Maintain relaxed shoulders and natural arm swing.", "Log distance, duration, or pace depending on the session goal."]),
+    makeExercise("hiit-cardio", "HIIT Cardio", "Cardio", ["Full Body"], "cardio", "none", "none", "intermediate", "freestyle_cardio", "00:00", ["Alternate between max-effort intervals and active recovery.", "Work intervals: 20–40 s all-out; rest intervals: 20–60 s easy.", "Log total rounds and total duration."]),
+  ];
+  const _userIds = new Set(exerciseTemplates.map((e) => e.id));
+  exerciseTemplates.push(..._userExercises.filter((e) => !_userIds.has(e.id)));
+}
 
 const defaultState: FlowState = {
   status: "idle",
@@ -7022,6 +7488,708 @@ function FinishWorkoutPage({
   );
 }
 
+// ── Canonical primary-muscle groups ──────────────────────────────────────────
+const CANONICAL_MUSCLE_ORDER = [
+  "Chest", "Back", "Shoulders", "Core",
+  "Biceps", "Triceps", "Quads", "Hamstrings", "Glutes", "Calves", "Other",
+] as const;
+
+type CanonicalMuscle = typeof CANONICAL_MUSCLE_ORDER[number];
+
+const MUSCLE_TO_CANONICAL: Record<string, CanonicalMuscle> = {
+  // Chest
+  "Chest": "Chest", "Upper Chest": "Chest", "Lower Chest": "Chest",
+  // Back
+  "Back": "Back", "Lats": "Back", "Upper Back": "Back",
+  "Lower Back": "Back", "Middle Back": "Back", "Traps": "Back",
+  // Shoulders
+  "Shoulders": "Shoulders", "Shoulder": "Shoulders",
+  "Front Delts": "Shoulders", "Front Shoulders": "Shoulders",
+  "Side Delts": "Shoulders", "Rear Delts": "Shoulders",
+  "Rotator Cuff": "Shoulders",
+  // Core
+  "Core": "Core", "Abs": "Core", "Abs / Core": "Core",
+  "Obliques": "Core", "Hip Flexors": "Core",
+  // Biceps
+  "Biceps": "Biceps", "Forearms": "Biceps", "Brachialis": "Biceps",
+  // Triceps
+  "Triceps": "Triceps",
+  // Quads
+  "Quads": "Quads", "Quadriceps": "Quads",
+  // Hamstrings
+  "Hamstrings": "Hamstrings", "Hamstring": "Hamstrings",
+  // Glutes
+  "Glutes": "Glutes", "Glutes / Hips": "Glutes",
+  "Adductors": "Glutes", "Abductors": "Glutes", "Inner Thigh": "Glutes",
+  // Calves
+  "Calves": "Calves", "Calves / Shins": "Calves",
+};
+
+function getCanonicalMuscle(primaryMuscle: string): CanonicalMuscle {
+  return MUSCLE_TO_CANONICAL[primaryMuscle] ?? "Other";
+}
+
+// ── Post-onboarding "What's Next" screen ─────────────────────────────────────
+function PostOnboardingPage({
+  profile,
+  resolvedTheme,
+  onContinue,
+}: {
+  profile: UserPsychProfile;
+  resolvedTheme: string;
+  onContinue: () => void;
+}) {
+  const firstName = profile.name?.split(" ")[0] ?? null;
+
+  const goalLabel: Record<string, string> = {
+    build_muscle:          "Build muscle",
+    get_stronger:          "Get stronger",
+    improve_fitness:       "Improve fitness",
+    athletic_performance:  "Athletic performance",
+    stay_active:           "Stay active",
+    muscle_strength:       "Muscle & strength",
+    fat_loss:              "Fat loss",
+    endurance:             "Endurance",
+    general_fitness:       "General fitness",
+  };
+  const goalEmoji: Record<string, string> = {
+    build_muscle: "💪", get_stronger: "🏋️", improve_fitness: "🏃",
+    athletic_performance: "⚡️", stay_active: "🚶", muscle_strength: "💪",
+    fat_loss: "🔥", endurance: "🏃", general_fitness: "✅",
+  };
+  const expLabel: Record<string, string> = {
+    never: "First time lifting", beginner: "Beginner",
+    intermediate: "Intermediate", advanced: "Advanced", veteran: "Veteran",
+  };
+
+  const cards: { icon: string; label: string; value: string }[] = [];
+  if (profile.primaryGoal)
+    cards.push({ icon: goalEmoji[profile.primaryGoal] ?? "🎯", label: "Goal", value: goalLabel[profile.primaryGoal] ?? profile.primaryGoal });
+  if (profile.experienceLevel)
+    cards.push({ icon: "📈", label: "Level", value: expLabel[profile.experienceLevel] ?? profile.experienceLevel });
+  if (profile.daysPerWeekPref)
+    cards.push({ icon: "📅", label: "Schedule", value: `${profile.daysPerWeekPref} day${profile.daysPerWeekPref > 1 ? "s" : ""} a week` });
+  if (profile.sessionLengthPref)
+    cards.push({ icon: "⏱️", label: "Session", value: `~${profile.sessionLengthPref} min` });
+  if (profile.bestTimePref)
+    cards.push({ icon: "🕐", label: "Best time", value: profile.bestTimePref });
+
+  return (
+    <div data-theme={resolvedTheme} className="pon-shell">
+      <div className="pon-hero">
+        <div className="pon-checkmark">✓</div>
+        <h1 className="pon-title">
+          {firstName ? `You're all set, ${firstName}!` : "You're all set!"}
+        </h1>
+        <p className="pon-sub">Here's what RepIQ knows about you so far.</p>
+      </div>
+
+      <div className="pon-body">
+        {profile.isReturningAfterBreak && (
+          <div className="pon-return-banner">
+            <span className="pon-return-icon">🔄</span>
+            <div>
+              <p className="pon-return-title">Getting back on track</p>
+              <p className="pon-return-sub">
+                {profile.breakMonths
+                  ? `After ${profile.breakMonths} month${profile.breakMonths > 1 ? "s" : ""} away, we'll ease you back in smart — no rushing.`
+                  : "We'll ease you back in at your own pace."}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {cards.length > 0 && (
+          <div className="pon-cards">
+            {cards.map((c) => (
+              <div key={c.label} className="pon-card">
+                <span className="pon-card-icon">{c.icon}</span>
+                <div>
+                  <p className="pon-card-label">{c.label}</p>
+                  <p className="pon-card-value">{c.value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {profile.successVision && (
+          <div className="pon-vision">
+            <p className="pon-vision-label">Your vision</p>
+            <p className="pon-vision-text">"{profile.successVision}"</p>
+          </div>
+        )}
+
+        <div className="pon-next">
+          <p className="pon-next-label">What's next</p>
+          <ul className="pon-next-list">
+            <li>Log your first workout from the <strong>Home</strong> screen</li>
+            <li>Browse or generate a plan in <strong>Planner</strong></li>
+            <li>Track your progress in <strong>Insights</strong></li>
+          </ul>
+        </div>
+      </div>
+
+      <div className="pon-footer">
+        <button type="button" className="pon-cta" onClick={onContinue}>
+          Let's Go →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Internal dev navigation page (URL param: ?dev) ───────────────────────────
+function DevLandingPage({
+  resolvedTheme,
+  onToggleTheme,
+  onGoTo,
+  onResetOnboarding,
+  onShowPostOnboarding,
+}: {
+  resolvedTheme: string;
+  onToggleTheme: () => void;
+  onGoTo: (view: AppView) => void;
+  onResetOnboarding: () => void;
+  onShowPostOnboarding: () => void;
+}) {
+  const views: { view: AppView; label: string; emoji: string }[] = [
+    { view: "home",         label: "Home",          emoji: "🏠" },
+    { view: "planner",      label: "Planner",        emoji: "📋" },
+    { view: "insights",     label: "Insights",       emoji: "📊" },
+    { view: "profile",      label: "Profile",        emoji: "👤" },
+    { view: "report",       label: "Workout Report", emoji: "📄" },
+    { view: "plan-builder", label: "Plan Builder",   emoji: "🏗️" },
+  ];
+
+  return (
+    <div data-theme={resolvedTheme} className="dev-shell">
+      <header className="dev-header">
+        <div className="dev-badge">DEV</div>
+        <h1 className="dev-title">Internal Navigator</h1>
+        <button type="button" className="dev-theme-btn" onClick={onToggleTheme} aria-label="Toggle theme">
+          {resolvedTheme === "dark"
+            ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          }
+        </button>
+      </header>
+
+      <div className="dev-body">
+        <section className="dev-section">
+          <p className="dev-section-title">App Views</p>
+          <div className="dev-grid">
+            {views.map(({ view, label, emoji }) => (
+              <button key={view} type="button" className="dev-btn" onClick={() => onGoTo(view)}>
+                <span className="dev-btn-icon">{emoji}</span>
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="dev-section">
+          <p className="dev-section-title">Onboarding</p>
+          <div className="dev-grid">
+            <button type="button" className="dev-btn dev-btn-accent" onClick={onShowPostOnboarding}>
+              <span className="dev-btn-icon">🎉</span>
+              <span>Post-Onboarding Screen</span>
+            </button>
+            <button type="button" className="dev-btn dev-btn-warn" onClick={onResetOnboarding}>
+              <span className="dev-btn-icon">🔄</span>
+              <span>Reset &amp; Re-run Onboarding</span>
+            </button>
+          </div>
+        </section>
+
+        <p className="dev-hint">Remove <code>?dev</code> from the URL to exit this page.</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Onboarding flow (first-launch, 5 steps) ───────────────────────────────────
+function OnboardingPage({
+  onComplete,
+  resolvedTheme,
+  onToggleTheme,
+}: {
+  onComplete: (profile: Partial<UserPsychProfile>) => void;
+  resolvedTheme: string;
+  onToggleTheme: () => void;
+}) {
+  const TOTAL = 5;
+  const STEP_LABELS = ["You", "Body", "Goal", "Experience", "Mindset"];
+
+  const [step, setStep] = useState(1);
+
+  // Step 1 — You
+  const [name, setName] = useState("");
+  const [gender, setGender] = useState<"male" | "female" | "other" | null>(null);
+
+  // Step 2 — Body
+  const [unitSystem, setUnitSystem] = useState<"metric" | "imperial">("metric");
+  const [heightCm, setHeightCm] = useState(170);
+  const [heightFt, setHeightFt] = useState(5);
+  const [heightIn, setHeightIn] = useState(8);
+  const [weightKg, setWeightKg] = useState(75);
+  const [weightLbs, setWeightLbs] = useState(165);
+  const [age, setAge] = useState(25);
+  const [bodyFatBracket, setBodyFatBracket] = useState<string | null>(null);
+
+  // Step 3 — Goal
+  const [goal, setGoal] = useState<TrainingGoal | null>(null);
+  const [biggestObstacle, setBiggestObstacle] = useState<string | null>(null);
+
+  // Step 4 — Experience & Plan
+  const [experience, setExperience] = useState<ExperienceLevel | null>(null);
+  const [isReturning, setIsReturning] = useState(false);
+  const [breakMonths, setBreakMonths] = useState(3);
+  const [daysPerWeek, setDaysPerWeek] = useState(3);
+  const [sessionLength, setSessionLength] = useState<number>(60);
+  const [bestTime, setBestTime] = useState<string | null>(null);
+
+  // Step 5 — Mindset
+  const [preWorkoutFeeling, setPreWorkoutFeeling] = useState<string | null>(null);
+  const [workoutStyle, setWorkoutStyle] = useState<string | null>(null);
+  const [successVision, setSuccessVision] = useState<string | null>(null);
+
+  const canAdvance =
+    step === 1 ? true :
+    step === 3 ? goal !== null :
+    step === 4 ? experience !== null :
+    true;
+
+  function advance() {
+    if (step < TOTAL) { setStep((s) => s + 1); return; }
+    const finalHeightCm = unitSystem === "metric" ? heightCm : Math.round(heightFt * 30.48 + heightIn * 2.54);
+    const finalWeightKg = unitSystem === "metric" ? weightKg : Math.round(weightLbs * 0.4536);
+    onComplete({
+      name: name.trim() || null,
+      gender,
+      unitSystem,
+      heightCm: finalHeightCm,
+      weightKg: finalWeightKg,
+      age,
+      bodyFatBracket,
+      primaryGoal: goal,
+      experienceLevel: experience,
+      scheduleCommitment: (Math.max(2, Math.min(6, daysPerWeek))) as ScheduleCommitment,
+      daysPerWeekPref: daysPerWeek,
+      sessionLengthPref: sessionLength,
+      bestTimePref: bestTime,
+      workoutStylePref: workoutStyle,
+      preWorkoutFeeling,
+      isReturningAfterBreak: isReturning,
+      breakMonths: isReturning ? breakMonths : null,
+      successVision,
+    });
+  }
+
+  const bfBrackets = (gender === "female")
+    ? [
+        { id: "very_lean_f", label: "Very Lean", range: "< 18%", desc: "Highly defined", color: "#3b82f6" },
+        { id: "athletic_f", label: "Athletic", range: "18–22%", desc: "Lean & toned", color: "#22c55e" },
+        { id: "fit_f", label: "Fit", range: "23–27%", desc: "Healthy shape", color: "#06b6d4" },
+        { id: "average_f", label: "Average", range: "28–33%", desc: "Typical range", color: "#eab308" },
+        { id: "higher_f", label: "Higher", range: "34%+", desc: "Room to go", color: "#f97316" },
+      ]
+    : [
+        { id: "very_lean_m", label: "Very Lean", range: "< 10%", desc: "Abs clearly visible", color: "#3b82f6" },
+        { id: "athletic_m", label: "Athletic", range: "10–15%", desc: "Lean & defined", color: "#22c55e" },
+        { id: "fit_m", label: "Fit", range: "16–20%", desc: "Good shape", color: "#06b6d4" },
+        { id: "average_m", label: "Average", range: "21–25%", desc: "Typical range", color: "#eab308" },
+        { id: "higher_m", label: "Higher", range: "26%+", desc: "Room to go", color: "#f97316" },
+      ];
+
+  const trustMessages: Record<number, { icon: string; headline: string; body: string }> = {
+    2: { icon: "📏", headline: "Your body is the baseline", body: "These numbers help RepIQ set realistic starting loads and track what genuinely changes — not just the scale." },
+    3: { icon: "🎯", headline: "Goals without a plan are just wishes", body: "Knowing where you want to go — and what stands in your way — lets RepIQ build a path that fits your reality." },
+    4: { icon: "📈", headline: "Where you've been shapes what's next", body: "Your history and schedule are the two biggest predictors of consistency. We take both seriously." },
+    5: { icon: "🧠", headline: "Training is 80% mental", body: "These questions help RepIQ read your patterns — so when motivation dips, the app already knows how to adapt." },
+  };
+
+  function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+    return (
+      <button type="button" className={`ob-chip ${active ? "is-active" : ""}`} onClick={onClick}>
+        {active && <span className="ob-chip-check">✓</span>}
+        {label}
+      </button>
+    );
+  }
+
+  function Stepper({ value, onChange, min, max, unit }: { value: number; onChange: (v: number) => void; min: number; max: number; unit?: string }) {
+    return (
+      <div className="ob-stepper">
+        <button type="button" className="ob-stepper-btn" onClick={() => onChange(Math.max(min, value - 1))}>−</button>
+        <div className="ob-stepper-val">
+          <span className="ob-stepper-num">{value}</span>
+          {unit && <span className="ob-stepper-unit">{unit}</span>}
+        </div>
+        <button type="button" className="ob-stepper-btn" onClick={() => onChange(Math.min(max, value + 1))}>+</button>
+      </div>
+    );
+  }
+
+  function UnitToggle({ value, onChange }: { value: "metric" | "imperial"; onChange: (v: "metric" | "imperial") => void }) {
+    return (
+      <div className="ob-unit-toggle">
+        <button type="button" className={`ob-unit-btn ${value === "metric" ? "is-active" : ""}`} onClick={() => onChange("metric")}>Metric</button>
+        <button type="button" className={`ob-unit-btn ${value === "imperial" ? "is-active" : ""}`} onClick={() => onChange("imperial")}>Imperial</button>
+      </div>
+    );
+  }
+
+  const stepContent: Record<number, ReactNode> = {
+    1: (
+      <div className="ob-step ob-step-welcome" key="step-1">
+        <div className="ob-welcome-hero">
+          <div className="ob-welcome-wordmark">RepIQ</div>
+          <h1 className="ob-welcome-title">Built around you,<br />from day one.</h1>
+          <p className="ob-welcome-sub">5 quick steps and RepIQ knows exactly how to train you.</p>
+        </div>
+        <div className="ob-welcome-card">
+          <div className="ob-fields">
+            <div className="ob-field">
+              <label className="ob-field-label">What should we call you?</label>
+              <input
+                className="ob-text-input"
+                type="text"
+                placeholder="Your name or nickname"
+                value={name}
+                maxLength={32}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <div className="ob-field">
+              <label className="ob-field-label">I identify as</label>
+              <div className="ob-chip-row">
+                <Chip label="Male" active={gender === "male"} onClick={() => setGender("male")} />
+                <Chip label="Female" active={gender === "female"} onClick={() => setGender("female")} />
+                <Chip label="Prefer not to say" active={gender === "other"} onClick={() => setGender("other")} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    ),
+
+    2: (
+      <div className="ob-step" key="step-2">
+        <div className="ob-trust-card">
+          <span className="ob-trust-icon">{trustMessages[2].icon}</span>
+          <div>
+            <strong className="ob-trust-headline">{trustMessages[2].headline}</strong>
+            <p className="ob-trust-body">{trustMessages[2].body}</p>
+          </div>
+        </div>
+        <div className="ob-fields">
+          <div className="ob-field ob-field-unit-row">
+            <label className="ob-field-label">Units</label>
+            <UnitToggle value={unitSystem} onChange={setUnitSystem} />
+          </div>
+          <div className="ob-field">
+            <label className="ob-field-label">Height</label>
+            {unitSystem === "metric" ? (
+              <Stepper value={heightCm} onChange={setHeightCm} min={120} max={230} unit="cm" />
+            ) : (
+              <div className="ob-imperial-height">
+                <Stepper value={heightFt} onChange={setHeightFt} min={3} max={7} unit="ft" />
+                <Stepper value={heightIn} onChange={setHeightIn} min={0} max={11} unit="in" />
+              </div>
+            )}
+          </div>
+          <div className="ob-field">
+            <label className="ob-field-label">Weight</label>
+            {unitSystem === "metric" ? (
+              <Stepper value={weightKg} onChange={setWeightKg} min={30} max={250} unit="kg" />
+            ) : (
+              <Stepper value={weightLbs} onChange={setWeightLbs} min={66} max={550} unit="lbs" />
+            )}
+          </div>
+          <div className="ob-field">
+            <label className="ob-field-label">Age</label>
+            <Stepper value={age} onChange={setAge} min={13} max={90} unit="yrs" />
+          </div>
+          <div className="ob-field">
+            <label className="ob-field-label">Body composition <span className="ob-optional">(best guess)</span></label>
+            <div className="ob-bf-grid">
+              {bfBrackets.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  className={`ob-bf-card ${bodyFatBracket === b.id ? "is-active" : ""}`}
+                  onClick={() => setBodyFatBracket(bodyFatBracket === b.id ? null : b.id)}
+                  style={{ "--bf-color": b.color } as React.CSSProperties}
+                >
+                  <div className="ob-bf-dot" />
+                  <span className="ob-bf-label">{b.label}</span>
+                  <span className="ob-bf-range">{b.range}</span>
+                  <span className="ob-bf-desc">{b.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    ),
+
+    3: (
+      <div className="ob-step" key="step-3">
+        <div className="ob-trust-card">
+          <span className="ob-trust-icon">{trustMessages[3].icon}</span>
+          <div>
+            <strong className="ob-trust-headline">{trustMessages[3].headline}</strong>
+            <p className="ob-trust-body">{trustMessages[3].body}</p>
+          </div>
+        </div>
+        <div className="ob-fields">
+          <div className="ob-field">
+            <label className="ob-field-label">Primary training goal <span className="ob-required">*</span></label>
+            <div className="ob-chip-grid">
+              {([
+                { value: "build_muscle", label: "💪 Build Muscle" },
+                { value: "fat_loss", label: "🔥 Lose Fat" },
+                { value: "get_stronger", label: "🏋️ Get Stronger" },
+                { value: "improve_fitness", label: "🏃 Improve Fitness" },
+                { value: "athletic_performance", label: "⚡ Athletic Performance" },
+                { value: "stay_active", label: "🌿 Stay Active" },
+              ] as { value: TrainingGoal; label: string }[]).map((g) => (
+                <Chip key={g.value} label={g.label} active={goal === g.value} onClick={() => setGoal(g.value)} />
+              ))}
+            </div>
+          </div>
+          <div className="ob-field">
+            <label className="ob-field-label">Biggest challenge right now <span className="ob-optional">(optional)</span></label>
+            <div className="ob-chip-grid">
+              {[
+                { value: "time", label: "⏱ Not enough time" },
+                { value: "motivation", label: "😴 Staying motivated" },
+                { value: "knowledge", label: "📚 What to do" },
+                { value: "injury", label: "🩹 Recovery / injury" },
+                { value: "consistency", label: "🔁 Staying consistent" },
+              ].map((o) => (
+                <Chip key={o.value} label={o.label} active={biggestObstacle === o.value} onClick={() => setBiggestObstacle(biggestObstacle === o.value ? null : o.value)} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    ),
+
+    4: (
+      <div className="ob-step" key="step-4">
+        <div className="ob-trust-card">
+          <span className="ob-trust-icon">{trustMessages[4].icon}</span>
+          <div>
+            <strong className="ob-trust-headline">{trustMessages[4].headline}</strong>
+            <p className="ob-trust-body">{trustMessages[4].body}</p>
+          </div>
+        </div>
+        <div className="ob-fields">
+          <div className="ob-field">
+            <label className="ob-field-label">Training background <span className="ob-required">*</span></label>
+            <div className="ob-exp-list">
+              {([
+                { value: "never", label: "New to training", desc: "I haven't trained before" },
+                { value: "beginner", label: "Getting started", desc: "Training for less than a year" },
+                { value: "intermediate", label: "Building foundations", desc: "1–3 years of consistent training" },
+                { value: "advanced", label: "Experienced", desc: "3–5 years, I know my way around" },
+                { value: "veteran", label: "Veteran", desc: "5+ years — I've seen it all" },
+              ] as { value: ExperienceLevel; label: string; desc: string }[]).map((e) => (
+                <button
+                  key={e.value}
+                  type="button"
+                  className={`ob-exp-row ${experience === e.value ? "is-active" : ""}`}
+                  onClick={() => setExperience(e.value)}
+                >
+                  <div className="ob-exp-row-dot" />
+                  <div className="ob-exp-row-text">
+                    <strong>{e.label}</strong>
+                    <span>{e.desc}</span>
+                  </div>
+                  {experience === e.value && <span className="ob-exp-check">✓</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="ob-field ob-returning-field">
+            <label className="ob-checkbox-row">
+              <input
+                type="checkbox"
+                className="ob-checkbox"
+                checked={isReturning}
+                onChange={(e) => setIsReturning(e.target.checked)}
+              />
+              <span className="ob-checkbox-label">I'm returning after a break</span>
+            </label>
+            {isReturning && (
+              <div className="ob-break-stepper">
+                <span className="ob-break-label">Break duration</span>
+                <Stepper value={breakMonths} onChange={setBreakMonths} min={1} max={60} unit={breakMonths === 1 ? "month" : "months"} />
+              </div>
+            )}
+          </div>
+          <div className="ob-field">
+            <label className="ob-field-label">Days per week</label>
+            <div className="ob-days-strip">
+              {[1, 2, 3, 4, 5, 6, 7].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  className={`ob-day-btn ${daysPerWeek === d ? "is-active" : ""}`}
+                  onClick={() => setDaysPerWeek(d)}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="ob-field">
+            <label className="ob-field-label">Session length</label>
+            <div className="ob-chip-row">
+              {[30, 45, 60, 75, 90].map((m) => (
+                <Chip key={m} label={m === 90 ? "90+ min" : `${m} min`} active={sessionLength === m} onClick={() => setSessionLength(m)} />
+              ))}
+            </div>
+          </div>
+          <div className="ob-field">
+            <label className="ob-field-label">Best time to train <span className="ob-optional">(optional)</span></label>
+            <div className="ob-chip-row">
+              {[
+                { value: "morning", label: "🌅 Morning" },
+                { value: "afternoon", label: "☀️ Afternoon" },
+                { value: "evening", label: "🌆 Evening" },
+                { value: "varies", label: "🔀 Varies" },
+              ].map((t) => (
+                <Chip key={t.value} label={t.label} active={bestTime === t.value} onClick={() => setBestTime(bestTime === t.value ? null : t.value)} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    ),
+
+    5: (
+      <div className="ob-step" key="step-5">
+        <div className="ob-trust-card">
+          <span className="ob-trust-icon">{trustMessages[5].icon}</span>
+          <div>
+            <strong className="ob-trust-headline">{trustMessages[5].headline}</strong>
+            <p className="ob-trust-body">{trustMessages[5].body}</p>
+          </div>
+        </div>
+        <div className="ob-fields">
+          <div className="ob-field">
+            <label className="ob-field-label">Before a workout, you usually feel <span className="ob-optional">(optional)</span></label>
+            <div className="ob-chip-grid">
+              {[
+                { value: "energised", label: "⚡ Energised & ready" },
+                { value: "neutral", label: "😐 Neutral" },
+                { value: "reluctant", label: "😤 Reluctant, but I go" },
+                { value: "tired", label: "😴 Usually tired" },
+              ].map((f) => (
+                <Chip key={f.value} label={f.label} active={preWorkoutFeeling === f.value} onClick={() => setPreWorkoutFeeling(preWorkoutFeeling === f.value ? null : f.value)} />
+              ))}
+            </div>
+          </div>
+          <div className="ob-field">
+            <label className="ob-field-label">Preferred workout style <span className="ob-optional">(optional)</span></label>
+            <div className="ob-chip-grid">
+              {[
+                { value: "full_body", label: "🔄 Full Body" },
+                { value: "upper_lower", label: "↕️ Upper / Lower" },
+                { value: "ppl", label: "🔀 Push · Pull · Legs" },
+                { value: "body_part", label: "🎯 Body Part Split" },
+                { value: "any", label: "🤷 No preference" },
+              ].map((s) => (
+                <Chip key={s.value} label={s.label} active={workoutStyle === s.value} onClick={() => setWorkoutStyle(workoutStyle === s.value ? null : s.value)} />
+              ))}
+            </div>
+          </div>
+          <div className="ob-field">
+            <label className="ob-field-label">In 3 months, success means <span className="ob-optional">(optional)</span></label>
+            <div className="ob-chip-grid">
+              {[
+                { value: "look_different", label: "🪞 I look noticeably different" },
+                { value: "stronger", label: "💪 I'm significantly stronger" },
+                { value: "consistent", label: "📅 I've trained consistently" },
+                { value: "healthier", label: "❤️ I feel healthier overall" },
+                { value: "habit", label: "🔥 I've built a real habit" },
+              ].map((v) => (
+                <Chip key={v.value} label={v.label} active={successVision === v.value} onClick={() => setSuccessVision(successVision === v.value ? null : v.value)} />
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="ob-ready-close">
+          <p className="ob-ready-copy">You're all set. RepIQ will personalise your experience as you train — the more you log, the smarter it gets.</p>
+        </div>
+      </div>
+    ),
+  };
+
+  const ThemeBtn = () => (
+    <button type="button" className="ob-theme-btn" onClick={onToggleTheme} aria-label="Toggle theme">
+      {resolvedTheme === "dark"
+        ? <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      }
+    </button>
+  );
+
+  return (
+    <div className="ob-page" data-step={step}>
+      <header className={`ob-header ${step === 1 ? "ob-header-splash" : ""}`}>
+        <div className="ob-progress">
+          <div className="ob-step-row">
+            {STEP_LABELS.map((lbl, i) => {
+              const n = i + 1;
+              const done = n < step;
+              const active = n === step;
+              return (
+                <Fragment key={n}>
+                  <div className={`ob-dot ${done ? "is-done" : ""} ${active ? "is-active" : ""}`}>
+                    {done ? "✓" : n}
+                  </div>
+                  {i < TOTAL - 1 && <div className={`ob-connector ${n < step ? "is-filled" : ""}`} />}
+                </Fragment>
+              );
+            })}
+          </div>
+          <div className="ob-label-row">
+            {STEP_LABELS.map((lbl, i) => (
+              <span key={i} className={`ob-step-lbl ${i + 1 === step ? "is-active" : ""}`}>{lbl}</span>
+            ))}
+          </div>
+          <div className="ob-progress-foot">
+            <p className="ob-step-count">Step {step} of {TOTAL}</p>
+            <ThemeBtn />
+          </div>
+        </div>
+      </header>
+
+      <div className="ob-body">
+        {stepContent[step]}
+      </div>
+
+      <div className="ob-footer">
+        {step > 1 && (
+          <button type="button" className="ob-back" onClick={() => setStep((s) => s - 1)}>← Back</button>
+        )}
+        <button
+          type="button"
+          className={`ob-cta ${!canAdvance ? "is-disabled" : ""}`}
+          onClick={canAdvance ? advance : undefined}
+          disabled={!canAdvance}
+        >
+          {step === TOTAL ? "I'm Ready →" : step === 1 ? "Get Started →" : "Continue →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AddExercisePage({
   templates,
   existingExerciseNames,
@@ -7055,6 +8223,8 @@ function AddExercisePage({
   const [browseTab, setBrowseTab] = useState<"all" | "muscle" | "type">("all");
   const [expandedMuscleKeys, setExpandedMuscleKeys] = useState<string[] | null>(null);
   const [expandedTypeKeys, setExpandedTypeKeys] = useState<string[]>([]);
+  const [showSecondaryDrilldown, setShowSecondaryDrilldown] = useState(true);
+  const [expandedSecondaryKeys, setExpandedSecondaryKeys] = useState<string[] | null>(null);
   const [sortMode, setSortMode] = useState<"alphabetical" | "frequency" | "library">("alphabetical");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -7207,7 +8377,7 @@ function AddExercisePage({
 
   const groupedByMuscle = useMemo(() => {
     return filteredTemplates.reduce<Record<string, ExerciseDraft[]>>((groups, template) => {
-      const key = getPrimaryMuscles(template)[0];
+      const key = getCanonicalMuscle(getPrimaryMuscles(template)[0]);
       if (!groups[key]) {
         groups[key] = [];
       }
@@ -7217,7 +8387,7 @@ function AddExercisePage({
   }, [filteredTemplates]);
 
   const muscleGroupKeys = useMemo(
-    () => Object.keys(groupedByMuscle).sort((left, right) => left.localeCompare(right)),
+    () => CANONICAL_MUSCLE_ORDER.filter((g) => Boolean(groupedByMuscle[g])),
     [groupedByMuscle]
   );
 
@@ -7237,13 +8407,49 @@ function AddExercisePage({
     [groupedByType]
   );
 
+  // Secondary-muscle drill-down
+  // Sub-groups = actual primaryMuscle value (e.g. "Upper Chest", "Lats") +
+  //              any secondaryMuscles that map to the SAME canonical group (overlap allowed)
+  const groupedByMuscleWithSecondary = useMemo(() => {
+    if (!showSecondaryDrilldown) return {} as Record<string, Record<string, ExerciseDraft[]>>;
+    const result: Record<string, Record<string, ExerciseDraft[]>> = {};
+    muscleGroupKeys.forEach((canonical) => {
+      const exercises = groupedByMuscle[canonical] ?? [];
+      const subMap: Record<string, ExerciseDraft[]> = {};
+      exercises.forEach((ex) => {
+        // Always bucket by the exercise's own primaryMuscle label
+        const ownPrimary = getPrimaryMuscles(ex)[0];
+        if (!subMap[ownPrimary]) subMap[ownPrimary] = [];
+        subMap[ownPrimary].push(ex);
+        // Also bucket by any secondary that maps to this same canonical group (creates overlap)
+        (ex.secondaryMuscles ?? []).forEach((sec) => {
+          if (getCanonicalMuscle(sec) === canonical && sec !== ownPrimary) {
+            if (!subMap[sec]) subMap[sec] = [];
+            subMap[sec].push(ex);
+          }
+        });
+      });
+      result[canonical] = subMap;
+    });
+    return result;
+  }, [showSecondaryDrilldown, groupedByMuscle, muscleGroupKeys]);
+
+  const allSecondaryKeys = useMemo(() => {
+    const keys: string[] = [];
+    muscleGroupKeys.forEach((pk) => {
+      const secMap = groupedByMuscleWithSecondary[pk] ?? {};
+      Object.keys(secMap).sort((a, b) => a.localeCompare(b)).forEach((sk) => keys.push(`${pk}::${sk}`));
+    });
+    return keys;
+  }, [groupedByMuscleWithSecondary, muscleGroupKeys]);
+
   useEffect(() => {
     setExpandedMuscleKeys((current) => {
       if (current === null) {
         return [...muscleGroupKeys];
       }
 
-      return current.filter((key) => muscleGroupKeys.includes(key));
+      return current.filter((key) => (muscleGroupKeys as string[]).includes(key));
     });
   }, [muscleGroupKeys]);
 
@@ -7273,6 +8479,22 @@ function AddExercisePage({
     setExpandedTypeKeys((current) =>
       current.length === typeGroupKeys.length ? [] : [...typeGroupKeys]
     );
+  }
+
+  function toggleSecondaryDrilldown() {
+    setShowSecondaryDrilldown((prev) => {
+      if (!prev) setExpandedSecondaryKeys(null); // reset to all expanded when turning on
+      return !prev;
+    });
+  }
+
+  function toggleSecondaryGroup(key: string) {
+    setExpandedSecondaryKeys((current) => {
+      const resolved = current ?? allSecondaryKeys;
+      return resolved.includes(key)
+        ? resolved.filter((k) => k !== key)
+        : [...resolved, key];
+    });
   }
 
   const canCreateCustom =
@@ -7478,6 +8700,9 @@ function AddExercisePage({
             <div className="template-card-top">
               <strong>{template.name}</strong>
               <div className="template-card-statuses">
+                {template.id.startsWith("custom-") && (
+                  <span className="custom-exercise-badge" aria-label="Custom exercise">Mine</span>
+                )}
                 {alreadyInWorkout && <span className="session-status-pill">In workout</span>}
                 {selectionIndex >= 0 && (
                   <span className="template-select-badge" aria-label={`Selected ${selectionIndex + 1}`}>
@@ -7685,28 +8910,78 @@ function AddExercisePage({
 
                     {browseTab === "muscle" && (
                       <div className="template-group-list">
-                        {muscleGroupKeys.map((muscle) => (
+                        {/* ── Secondary-muscle drill-down toggle ── */}
+                        <div className="muscle-drilldown-strip">
+                          <span className="muscle-drilldown-label">
+                            {showSecondaryDrilldown ? "Primary + sub-muscles" : "Primary muscle only"}
+                          </span>
+                          <button
+                            type="button"
+                            className={`muscle-drilldown-btn ${showSecondaryDrilldown ? "is-active" : ""}`}
+                            onClick={toggleSecondaryDrilldown}
+                          >
+                            {showSecondaryDrilldown ? "Sub-muscles: On" : "Sub-muscles: Off"}
+                          </button>
+                        </div>
+
+                        {muscleGroupKeys.map((muscle) => {
+                          const isPrimaryExpanded = (expandedMuscleKeys ?? muscleGroupKeys).includes(muscle);
+                          const secMap = groupedByMuscleWithSecondary[muscle] ?? {};
+                          const secKeys = Object.keys(secMap).sort((a, b) => a.localeCompare(b));
+                          return (
                             <section key={muscle} className="template-group-section">
                               <button
                                 type="button"
-                                className={`template-group-heading template-group-heading-button ${
-                                  (expandedMuscleKeys ?? muscleGroupKeys).includes(muscle) ? "is-expanded" : ""
-                                }`}
+                                className={`template-group-heading template-group-heading-button ${isPrimaryExpanded ? "is-expanded" : ""}`}
                                 onClick={() => toggleMuscleGroup(muscle)}
                               >
                                 <strong>{muscle}</strong>
                                 <span>{groupedByMuscle[muscle].length}</span>
                                 <span className="template-group-chevron" aria-hidden="true">
-                                  {(expandedMuscleKeys ?? muscleGroupKeys).includes(muscle) ? "⌃" : "⌄"}
+                                  {isPrimaryExpanded ? "⌃" : "⌄"}
                                 </span>
                               </button>
-                              {(expandedMuscleKeys ?? muscleGroupKeys).includes(muscle) && (
-                                <div className="template-list">
-                                  {groupedByMuscle[muscle].map(renderTemplateCard)}
-                                </div>
+
+                              {isPrimaryExpanded && (
+                                showSecondaryDrilldown ? (
+                                  // ── Nested secondary sub-groups ──
+                                  <div className="secondary-muscle-groups">
+                                    {secKeys.map((secondary) => {
+                                      const secKey = `${muscle}::${secondary}`;
+                                      const isSecExpanded = (expandedSecondaryKeys ?? allSecondaryKeys).includes(secKey);
+                                      const secExercises = secMap[secondary];
+                                      return (
+                                        <div key={secondary} className="secondary-muscle-section">
+                                          <button
+                                            type="button"
+                                            className={`secondary-muscle-heading ${isSecExpanded ? "is-expanded" : ""}`}
+                                            onClick={() => toggleSecondaryGroup(secKey)}
+                                          >
+                                            <span className="secondary-muscle-name">{secondary}</span>
+                                            <span className="secondary-muscle-count">{secExercises.length}</span>
+                                            <span className="template-group-chevron" aria-hidden="true">
+                                              {isSecExpanded ? "⌃" : "⌄"}
+                                            </span>
+                                          </button>
+                                          {isSecExpanded && (
+                                            <div className="template-list secondary-muscle-list">
+                                              {secExercises.map(renderTemplateCard)}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  // ── Default flat list ──
+                                  <div className="template-list">
+                                    {groupedByMuscle[muscle].map(renderTemplateCard)}
+                                  </div>
+                                )
                               )}
                             </section>
-                          ))}
+                          );
+                        })}
                       </div>
                     )}
 
@@ -8639,6 +9914,11 @@ export function App() {
   const swipeStateRef = useRef<SwipeState>(createInitialSwipeState());
   const [revealedDeleteRowId, setRevealedDeleteRowId] = useState<string | null>(null);
   const [state, setState] = useState<FlowState>(defaultState);
+  const [psychProfile, setPsychProfile] = useState<UserPsychProfile>(getStoredPsychProfile);
+  const onboardingComplete = psychProfile.onboardingCompletedAt !== null;
+  const [showPostOnboarding, setShowPostOnboarding] = useState(false);
+  const DEV_MODE = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("dev");
+  const [showDevPage, setShowDevPage] = useState(DEV_MODE);
   const [inlineGuidanceOpen, setInlineGuidanceOpen] = useState(false);
   const [showTopGuidance, setShowTopGuidance] = useState(false);
   const [topGuidanceExpanded, setTopGuidanceExpanded] = useState(false);
@@ -10831,6 +12111,57 @@ export function App() {
       return;
     }
     finalizeFinishedWorkoutSave(images, false);
+  }
+
+  // ── Dev landing page ─────────────────────────────────────────────────────────
+  if (showDevPage) {
+    return (
+      <DevLandingPage
+        resolvedTheme={resolvedTheme}
+        onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+        onGoTo={(view) => { setAppView(view); setShowDevPage(false); }}
+        onShowPostOnboarding={() => { setShowPostOnboarding(true); setShowDevPage(false); }}
+        onResetOnboarding={() => {
+          const reset: UserPsychProfile = { ...psychProfile, onboardingCompletedAt: null };
+          persistPsychProfile(reset);
+          setPsychProfile(reset);
+          setShowDevPage(false);
+        }}
+      />
+    );
+  }
+
+  // ── Onboarding gate ──────────────────────────────────────────────────────────
+  if (!onboardingComplete) {
+    return (
+      <div data-theme={resolvedTheme} className="ob-shell">
+        <OnboardingPage
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+          onComplete={(profileData) => {
+            const updated: UserPsychProfile = {
+              ...psychProfile,
+              ...profileData,
+              onboardingCompletedAt: new Date().toISOString(),
+            };
+            persistPsychProfile(updated);
+            setPsychProfile(updated);
+            setShowPostOnboarding(true);
+          }}
+        />
+      </div>
+    );
+  }
+
+  // ── Post-onboarding "What's Next" ────────────────────────────────────────────
+  if (showPostOnboarding) {
+    return (
+      <PostOnboardingPage
+        profile={psychProfile}
+        resolvedTheme={resolvedTheme}
+        onContinue={() => setShowPostOnboarding(false)}
+      />
+    );
   }
 
   if (editingCustomExercise) {
