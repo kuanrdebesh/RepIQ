@@ -397,6 +397,35 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - Default scope is always friends or group — global is deprioritised in UI
 - Improvement % metric is key for retention: a beginner improving 15% beats a veteran improving 2%
 
+## Plan Generation Decisions
+
+### V1: Rules-Based Only
+
+- V1 plan generation is fully rule-based: `goal + experience + days/week + split preference → template`
+- No AI API calls in V1 — zero per-generation cost, instant output, fully predictable
+- Two users with identical inputs will receive identical plan structures — accepted as a V1 limitation
+- Rules handle the skeleton: split type, days per week, mesocycle length, volume landmarks per muscle group
+- Exercise slot selection within that skeleton is drawn from the exercise catalog by movement pattern + difficulty + equipment
+
+### V2: AI-Assisted Generation (Charged Feature)
+
+- V2 upgrades plan generation to a hybrid model:
+  - Rules still own the skeleton (guarantees structural validity and fallback)
+  - AI (Claude Haiku) fills exercise slots given the user's full psych profile, equipment, injury flags, and returning-after-break context
+  - AI also writes a 2–3 sentence "why this plan" summary surfaced to the user
+- AI plan generation is a **paid feature** — gated behind a V2 subscription tier or add-on
+- Rationale: psychological parameters (motivation style, skip patterns, deload signals) only become meaningful after several months of data; charging for it aligns cost and value timing
+- Estimated cost: ~$0.01 per generation (Haiku, ~1K in / ~2K out); 1,000 users × 5 regenerations ≈ $50 — negligible until scale justifies a pricing review
+- Latency: 4–8 seconds — UI must show a "building your plan" animation (not a bare spinner)
+- Validation layer required in V2: AI output must be checked against the exercise catalog before rendering (exercise names, set/rep sanity)
+- If AI is unavailable, rules-based fallback produces a valid plan silently — no degraded UX shown to user
+
+### Plan Regeneration (Both Versions)
+
+- When a user changes split, goal, or timing in plan detail, the plan regenerates from scratch (not adjusted forward)
+- Animation shown during regeneration: "Doing science — building the best plan for you"
+- Week unlock rule: week N+1 unlocks when week N is marked completed; user can preview the next week but cannot access workouts beyond `plan_start_date + current_day + 7`
+
 ## Progress Photo Decisions
 
 ### Privacy First

@@ -282,8 +282,55 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
   - Quick Workout button disabled when active workout exists
 - Finish Workout now routes to `report` view instead of `share`; share is accessible from report
 - Profile page uses dedicated CSS classes (`profile-page`, `profile-header`, `profile-list`, `profile-row`) to avoid layout issues from shared `detail-page` grid stretching
+- Profile page max-width fixed to 430px (matches all other page shells)
 - CSS added for all new navigation components: `.bottom-nav`, `.bottom-nav-tab`, `.profile-*`, `.home-latest-*`, `.insights-*`, `.report-*`
 - `selector-shell` padding updated to accommodate fixed bottom nav height
+
+## Onboarding (Phase 1 — Complete)
+
+- First-launch gate: `onboardingComplete = psychProfile.onboardingCompletedAt !== null` in App; onboarding shown before any other view
+- `OnboardingPage` — 5-step flow, all data saved to `UserPsychProfile` in localStorage key `repiq-psych-profile`
+  - Step 1 — Welcome: name input, gender chips; full-page gradient (light: blue→teal, dark: navy→teal); frosted dark-scrim glass card for form; step dots + theme toggle visible
+  - Step 2 — Body: height/weight inputs, body fat bracket chips, metric/imperial toggle (persists to `unitSystem`)
+  - Step 3 — Experience: experience level chips (never/beginner/intermediate/advanced/veteran); returning-after-break toggle + break duration stepper
+  - Step 4 — Schedule: days/week stepper, session length chips, best time chips, workout style chips
+  - Step 5 — Mindset: pre-workout feeling chips, success vision textarea
+  - Steps 2–5: white background (`var(--paper)`), standard progress header with dots + step count + theme toggle
+  - Gradient on step 1: `[data-step="1"]` targets ob-page directly; all child elements (dots, labels, inputs, chips, CTA) styled white-on-gradient; dark mode uses deep navy→teal gradient
+
+- `PostOnboardingPage` — shown once after onboarding completes, before home screen
+  - Gradient hero with personalised greeting (uses `profile.name`)
+  - Returning-after-break banner (if `isReturningAfterBreak` true)
+  - Profile summary cards grid: goal (with emoji), level, days/week, session length, best time
+  - Vision quote block (if `successVision` filled)
+  - What's-next checklist pointing to Home / Planner / Insights
+  - "Let's Go →" CTA sets `showPostOnboarding = false` in App
+
+- `DevLandingPage` — internal navigator, shown when URL contains `?dev`
+  - Buttons to navigate directly to any `AppView` (Home, Planner, Insights, Profile, Report, Plan Builder)
+  - Preview `PostOnboardingPage` without re-running onboarding
+  - Reset onboarding (clears `onboardingCompletedAt`, drops back to step 1)
+  - Theme toggle in header
+  - Hint to remove `?dev` from URL to exit
+
+## Exercise Library Updates
+
+- exerciseType fixes on inline `exerciseTemplates` entries:
+  - Lat Pulldown, Hamstring Curl → `machine`
+  - Romanian Deadlift → `barbell`
+  - Shoulder Press → `free_weights_accessories`
+  - Back Extension → `bodyweight_only` (was bodyweight_weighted)
+  - Weighted Back Extension added as `bodyweight_weighted`
+- ~40 new exercises added across Chest, Arms, Back, Shoulders, Legs, Core, Cardio categories via `_userExercises` block (total catalog ~136 exercises with full taxonomy)
+- Custom exercises show amber "MINE" pill badge (`custom-exercise-badge` CSS class)
+
+## Add Exercise — By Muscle Tab
+
+- 10 canonical primary muscle groups: Chest, Back, Shoulders, Core, Biceps, Triceps, Quads, Hamstrings, Glutes, Calves
+- `CANONICAL_MUSCLE_ORDER`, `MUSCLE_TO_CANONICAL`, `getCanonicalMuscle()` mapping
+- Secondary drill-down (`showSecondaryDrilldown`) enabled by default
+- `groupedByMuscle`: exercises bucketed by canonical group
+- `groupedByMuscleWithSecondary`: sub-map by actual primaryMuscle + same-canonical secondaryMuscle overlaps (exercises can appear in multiple sub-groups)
 
 ## Psychological Data Layer
 

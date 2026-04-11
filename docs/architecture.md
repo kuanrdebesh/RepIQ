@@ -68,6 +68,26 @@ A local-only prototype would be useful for UI exploration, but not for the produ
 
 If this loop does not feel trustworthy, nothing else matters yet.
 
+## Plan Generation Architecture
+
+### V1 — Rules Engine (no AI)
+
+- Plan generation is a pure function: `UserPsychProfile → PlanStructure`
+- Input: goal, experience level, days/week, session length, split preference, equipment, returning-after-break flag
+- Output: structured plan (split type, mesocycle length, weeks array, exercise slots per day)
+- Lives in the Python engine service — deterministic, testable, zero external cost
+- No API calls; runs synchronously or as a fast async task
+
+### V2 — Hybrid (rules skeleton + AI exercise selection)
+
+- Rules engine still produces the skeleton (split, days, volume landmarks)
+- Claude Haiku fills exercise slots per day given full user profile context
+- AI prompt receives: plan skeleton + UserPsychProfile + exercise catalog subset (filtered by movement pattern + equipment)
+- Response must be validated against catalog before storage (exercise name match, set/rep bounds check)
+- Falls back to rules-only if AI call fails — transparent to user
+- This is a paid feature — gated at the API layer, not the client layer
+- Do not add the AI integration path to the engine until V2 is scoped and payment layer is in place
+
 ## Captured Follow-On Design Notes
 
 These are not first-slice blockers, but they are part of the intended product direction and should stay visible in planning.
