@@ -682,6 +682,7 @@ type FinishedExerciseSummary = {
   primaryMuscle: string;
   loggedSets: number;
   loggedVolume: number;
+  sets?: { weight: number; reps: number; rpe: number | null; setType: string }[];
 };
 
 type FinishWorkoutDraft = {
@@ -5782,22 +5783,30 @@ function PlannerHomePage({
                 );
               })}
 
-              {/* Locked upcoming sessions */}
-              {lockedSessions.slice(0, 4).map((s) => (
-                <div key={s.key} className="repiq-session-card is-locked">
-                  <div className="repiq-session-header">
-                    <div className="repiq-session-meta">
-                      <span className="repiq-session-num">Session {s.sessionNum}</span>
-                    </div>
-                    <span className="repiq-session-lock">🔒</span>
-                  </div>
-                  <p className="repiq-session-name">{s.label}</p>
-                  {s.focus && <p className="repiq-session-focus">{s.focus}</p>}
-                </div>
-              ))}
-              {lockedSessions.length > 4 && (
-                <p className="repiq-more-locked">🔒 Future sessions unlock as you complete each week</p>
-              )}
+              {/* Locked upcoming sessions — 1 cycle preview, capped so total visible ≤ 8 */}
+              {(() => {
+                const lockedToShow = Math.min(sessionsPerWeek, Math.max(0, 8 - sessionsPerWeek));
+                const hiddenCount = lockedSessions.length - lockedToShow;
+                return (
+                  <>
+                    {lockedSessions.slice(0, lockedToShow).map((s) => (
+                      <div key={s.key} className="repiq-session-card is-locked">
+                        <div className="repiq-session-header">
+                          <div className="repiq-session-meta">
+                            <span className="repiq-session-num">Session {s.sessionNum}</span>
+                          </div>
+                          <span className="repiq-session-lock">🔒</span>
+                        </div>
+                        <p className="repiq-session-name">{s.label}</p>
+                        {s.focus && <p className="repiq-session-focus">{s.focus}</p>}
+                      </div>
+                    ))}
+                    {hiddenCount > 0 && (
+                      <p className="repiq-more-locked">🔒 And {hiddenCount} more locked session{hiddenCount !== 1 ? "s" : ""} — unlock by completing each week</p>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             {/* Completed sessions — last 2 weeks shown inline */}
@@ -8623,12 +8632,16 @@ function DevLandingPage({
   onGoTo,
   onResetOnboarding,
   onShowPostOnboarding,
+  onSeedHistoryData,
+  onClearHistoryData,
 }: {
   resolvedTheme: string;
   onToggleTheme: () => void;
   onGoTo: (view: AppView) => void;
   onResetOnboarding: () => void;
   onShowPostOnboarding: () => void;
+  onSeedHistoryData: () => void;
+  onClearHistoryData: () => void;
 }) {
   const views: { view: AppView; label: string; emoji: string }[] = [
     { view: "home",         label: "Home",          emoji: "🏠" },
@@ -8675,6 +8688,20 @@ function DevLandingPage({
             <button type="button" className="dev-btn dev-btn-warn" onClick={onResetOnboarding}>
               <span className="dev-btn-icon">🔄</span>
               <span>Reset &amp; Re-run Onboarding</span>
+            </button>
+          </div>
+        </section>
+
+        <section className="dev-section">
+          <p className="dev-section-title">Test Data</p>
+          <div className="dev-grid">
+            <button type="button" className="dev-btn dev-btn-accent" onClick={onSeedHistoryData}>
+              <span className="dev-btn-icon">🌱</span>
+              <span>Seed History Workout</span>
+            </button>
+            <button type="button" className="dev-btn dev-btn-warn" onClick={onClearHistoryData}>
+              <span className="dev-btn-icon">🗑️</span>
+              <span>Clear History + Plan</span>
             </button>
           </div>
         </section>
@@ -10795,6 +10822,25 @@ function WorkoutHistoryDetailPage({
   onToggleTheme?: () => void;
 }) {
   const isRepIQ = !!workout.repiqSourceKey;
+  const [expandedExId, setExpandedExId] = useState<string | null>(null);
+  const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
+
+  function toggleExercise(id: string) {
+    setExpandedExId(prev => {
+      const next = prev === id ? null : id;
+      if (next) {
+        requestAnimationFrame(() => {
+          rowRefs.current.get(id)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        });
+      }
+      return next;
+    });
+  }
+
+  const SET_TYPE_LABEL: Record<string, string> = {
+    warmup: "W", dropset: "D", "rest-pause": "RP", failure: "F", normal: "",
+  };
+
   return (
     <main className="detail-page finish-workout-page" data-theme={resolvedTheme}>
       <div className="finish-hero">
@@ -10826,22 +10872,56 @@ function WorkoutHistoryDetailPage({
       <div className="finish-workout-body">
         <section className="finish-workout-card">
           <p className="label" style={{ marginBottom: 8 }}>Exercises Performed</p>
-          {workout.exercises.map((ex) => (
-            <div key={ex.id} className="finish-exercise-row">
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <span className="finish-exercise-name">{ex.name}</span>
-                <span className="finish-exercise-muscle" style={{ fontSize: "0.76rem", color: "var(--muted)", display: "block", marginTop: 1 }}>{ex.primaryMuscle}</span>
-              </div>
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <span className={`finish-exercise-sets${ex.loggedSets === 0 ? " is-unlogged" : ""}`}>
-                  {ex.loggedSets === 0 ? "not logged" : `${ex.loggedSets} sets`}
-                </span>
-                {ex.loggedVolume > 0 && (
-                  <span style={{ fontSize: "0.76rem", color: "var(--muted)", display: "block", marginTop: 1 }}>{ex.loggedVolume.toFixed(0)} kg</span>
+          {workout.exercises.map((ex) => {
+            const isExpanded = expandedExId === ex.id;
+            return (
+              <div
+                key={ex.id}
+                ref={(el) => { if (el) rowRefs.current.set(ex.id, el); else rowRefs.current.delete(ex.id); }}
+              >
+                <button
+                  type="button"
+                  className={`finish-exercise-row hd-ex-row${isExpanded ? " is-expanded" : ""}`}
+                  onClick={() => toggleExercise(ex.id)}
+                  aria-expanded={isExpanded}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span className="finish-exercise-name">{ex.name}</span>
+                    <span className="finish-exercise-muscle" style={{ fontSize: "0.76rem", color: "var(--muted)", display: "block", marginTop: 1 }}>{ex.primaryMuscle}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    <div style={{ textAlign: "right" }}>
+                      <span className={`finish-exercise-sets${ex.loggedSets === 0 ? " is-unlogged" : ""}`}>
+                        {ex.loggedSets === 0 ? "not logged" : `${ex.loggedSets} sets`}
+                      </span>
+                      {ex.loggedVolume > 0 && (
+                        <span style={{ fontSize: "0.76rem", color: "var(--muted)", display: "block", marginTop: 1 }}>{ex.loggedVolume.toFixed(0)} kg</span>
+                      )}
+                    </div>
+                    <svg className={`hd-chevron${isExpanded ? " is-open" : ""}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                  </div>
+                </button>
+                {isExpanded && ex.sets && ex.sets.length > 0 && (
+                  <div className="hd-sets-detail">
+                    <div className="hd-sets-header">
+                      <span>SET</span><span>KG</span><span>REPS</span><span>RPE</span>
+                    </div>
+                    {ex.sets.map((s, i) => {
+                      const typeLabel = SET_TYPE_LABEL[s.setType] ?? s.setType;
+                      return (
+                        <div key={i} className="hd-set-row">
+                          <span className="hd-set-num">{i + 1}{typeLabel ? <em>{typeLabel}</em> : null}</span>
+                          <span>{s.weight > 0 ? s.weight : "—"}</span>
+                          <span>{s.reps > 0 ? s.reps : "—"}</span>
+                          <span>{s.rpe != null ? s.rpe : "—"}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </section>
 
         {workout.note && (
@@ -11513,7 +11593,8 @@ export function App() {
           name: exercise.name,
           primaryMuscle: exercise.primaryMuscle,
           loggedSets: completedSets.length,
-          loggedVolume: sumSessionVolume(completedSets)
+          loggedVolume: sumSessionVolume(completedSets),
+          sets: completedSets.map(s => ({ weight: s.weight, reps: s.reps, rpe: s.rpe ?? null, setType: s.set_type })),
         };
       })
       ;
@@ -13421,6 +13502,26 @@ export function App() {
     // Timer is pre-seeded from durationSeconds so elapsed time starts where the session left off.
     const sourceKey = workout.repiqSourceKey;
     let sourceExercises: ExerciseDraft[] = [];
+    // Helper: build DraftSets pre-filled from stored set data when available
+    const makeDraftSets = (
+      exerciseId: string,
+      count: number,
+      storedSets?: { weight: number; reps: number; rpe: number | null; setType: string }[]
+    ): DraftSet[] =>
+      Array.from({ length: count }, (_, i) => {
+        const s = storedSets?.[i];
+        const preFilled = !!(s && s.weight > 0 && s.reps > 0);
+        return {
+          id: `${exerciseId}-edit-${i}`,
+          setType: (s?.setType ?? "normal") as DraftSet["setType"],
+          weightInput: preFilled ? String(s!.weight) : "",
+          repsInput: preFilled ? String(s!.reps) : "",
+          rpeInput: s?.rpe != null ? String(s.rpe) : "",
+          done: preFilled,
+          failed: false,
+        };
+      });
+
     if (sourceKey && repiqPlan) {
       // repiqSourceKey format: "wi-di" (e.g. "0-2")
       const match = sourceKey.match(/^(\d+)-(\d+)$/);
@@ -13432,16 +13533,13 @@ export function App() {
           sourceExercises = day.exercises.flatMap((pe) => {
             const template = availableExerciseTemplates.find((e) => e.id === pe.exerciseId);
             if (!template) return [];
-            const sets: DraftSet[] = Array.from({ length: pe.sets }, (_, i) => ({
-              id: `${pe.exerciseId}-edit-${i}`,
-              setType: "normal" as const,
-              weightInput: "",
-              repsInput: "",
-              rpeInput: "",
-              done: false,
-              failed: false,
-            }));
-            return [{ ...template, note: "", draftSets: sets }];
+            const savedSummary = workout.exercises.find((ex) => ex.id === pe.exerciseId);
+            const draftSets = makeDraftSets(
+              pe.exerciseId,
+              savedSummary?.loggedSets ?? pe.sets,
+              savedSummary?.sets
+            );
+            return [{ ...template, note: "", draftSets }];
           });
         }
       }
@@ -13451,16 +13549,12 @@ export function App() {
       sourceExercises = workout.exercises.flatMap((summary) => {
         const template = availableExerciseTemplates.find((e) => e.id === summary.id);
         if (!template) return [];
-        const sets: DraftSet[] = Array.from({ length: Math.max(summary.loggedSets, 1) }, (_, i) => ({
-          id: `${summary.id}-edit-${i}`,
-          setType: "normal" as const,
-          weightInput: "",
-          repsInput: "",
-          rpeInput: "",
-          done: false,
-          failed: false,
-        }));
-        return [{ ...template, note: "", draftSets: sets }];
+        const draftSets = makeDraftSets(
+          summary.id,
+          Math.max(summary.loggedSets, 1),
+          summary.sets
+        );
+        return [{ ...template, note: "", draftSets }];
       });
     }
     if (sourceExercises.length === 0) return;
@@ -13712,6 +13806,102 @@ export function App() {
           persistPsychProfile(reset);
           setPsychProfile(reset);
           setShowDevPage(false);
+        }}
+        onSeedHistoryData={() => {
+          const completedAt = new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString();
+          const seedPlan: RepIQPlan = {
+            schemaVersion: 1,
+            id: "dev-seed-plan",
+            generatedAt: completedAt,
+            startDate: completedAt.slice(0, 10),
+            planName: "Push / Pull / Legs",
+            goal: "build_muscle",
+            secondaryGoal: null,
+            experienceLevel: "intermediate",
+            daysPerWeek: 3,
+            sessionLengthMin: 60,
+            splitType: "ppl",
+            mesocycleLengthWeeks: 8,
+            currentWeekIndex: 0,
+            status: "active",
+            weeks: Array.from({ length: 8 }, (_, wi) => ({
+              weekNumber: wi + 1,
+              isCompleted: false,
+              days: [
+                {
+                  sessionLabel: `Upper Push ${String.fromCharCode(65 + wi)}`,
+                  focus: "Chest / Shoulders / Triceps",
+                  completedAt: wi === 0 ? completedAt : null,
+                  exercises: [
+                    { exerciseId: "bench-press",            sets: 4, reps: "6–8",   restSeconds: 120 },
+                    { exerciseId: "incline-dumbbell-press", sets: 3, reps: "8–10",  restSeconds: 90  },
+                    { exerciseId: "shoulder-press",         sets: 3, reps: "8–10",  restSeconds: 90  },
+                    { exerciseId: "cable-lateral-raise",    sets: 3, reps: "12–15", restSeconds: 60  },
+                    { exerciseId: "rope-pushdown",          sets: 3, reps: "10–12", restSeconds: 60  },
+                  ],
+                },
+                {
+                  sessionLabel: `Lower ${String.fromCharCode(65 + wi)}`,
+                  focus: "Quads / Hamstrings / Glutes",
+                  completedAt: null,
+                  exercises: [
+                    { exerciseId: "barbell-squat", sets: 4, reps: "6–8",   restSeconds: 180 },
+                    { exerciseId: "leg-press",     sets: 3, reps: "10–12", restSeconds: 120 },
+                    { exerciseId: "romanian-deadlift", sets: 3, reps: "8–10", restSeconds: 120 },
+                  ],
+                },
+                {
+                  sessionLabel: `Pull ${String.fromCharCode(65 + wi)}`,
+                  focus: "Back / Biceps",
+                  completedAt: null,
+                  exercises: [
+                    { exerciseId: "weighted-pull-up", sets: 4, reps: "6–8",   restSeconds: 120 },
+                    { exerciseId: "chest-supported-row", sets: 3, reps: "8–10", restSeconds: 90  },
+                    { exerciseId: "lat-pulldown",     sets: 3, reps: "10–12", restSeconds: 90  },
+                    { exerciseId: "ez-bar-curl",      sets: 3, reps: "10–12", restSeconds: 60  },
+                  ],
+                },
+              ],
+            })),
+          };
+          const seedWorkout: SavedWorkoutData = {
+            sessionName: "Upper Push A",
+            note: "Felt strong today. Hit a small PR on bench.",
+            date: completedAt.slice(0, 10),
+            duration: "1:02:14",
+            durationSeconds: 3734,
+            totalVolume: 6840,
+            totalSets: 16,
+            exerciseCount: 5,
+            loggedExerciseCount: 5,
+            ignoredIncompleteSets: 0,
+            exercises: [
+              { id: "bench-press",            name: "Bench Press",           primaryMuscle: "Chest",     loggedSets: 4, loggedVolume: 2520, sets: [{ weight: 80, reps: 8, rpe: 7, setType: "normal" }, { weight: 80, reps: 8, rpe: 7.5, setType: "normal" }, { weight: 80, reps: 7, rpe: 8, setType: "normal" }, { weight: 77.5, reps: 7, rpe: 8.5, setType: "normal" }] },
+              { id: "incline-dumbbell-press", name: "Incline Dumbbell Press", primaryMuscle: "Chest",     loggedSets: 3, loggedVolume: 1260, sets: [{ weight: 32.5, reps: 10, rpe: 7, setType: "normal" }, { weight: 32.5, reps: 10, rpe: 7.5, setType: "normal" }, { weight: 32.5, reps: 9, rpe: 8, setType: "normal" }] },
+              { id: "shoulder-press",         name: "Shoulder Press",         primaryMuscle: "Shoulders", loggedSets: 3, loggedVolume: 1260, sets: [{ weight: 40, reps: 10, rpe: 7, setType: "normal" }, { weight: 40, reps: 10, rpe: 7.5, setType: "normal" }, { weight: 40, reps: 9, rpe: 8, setType: "normal" }] },
+              { id: "cable-lateral-raise",    name: "Cable Lateral Raise",    primaryMuscle: "Shoulders", loggedSets: 3, loggedVolume: 600,  sets: [{ weight: 10, reps: 15, rpe: 7, setType: "normal" }, { weight: 10, reps: 14, rpe: 7.5, setType: "normal" }, { weight: 10, reps: 13, rpe: 8, setType: "normal" }] },
+              { id: "rope-pushdown",          name: "Rope Pushdown",          primaryMuscle: "Triceps",   loggedSets: 3, loggedVolume: 1200, sets: [{ weight: 32.5, reps: 12, rpe: 7, setType: "normal" }, { weight: 32.5, reps: 11, rpe: 7.5, setType: "normal" }, { weight: 30, reps: 12, rpe: 8, setType: "normal" }] },
+            ],
+            rewards: [],
+            rewardSummary: { set: 0, exercise: 0, session: 0, total: 0 },
+            takeawayTitle: "Solid push session!",
+            takeawayBody: "16 sets across 5 exercises. Volume up from last week.",
+            images: [],
+            savedAt: completedAt,
+            repiqSourceKey: "0-0",
+          };
+          persistRepIQPlan(seedPlan);
+          persistSavedWorkout(seedWorkout);
+          setRepiqPlan(seedPlan);
+          setSavedWorkoutsList(getStoredSavedWorkouts());
+          setAppView("planner");
+          setShowDevPage(false);
+        }}
+        onClearHistoryData={() => {
+          window.localStorage.removeItem(repiqPlanStorageKey);
+          window.localStorage.removeItem(savedWorkoutsStorageKey);
+          setRepiqPlan(null);
+          setSavedWorkoutsList([]);
         }}
       />
     );
