@@ -310,6 +310,115 @@ Living registry of test cases across all built modules. Updated as features are 
 
 ---
 
+## NFR — Performance
+
+| ID | Test | Expected | Status |
+|---|---|---|---|
+| PF-01 | Initial app load (cold, no cache) | First meaningful paint under 2s on mobile network | 🔲 |
+| PF-02 | Logger renders with 10 exercises, 5 sets each | No visible lag on scroll or set-done tap | 🔲 |
+| PF-03 | Exercise library renders full catalog (~136 exercises) | List renders without stutter; search results appear instantly | 🔲 |
+| PF-04 | Timer tick — no re-render of unrelated components | Only timer element re-renders each second | 🔲 |
+| PF-05 | Drag reorder with 10+ exercises | No frame drops during drag | 🔲 |
+| PF-06 | Theme toggle — light ↔ dark | Switches without full page repaint or flash | 🔲 |
+| PF-07 | Page transitions — all AppView switches | No blank flash between views | 🔲 |
+| PF-08 | localStorage read on app boot | App state hydrated before first render; no layout shift | 🔲 |
+
+---
+
+## NFR — Layout and Responsiveness
+
+| ID | Test | Expected | Status |
+|---|---|---|---|
+| LY-01 | All pages max-width 430px centered | No page overflows on wide desktop screens | ✅ |
+| LY-02 | iPhone SE (375px width) | No horizontal scroll; no clipped content | 🔲 |
+| LY-03 | iPhone 14 Pro (393px width) | Standard target device; everything fits | 🔲 |
+| LY-04 | Large Android (412px width) | Layout holds; no wrapping issues | 🔲 |
+| LY-05 | Safe area insets (notch / home bar on iOS) | Bottom nav and rest dock clear the home bar | 🔲 |
+| LY-06 | Keyboard appearance on mobile (logger inputs) | Page scrolls correctly; focused field not hidden behind keyboard | 🔲 |
+| LY-07 | Landscape orientation | No broken layout; usable (not optimised) | 🔲 |
+| LY-08 | Bottom nav height — all shell pages | Content not cut off behind nav | ✅ |
+| LY-09 | Rest dock active — additional padding applied | Last exercise not hidden behind dock | ✅ |
+| LY-10 | Onboarding step 1 gradient — full bleed | No white gap at top or bottom | ✅ |
+| LY-11 | Finish Workout hero — no overflow clipping | Stats grid fits on small screens | 🔲 |
+| LY-12 | Plan detail icon buttons — 44×44 tap targets | No mis-taps on small screens | 🔲 |
+
+---
+
+## NFR — Touch and Interaction
+
+| ID | Test | Expected | Status |
+|---|---|---|---|
+| TX-01 | All primary buttons — minimum 44px tap height | Meets iOS / Android tap target guidelines | ✅ |
+| TX-02 | Set row done checkbox — easy to tap | No accidental triggers on adjacent fields | 🔲 |
+| TX-03 | Swipe actions on set rows | Smooth; no sticky behaviour | ✅ |
+| TX-04 | Drag reorder — initiation only from drag handle | Does not conflict with scroll | ✅ |
+| TX-05 | Rest dock time tap (pause/resume) | Single tap registers reliably | ✅ |
+| TX-06 | Bottom sheet / modal — dismiss by tapping backdrop | Closes correctly | ✅ |
+| TX-07 | Click-outside on dropdowns and card menus | All close reliably on outside tap | ✅ |
+| TX-08 | Long exercise name — no overflow into action buttons | Name truncates cleanly | 🔲 |
+
+---
+
+## NFR — Data Integrity and Persistence
+
+| ID | Test | Expected | Status |
+|---|---|---|---|
+| DI-01 | Save workout → reload app → workout in Insights history | Data survives reload | ✅ |
+| DI-02 | RepIQ plan saved → reload → plan intact | Weeks, sessions, completedAt all preserved | ✅ |
+| DI-03 | Onboarding data → reload → not re-shown | `onboardingCompletedAt` persists | ✅ |
+| DI-04 | Edit workout → save → reopen | Changes reflected, not a duplicate | 🔲 |
+| DI-05 | Delete plan → reload | Plan gone; no orphaned references | ✅ |
+| DI-06 | Multiple saved workouts — correct order (newest first) | Insights history sorted correctly | 🔲 |
+| DI-07 | durationSeconds stored on save | Correct elapsed seconds, not 0 | ✅ |
+| DI-08 | repiqSourceKey format stored as "wi-di" | Parseable in editHistoryWorkout regex | ✅ |
+| DI-09 | ReplacementEvents logged without duplicates | One event per confirmed swap | 🔲 |
+| DI-10 | localStorage near-full — graceful handling | No silent data loss; user-facing error if possible | 🔲 |
+| DI-11 | Corrupt localStorage value for saved-workouts | App does not crash; falls back to empty state | 🔲 |
+| DI-12 | Two tabs open simultaneously | No state conflict from concurrent writes | 🔲 |
+
+---
+
+## NFR — Accessibility
+
+| ID | Test | Expected | Status |
+|---|---|---|---|
+| AC-01 | All interactive elements have accessible labels | Buttons with icons have `aria-label` or `title` | ⚠️ |
+| AC-02 | Color contrast — light mode body text | Meets WCAG AA (4.5:1 for normal text) | 🔲 |
+| AC-03 | Color contrast — dark mode body text | Meets WCAG AA | 🔲 |
+| AC-04 | Color contrast — muted text on cards | At least 3:1 (WCAG AA large text) | 🔲 |
+| AC-05 | Focus ring visible on keyboard navigation | All interactive elements focusable | 🔲 |
+| AC-06 | Error states — not communicated by color alone | Text or icon accompanies color change | 🔲 |
+| AC-07 | Images — alt text present | Progress photos, icons have alt or aria-hidden | 🔲 |
+| AC-08 | Form inputs — labels associated | No unlabelled inputs | 🔲 |
+
+---
+
+## NFR — Cross-Browser / Cross-Platform
+
+| ID | Test | Expected | Status |
+|---|---|---|---|
+| CB-01 | Safari iOS (primary target) | Full functionality; no WebKit-specific regressions | 🔲 |
+| CB-02 | Chrome Android | Full functionality | 🔲 |
+| CB-03 | Chrome desktop (dev/testing) | Full functionality | ✅ |
+| CB-04 | Safari macOS | Layout and interactions correct | 🔲 |
+| CB-05 | Firefox desktop | No critical regressions | 🔲 |
+| CB-06 | CSS variables (`var(--*)`) | Supported in all target browsers | ✅ |
+| CB-07 | `dvh` units (100dvh) | Correct viewport height on mobile Safari | 🔲 |
+| CB-08 | `env(safe-area-inset-bottom)` | Applied correctly on notched iPhones | 🔲 |
+| CB-09 | Drag-and-drop reorder — touch events | Works on touch screens, not only mouse | 🔲 |
+
+---
+
+## NFR — Security (Pre-Backend)
+
+| ID | Test | Expected | Status |
+|---|---|---|---|
+| SC-01 | No sensitive data in localStorage keys | No passwords, tokens, or PII beyond profile name | ✅ |
+| SC-02 | XSS — user-supplied text rendered as text, not HTML | Session name, note, exercise name never injected as HTML | 🔲 |
+| SC-03 | localStorage values — no eval or dynamic script execution | No `eval()` or `innerHTML` with user data | 🔲 |
+
+---
+
 ## Upcoming / Not Yet Built
 
 | ID | Module | Test | Status |
