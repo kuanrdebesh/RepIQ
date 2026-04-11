@@ -10361,6 +10361,7 @@ export function App() {
   const [repiqPlan, setRepiqPlan] = useState<RepIQPlan | null>(getStoredRepIQPlan);
   const DEV_MODE = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("dev");
   const [showDevPage, setShowDevPage] = useState(DEV_MODE);
+  const [devBypassGate, setDevBypassGate] = useState(false);
   const [inlineGuidanceOpen, setInlineGuidanceOpen] = useState(false);
   const [showTopGuidance, setShowTopGuidance] = useState(false);
   const [topGuidanceExpanded, setTopGuidanceExpanded] = useState(false);
@@ -12561,7 +12562,7 @@ export function App() {
       <DevLandingPage
         resolvedTheme={resolvedTheme}
         onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
-        onGoTo={(view) => { setAppView(view); setShowDevPage(false); }}
+        onGoTo={(view) => { setAppView(view); setShowDevPage(false); setDevBypassGate(true); }}
         onShowPostOnboarding={() => { setShowPostOnboarding(true); setShowDevPage(false); }}
         onResetOnboarding={() => {
           const reset: UserPsychProfile = { ...psychProfile, onboardingCompletedAt: null };
@@ -12574,7 +12575,7 @@ export function App() {
   }
 
   // ── Onboarding gate ──────────────────────────────────────────────────────────
-  if (!onboardingComplete) {
+  if (!onboardingComplete && !devBypassGate) {
     return (
       <div data-theme={resolvedTheme} className="ob-shell">
         <OnboardingPage
