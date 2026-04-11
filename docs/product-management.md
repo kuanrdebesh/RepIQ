@@ -42,6 +42,16 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - avoid stacked-card overload outside the logger when possible
 - dark mode should preserve clarity without neon or muddy contrast
 
+### Simplicity Should Be A First-Class Mode, Not An Accident
+
+- RepIQ should support a lower-cognitive-load mode for less tech-savvy users
+- this mode should reduce visible text, decisions, and branching
+- defaults should carry more of the flow
+- advanced controls should stay available, but behind deliberate reveal points
+- the same product can support:
+  - a simple guided mode
+  - a fuller advanced mode
+
 ## Key Decisions Captured
 
 ### App Navigation And Page Roles
@@ -62,6 +72,8 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
   - custom exercise
   - finish workout
   - report detail
+- trainer workflows should not be mixed into member navigation by default
+- trainer should be treated as a distinct product path with its own home, navigation, and task hierarchy
 
 ### Home And Planner Information Architecture
 
@@ -75,6 +87,24 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - `Create Template` belongs to the `+` action, not the main heading structure
 - generated sessions should always stop at review/builder before logger entry
 - `Goal Planner` should live under `Planner`, not become its own app-level destination
+- simple-mode entry points should bias toward:
+  - `Start Workout`
+  - `Resume Workout`
+  - `History`
+- advanced planning and configuration should remain reachable without dominating the main path
+
+### Identity And Public Profile Direction
+
+- every user should have:
+  - an internal immutable `user_id`
+  - a public shareable `username` / handle
+- the product must never use the public handle as the system-of-record identity
+- all durable links and relations should be tied to `user_id`
+- usernames should be availability-checked and public-facing
+- current direction:
+  - free users receive an auto-generated username
+  - paid users can customize it, subject to availability
+- future username changes should not break trainer relationships, profile links, imports, or saved references because those remain tied to `user_id`
 
 ### Workout Builder Principles
 
@@ -258,6 +288,29 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 4. insights / reports integration
 5. profile, preferences, account, and import/export wiring
 
+### Simplicity / Role / Identity To-Dos
+
+1. define `Simple Mode` as an intentional low-text, low-choice product layer
+2. identify page-by-page simple-mode variants for:
+   - Home
+   - Logger
+   - Finish Workout
+   - Planner entry points
+   - Settings / Preferences
+3. define onboarding / auth split for:
+   - member path
+   - trainer path
+4. design trainer-first navigation and dashboard separately from member mode
+5. define identity model:
+   - immutable internal `user_id`
+   - public `username`
+   - future display name / trainer-visible profile metadata
+6. define username policy:
+   - availability
+   - free vs paid edit rules
+   - rename behavior
+   - reserved words
+
 ### Guidance Refinement Later
 
 - continue refining guidance visual hierarchy
@@ -425,6 +478,35 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - When a user changes split, goal, or timing in plan detail, the plan regenerates from scratch (not adjusted forward)
 - Animation shown during regeneration: "Doing science — building the best plan for you"
 - Week unlock rule: week N+1 unlocks when week N is marked completed; user can preview the next week but cannot access workouts beyond `plan_start_date + current_day + 7`
+
+## Plan Detail Page Action Hierarchy
+
+- Three actions exist on a plan detail page: Start Workout (primary), Edit, Delete
+- Start Workout is a full-width primary button occupying its own `plan-detail-actions-top` row
+- Edit and Delete are compact icon-only buttons (44×44px) placed to the right of the Start Workout button in the same row — no separate secondary row beneath
+- Edit uses a pencil outline SVG; Delete uses a simple outlined trash SVG with no fill texture; Delete button uses red (`#ef4444`) border and stroke
+- This pattern keeps three actions on one bar without creating visual hierarchy confusion from a second row
+
+## History Detail Page — Edit And Share
+
+- Completed RepIQ sessions always show both "Edit Session" and "Share Summary" buttons — no conditional hiding based on logged data
+- Reasoning: if a session appears in history, the user expects to be able to share the completion record and re-edit it
+- Edit Session opens the logger with timer pre-seeded from the original session duration
+- Share Summary opens the Workout Report page for the session
+- Editing a session currently appends a new saved-workout entry; the save-as-update (overwrite original entry) behavior is deferred to the Workout History sprint
+- The dual-button layout uses `history-detail-actions` flex row: secondary "Edit Session" + primary "Share Summary" — both `flex: 1` so they split the width equally
+
+## Finish Modal Consolidation
+
+- Blank-set warnings and incomplete-set warnings are combined into a single confirmation modal
+- Modal offers "Go Back And Finish" or "Finish Anyway" — the same options serve both empty-reps and incomplete sets
+- Rationale: two separate modals in sequence create unnecessary friction and cognitive overhead
+
+## needsReview Banner — Dismiss Action
+
+- The needsReview banner always shows a "Dismiss" button alongside "Regenerate remaining sessions"
+- Dismiss clears the `needsReview` flag without triggering a regeneration
+- Rationale: users may acknowledge the change and choose not to act — they should not be forced to regenerate or live with a permanent banner
 
 ## Progress Photo Decisions
 

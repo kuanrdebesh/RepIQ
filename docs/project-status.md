@@ -270,12 +270,13 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
 
 - Bottom navigation bar now implemented: Home / Planner / Insights tabs
 - `BottomNav` component renders on Home, Planner, and Insights views
-- `AppView` type expanded: `"home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "profile"`
+- `AppView` type expanded: `"home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "profile" | "history-detail"`
 - All `"selector"` references renamed to `"home"`
 - New top-level pages added:
   - `WorkoutReportPage` — post-finish report showing hero stats, rewards, exercises; routes to share
   - `InsightsPage` — Reports + Analyzer tabs; tapping a report opens WorkoutReportPage
   - `ProfilePage` — Settings group with Preferences / Account / Import/Export rows
+  - `WorkoutHistoryDetailPage` — opens from completed RepIQ session cards; shows hero stats, exercises performed, Edit Session + Share Summary dual-button row at bottom; reachable via `appView === "history-detail"`
 - Home upgraded:
   - Profile avatar button (top-right) routes to Profile
   - Latest workout card shows most recent session or empty-state prompt
@@ -285,6 +286,36 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
 - Profile page max-width fixed to 430px (matches all other page shells)
 - CSS added for all new navigation components: `.bottom-nav`, `.bottom-nav-tab`, `.profile-*`, `.home-latest-*`, `.insights-*`, `.report-*`
 - `selector-shell` padding updated to accommodate fixed bottom nav height
+
+## RepIQ Plan — History And Session Detail
+
+- Completed RepIQ sessions now appear in a collapsible "Completed · N sessions" section at the bottom of the PlannerHomePage RepIQ tab
+- Each completed session card shows a `✓ Done` badge and `›` chevron; always tappable
+- Tapping a completed session opens `WorkoutHistoryDetailPage`:
+  - gradient hero with session name, date, duration/sets/exercises/volume stats
+  - "Exercises Performed" card listing each exercise with logged set count and volume
+  - "Edit Session" (secondary) + "Share Summary" (primary) action buttons at the bottom — always shown for any completed session regardless of logged data
+  - Share routes to `WorkoutReportPage`; Edit re-opens logger with timer pre-seeded
+- If the session has a saved workout (`repiqSourceKey` match): real data shown
+- If no saved workout found (plan-day fallback): synthetic `SavedWorkoutData` built from plan exercises; still navigable with "not logged" placeholders
+- "Save to My Workouts" option appears on session cards when a real saved workout exists
+
+## Edit From History — Timer And Data
+
+- `durationSeconds: number` added to `FinishWorkoutDraft` and persisted in `SavedWorkoutData`; records elapsed seconds at save time
+- `editHistoryWorkout()` pre-seeds the timer: `startInstant = Date.now() - elapsed * 1000`
+- Fallback: if `durationSeconds === 0` (older sessions), the `"H:MM:SS"` / `"MM:SS"` formatted `duration` string is parsed to seconds
+- Final saved time automatically accumulates original + editing duration because `buildFinishWorkoutDraft` computes elapsed from `startInstant → now`
+- Edit-save currently appends a new entry; **pending**: overwrite original `repiqSourceKey` entry so Share Summary always reflects the latest edit (deferred to Workout History sprint)
+
+## RepIQ Plan — UX Refinements
+
+- `needsReview` banner now has a "Dismiss" button alongside "Regenerate remaining sessions"; clears the flag without regenerating
+- Planner mode dropdown (RepIQ Plan / Custom Workout Planner) closes on outside click (mousedown listener on `plannerModeDropdownRef`)
+- PlanCard three-dot menu closes on outside click (mousedown listener on `menuRef`)
+- Plan detail page: Edit and Delete are now compact icon-only buttons (pencil / outlined trash) sitting to the right of the Start Workout button in the same `plan-detail-actions-top` row — no separate manage row
+- Delete icon button uses red outline/stroke; no fill texture; turns to `rgba(239,68,68,0.06)` background on active press
+- Finish modal: combined blank-set and incomplete-set warnings into one modal (`finishConfirmOpen`); removed separate `emptyValuesWarnOpen` state
 
 ## Onboarding (Phase 1 — Complete)
 

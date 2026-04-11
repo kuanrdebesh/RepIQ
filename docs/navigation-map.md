@@ -20,9 +20,13 @@ It is intentionally product-facing:
 - `Goal Planner` powers both in-app plan creation and the new user onboarding flow — same UI, different entry points and exit targets.
 - `Onboarding` must deliver a generated plan before the user reaches `Home` for the first time. The value proposition is that the app feels personal on day one.
 - `Auth` gates the entire app. No navigation outside the auth layer until session exists.
+- auth should be ready to branch by role:
+  - member
+  - trainer
 - `Progress Photos` live inside `Insights` (Progress tab) — they are a form of self-tracking, not a social feature by default.
 - `Community` is built in full but surfaced from `Home` and `Profile` initially — not a bottom-nav slot until the feature has density. It is designed to be promoted to bottom nav once warranted.
 - `Leaderboards` live inside `Community`, scoped to friends / groups / global. They never appear in `Insights` (which is personal) or `Home` (which is motivating, not competitive by default).
+- a future `Simple Mode` should change presentation and path density for members without requiring a separate backend identity
 
 ## Top-Level Destinations
 
@@ -49,6 +53,35 @@ It is intentionally product-facing:
   - reached once, immediately after `Signup`
 - `Paywall`
   - reached from `Onboarding` (end of free trial prompt) or from feature gates inside the app
+- `Trainer`
+  - future role-based app shell reached from auth role selection
+
+## Planned Role Split
+
+- `Member` remains the primary V1 app path
+- `Trainer` is planned as a distinct app path, selected early in auth/onboarding
+- the eventual auth decision point should support:
+  - `I am training myself`
+  - `I am coaching clients`
+- trainer mode should have its own:
+  - home/dashboard
+  - client list
+  - assigned plans
+  - review / adherence / notes flows
+- trainer tools should not be merged into the member bottom navigation
+
+## Planned Simplicity Layer
+
+- a future `Simple Mode` should simplify the member path without forking the backend model
+- likely simple-mode default surfaces:
+  - `Home`
+  - `Logger`
+  - `Finish Workout`
+- likely behavior:
+  - less text
+  - fewer visible actions
+  - one clear next step at a time
+  - advanced controls hidden behind explicit reveal
 
 ## Connectivity Map
 
@@ -255,6 +288,12 @@ Insights has three tabs: **Reports**, **Analyzer**, **Progress**.
 | `Progress Photo Detail` | `Progress` tab | photo tap | `Report Detail` (for linked session), back to `Progress` | hidden |
 | `Add Progress Photo` | `Progress` tab, `Finish Workout` prompt | add-photo action | back to `Progress` or `Finish Workout` flow | hidden |
 | `Photo Compare` | `Progress` tab | compare action on any photo | back to `Progress` | hidden |
+
+### Planner — RepIQ history subtree
+
+| Page | Parent | Entry points | Exit points | Bottom nav |
+|---|---|---|---|---|
+| `Workout History Detail` | `RepIQ Plan` (Planner) | completed session card tap | `Logger` (Edit Session), `Workout Report` (Share Summary), back to `Planner` | hidden |
 
 ### Community subtree
 

@@ -115,6 +115,19 @@
 - Exercise taxonomy: two-layer system (named exercises + structural metadata) designed
 - Design docs: navigation-map.md, psych-layer.md, smart-replace.md
 
+## Phase 3 — Additional (Complete)
+
+- RepIQ plan completed sessions now open `WorkoutHistoryDetailPage` (hero stats, exercises performed, Edit + Share buttons)
+- `durationSeconds` persisted in `FinishWorkoutDraft` / `SavedWorkoutData`; used to pre-seed timer on edit-from-history
+- Duration string parsing fallback for older sessions (`"H:MM:SS"` / `"MM:SS"` → seconds)
+- `needsReview` banner gets a "Dismiss" button (clears flag without regenerating)
+- Planner mode dropdown and PlanCard three-dot menu both close on outside click
+- Plan detail: Edit + Delete as compact icon buttons alongside Start Workout — one action row, no second row
+- Finish modal: single combined warning for blank sets and incomplete sets
+- `AppView` extended with `"history-detail"`; `WorkoutHistoryDetailPage` component with plan-day fallback synthetic data
+- `finish-workout-body` CSS defined (grid, gap, padding, background) shared by WorkoutReportPage and WorkoutHistoryDetailPage
+- Edit-save-as-update (overwrite original repiqSourceKey entry) deferred to Workout History sprint
+
 ## Phase 4
 
 - Smart Replace UI: SmartReplaceSheet component with reason picker + ranked suggestions
@@ -136,6 +149,19 @@ These are intentionally captured so they do not get lost while we finish the cor
 - Inactivity check-in for active workouts after prolonged no-input periods
 - Single-alert behavior for inactivity so duplicate prompts or notifications do not stack
 - Optional app notification for inactivity check-ins when permission is granted
+- Define `Simple Mode` for low-tech / low-cognitive-load users:
+  - fewer visible options
+  - less text
+  - more guided defaults
+  - progressive reveal for advanced controls
+- Define role split in auth/onboarding:
+  - `Member`
+  - `Trainer`
+- Create separate trainer information architecture instead of layering trainer tools into member navigation
+- Define public identity model:
+  - immutable internal `user_id`
+  - shareable `username`
+  - paid username customization policy
 - Refine non-logger pages toward white-surface + separator layouts instead of stacked-card treatment
 - Test whether subtle in-logger micro rewards add motivation without becoming distracting
 - Design reward-aware share cards:
