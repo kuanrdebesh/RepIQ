@@ -49,6 +49,10 @@
   box-shadow: 0 28px 60px rgba(0, 0, 0, 0.42);
 }
 
+:root[data-theme="dark"] .ex-action-tile {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28), 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
 :root[data-theme="dark"] .menu-popover {
   border-color: rgba(216, 226, 237, 0.14);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
@@ -3911,6 +3915,114 @@ ol {
   width: 32px;
   text-align: center;
   flex-shrink: 0;
+}
+
+/* ── Exercise action sheet header ── */
+.ex-action-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ex-action-header-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ex-action-heading-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-align: left;
+}
+
+.ex-action-heading-link svg {
+  opacity: 0.4;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.ex-action-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.ex-action-muscle strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.ex-action-secondary-muscles {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.ex-action-pattern {
+  text-transform: capitalize;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  color: var(--accent);
+  border-radius: 20px;
+  padding: 1px 8px;
+  font-weight: 600;
+  font-size: 0.72rem;
+}
+
+/* ── Exercise action grid (⋮ menu) ── */
+.ex-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.ex-action-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 16px 8px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  transition: box-shadow 0.12s, transform 0.1s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.ex-action-tile:active {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  transform: translateY(1px);
+}
+
+.ex-action-tile svg {
+  opacity: 0.6;
+}
+
+.ex-action-tile--danger {
+  color: #e53e3e;
+  border-color: color-mix(in srgb, #e53e3e 20%, var(--line));
+}
+
+.ex-action-tile--danger svg {
+  opacity: 0.8;
 }
 
 .action-sheet-label {

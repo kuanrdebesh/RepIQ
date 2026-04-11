@@ -11826,7 +11826,6 @@ export function App() {
     setDetailsExerciseId(exerciseId);
     setDetailsTab(tab);
     setDetailsScrollTarget(scrollTarget);
-    setMenuExerciseId(null);
   }
 
   function getFirstNotStartedExerciseId(exerciseList: ExerciseDraft[]) {
@@ -16124,70 +16123,37 @@ export function App() {
               onClick={(event) => event.stopPropagation()}
             >
               <div className="sheet-handle" />
-              <div className="sheet-head">
-                <div>
-                  <p className="label">Exercise Actions</p>
-                  <h3>{activeMenuExercise.name}</h3>
+              <div className="ex-action-header">
+                <div className="ex-action-header-body">
+                  <button
+                    type="button"
+                    className="ex-action-heading-link"
+                    onClick={() => openDetails(activeMenuExercise.id)}
+                  >
+                    {activeMenuExercise.name}
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
+                  <div className="ex-action-meta">
+                    {(activeMenuExercise as ExerciseWithTaxonomy).movementPattern && (
+                      <span className="ex-action-pattern">{((activeMenuExercise as ExerciseWithTaxonomy).movementPattern ?? "").replace(/_/g, " ")}</span>
+                    )}
+                    <span className="ex-action-muscle">
+                      <strong>{activeMenuExercise.primaryMuscle}</strong>
+                      {activeMenuExercise.secondaryMuscles && activeMenuExercise.secondaryMuscles.length > 0 && (
+                        <span className="ex-action-secondary-muscles"> · {activeMenuExercise.secondaryMuscles.slice(0, 2).join(", ")}</span>
+                      )}
+                    </span>
+                  </div>
                 </div>
                 <button className="icon-button" type="button" onClick={() => setMenuExerciseId(null)}>
                   ×
                 </button>
               </div>
 
-              <div className="action-sheet-list">
+              <div className="ex-action-grid">
                 <button
                   type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openDetails(activeMenuExercise.id);
-                    setMenuExerciseId(null);
-                  }}
-                >
-                  View details
-                </button>
-                {activeMenuExercise.stickyNoteEnabled ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        openNoteEditor(activeMenuExercise.id);
-                      }}
-                    >
-                      Edit sticky note
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        hideStickyNote(activeMenuExercise.id);
-                      }}
-                    >
-                      Hide sticky note
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      enableStickyNote(activeMenuExercise.id);
-                    }}
-                  >
-                    Enable sticky note
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openMusclesPage(activeMenuExercise.id);
-                  }}
-                >
-                  Muscles worked
-                </button>
-                <button
-                  type="button"
+                  className="ex-action-tile"
                   onClick={(event) => {
                     event.stopPropagation();
                     setSmartReplaceExerciseId(activeMenuExercise.id);
@@ -16195,31 +16161,62 @@ export function App() {
                     setMenuExerciseId(null);
                   }}
                 >
-                  Replace exercise
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                  Replace
                 </button>
+                {activeMenuExercise.stickyNoteEnabled ? (
+                  <button
+                    type="button"
+                    className="ex-action-tile"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openNoteEditor(activeMenuExercise.id);
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    Edit note
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="ex-action-tile"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      enableStickyNote(activeMenuExercise.id);
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                    Add note
+                  </button>
+                )}
                 {activeMenuExercise.supersetGroupId ? (
                   <button
                     type="button"
+                    className="ex-action-tile"
                     onClick={(event) => {
                       event.stopPropagation();
                       removeFromSuperset(activeMenuExercise.id);
                     }}
                   >
-                    Remove from Superset
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>
+                    Unsuperset
                   </button>
                 ) : (
                   <button
                     type="button"
+                    className="ex-action-tile"
                     onClick={(event) => {
                       event.stopPropagation();
                       openSupersetSheet(activeMenuExercise.id);
                     }}
                   >
-                    Add to Superset
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>
+                    Superset
                   </button>
                 )}
                 <button
                   type="button"
+                  className="ex-action-tile"
                   onClick={(event) => {
                     event.stopPropagation();
                     setInteractedExerciseActive(activeMenuExercise.id);
@@ -16227,55 +16224,19 @@ export function App() {
                     setMenuExerciseId(null);
                   }}
                 >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
                   Reorder
                 </button>
                 <button
                   type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    const targetId = activeMenuExercise.id;
-                    setExercises(prev => prev.map(ex => {
-                      if (ex.id !== targetId) return ex;
-                      const lastSession = ex.history[ex.history.length - 1];
-                      return {
-                        ...ex,
-                        draftSets: ex.draftSets.map((set, i) => {
-                          if (set.done) return set;
-                          const measurementType = getExerciseMeasurementType(ex);
-                          const carrySource = getCurrentExerciseCarrySource(ex.draftSets, i);
-                          const previousSet = getPreviousReferenceSet(ex.draftSets, i, lastSession);
-                          const resolvedWeight = usesWeightInputForMeasurement(measurementType)
-                            ? settings.carryForwardDefaults && set.weightInput.trim() === ""
-                              ? carrySource?.weightInput?.trim().length ? carrySource.weightInput
-                                : previousSet ? String(previousSet.weight) : ""
-                              : set.weightInput
-                            : "";
-                          const resolvedReps = settings.carryForwardDefaults && set.repsInput.trim() === ""
-                            ? carrySource?.repsInput?.trim().length ? carrySource.repsInput
-                              : previousSet ? String(previousSet.reps) : ""
-                            : set.repsInput;
-                          const resolvedRpe = settings.carryForwardDefaults && set.rpeInput.trim() === ""
-                            ? carrySource?.rpeInput?.trim().length ? carrySource.rpeInput
-                              : typeof previousSet?.rpe === "number" && Number.isFinite(previousSet.rpe)
-                                ? String(previousSet.rpe) : ""
-                            : set.rpeInput;
-                          return { ...set, done: true, weightInput: resolvedWeight, repsInput: resolvedReps, rpeInput: resolvedRpe };
-                        })
-                      };
-                    }));
-                    setMenuExerciseId(null);
-                  }}
-                >
-                  Mark all sets done
-                </button>
-                <button
-                  type="button"
+                  className="ex-action-tile ex-action-tile--danger"
                   onClick={(event) => {
                     event.stopPropagation();
                     removeExercise(activeMenuExercise.id);
                   }}
                 >
-                  Remove exercise
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                  Remove
                 </button>
               </div>
             </div>
