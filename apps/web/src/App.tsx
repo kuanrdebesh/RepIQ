@@ -8307,13 +8307,6 @@ function OnboardingPage({
 
     3: (
       <div className="ob-step" key="step-3">
-        <div className="ob-trust-card">
-          <span className="ob-trust-icon">{trustMessages[3].icon}</span>
-          <div>
-            <strong className="ob-trust-headline">{trustMessages[3].headline}</strong>
-            <p className="ob-trust-body">{trustMessages[3].body}</p>
-          </div>
-        </div>
         <div className="ob-fields">
           <div className="ob-field">
             <label className="ob-field-label">Primary training goal <span className="ob-required">*</span></label>
