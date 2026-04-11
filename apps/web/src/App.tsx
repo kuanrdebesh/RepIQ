@@ -223,6 +223,7 @@ interface RepIQPlanDay {
   sessionLabel: string;
   focus: string;
   exercises: RepIQPlanExercise[];
+  completedAt: string | null;
 }
 
 interface RepIQPlanWeek {
@@ -370,7 +371,7 @@ type ActivePlanSession = {
   source: PlanSessionSource;
   planId: string | null;
   originalPlan: WorkoutPlan | null;
-} | null;
+} | { source: "repiq"; planId: null; originalPlan: null; weekIdx: number; dayIdx: number } | null;
 
 type WorkoutSettings = {
   defaultRestSeconds: string;
@@ -8155,6 +8156,7 @@ function generateRepIQPlan(profile: UserPsychProfile): RepIQPlan {
     days: dayTemplates.map((tmpl) => ({
       sessionLabel: tmpl.label,
       focus: tmpl.focus,
+      completedAt: null,
       exercises: tmpl.slots
         .map((slot) => {
           const exerciseId = pickPlanExercise(smartReplaceCatalog, slot, exp, used);
@@ -10629,6 +10631,7 @@ export function App() {
   const onboardingComplete = psychProfile.onboardingCompletedAt !== null;
   const [showPostOnboarding, setShowPostOnboarding] = useState(false);
   const [repiqPlan, setRepiqPlan] = useState<RepIQPlan | null>(getStoredRepIQPlan);
+  const [repiqUpdatePrompt, setRepiqUpdatePrompt] = useState<{ weekIdx: number; dayIdx: number; completedExerciseIds: string[] } | null>(null);
   const DEV_MODE = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("dev");
   const [showDevPage, setShowDevPage] = useState(DEV_MODE);
   const [devBypassGate, setDevBypassGate] = useState(false);
@@ -10942,9 +10945,40 @@ export function App() {
     setReportWorkout(saved);
     setSavedWorkoutsList(getStoredSavedWorkouts());
     setTemplateApplyPromptImages(null);
+    // ── RepIQ plan day completion ──────────────────────────────────────────────
+    const snapshotSession = activePlanSession;
     setActivePlanSession(null);
     resetWorkout();
     setHasActiveWorkout(false);
+    if (snapshotSession?.source === "repiq" && repiqPlan) {
+      const { weekIdx, dayIdx } = snapshotSession;
+      const completedAt = new Date().toISOString();
+      const updatedWeeks = repiqPlan.weeks.map((week, wi) => {
+        if (wi !== weekIdx) return week;
+        const updatedDays = week.days.map((day, di) => {
+          if (di !== dayIdx) return day;
+          return { ...day, completedAt };
+        });
+        const weekDone = updatedDays.every((d) => d.completedAt !== null);
+        return { ...week, days: updatedDays, isCompleted: weekDone };
+      });
+      // Advance currentWeekIndex if current week just completed
+      const currentWeekCompleted = updatedWeeks[repiqPlan.currentWeekIndex]?.isCompleted;
+      const newCurrentWeekIndex = currentWeekCompleted
+        ? Math.min(repiqPlan.currentWeekIndex + 1, repiqPlan.weeks.length - 1)
+        : repiqPlan.currentWeekIndex;
+      const updatedPlan: RepIQPlan = { ...repiqPlan, weeks: updatedWeeks, currentWeekIndex: newCurrentWeekIndex };
+      persistRepIQPlan(updatedPlan);
+      setRepiqPlan(updatedPlan);
+      // Check if today's exercises differ from plan
+      const planDay = repiqPlan.weeks[weekIdx]?.days[dayIdx];
+      const planExIds = new Set(planDay?.exercises.map((e) => e.exerciseId) ?? []);
+      const actualExIds = exercises.map((e) => e.id);
+      const hasDiff = actualExIds.some((id) => !planExIds.has(id)) || planExIds.size !== actualExIds.length;
+      if (hasDiff) {
+        setRepiqUpdatePrompt({ weekIdx, dayIdx, completedExerciseIds: actualExIds });
+      }
+    }
     setAppView("report");
   }
 
@@ -12818,6 +12852,17 @@ export function App() {
     setAppView("logger");
   }
 
+  function getNextRepIQSession(plan: RepIQPlan): { weekIdx: number; dayIdx: number } | null {
+    for (let wi = plan.currentWeekIndex; wi < plan.weeks.length; wi++) {
+      const week = plan.weeks[wi];
+      if (week.isCompleted) continue;
+      for (let di = 0; di < week.days.length; di++) {
+        if (!week.days[di].completedAt) return { weekIdx: wi, dayIdx: di };
+      }
+    }
+    return null;
+  }
+
   function startRepIQSession(weekIdx: number, dayIdx: number) {
     if (!repiqPlan) return;
     const day = repiqPlan.weeks[weekIdx]?.days[dayIdx];
@@ -12850,10 +12895,47 @@ export function App() {
       startInstant: now.toISOString(),
     });
     setShowBottomRestDock(true);
-    setActivePlanSession({ source: "quick", planId: null, originalPlan: null });
+    setActivePlanSession({ source: "repiq", planId: null, originalPlan: null, weekIdx, dayIdx });
     setDiscardReturnView("planner");
     setHasActiveWorkout(true);
     setAppView("logger");
+  }
+
+  function propagateRepIQChanges(weekIdx: number, dayIdx: number, completedExerciseIds: string[]) {
+    if (!repiqPlan) return;
+    const usedIds = new Set<string>(completedExerciseIds);
+    // Add all previously completed exercise IDs too
+    repiqPlan.weeks.forEach((week, wi) => {
+      week.days.forEach((day, di) => {
+        if (day.completedAt && !(wi === weekIdx && di === dayIdx)) {
+          day.exercises.forEach((e) => usedIds.add(e.exerciseId));
+        }
+      });
+    });
+    const scheme = getPlanSetRepScheme(repiqPlan.goal as TrainingGoal);
+    const exp = repiqPlan.experienceLevel as ExperienceLevel;
+    const dayTemplates = buildDayTemplates(repiqPlan.splitType, repiqPlan.daysPerWeek);
+    const updatedWeeks = repiqPlan.weeks.map((week, wi) => {
+      if (wi <= weekIdx) return week;
+      return {
+        ...week,
+        days: week.days.map((day, di) => {
+          const tmpl = dayTemplates[di % dayTemplates.length];
+          const newExercises = tmpl.slots
+            .map((slot) => {
+              const id = pickPlanExercise(smartReplaceCatalog, slot, exp, usedIds);
+              if (!id) return null;
+              usedIds.add(id);
+              return { exerciseId: id, sets: scheme.sets, reps: scheme.reps, restSeconds: scheme.restSeconds } satisfies RepIQPlanExercise;
+            })
+            .filter((e): e is RepIQPlanExercise => e !== null);
+          return { ...day, exercises: newExercises };
+        }),
+      };
+    });
+    const updatedPlan = { ...repiqPlan, weeks: updatedWeeks };
+    persistRepIQPlan(updatedPlan);
+    setRepiqPlan(updatedPlan);
   }
 
   function regenerateRepIQPlan(prefs: { goal: string; experience: string; daysPerWeek: number; sessionLength: number; splitPref: string | null }) {
@@ -13047,6 +13129,43 @@ export function App() {
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+        {/* ── RepIQ plan update prompt ─────────────────────────────────────── */}
+        {repiqUpdatePrompt && (
+          <div
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 600, display: "flex", alignItems: "flex-end" }}
+            onClick={() => setRepiqUpdatePrompt(null)}
+          >
+            <div
+              style={{ width: "100%", maxWidth: 430, margin: "0 auto", background: "var(--paper)", borderRadius: "20px 20px 0 0", padding: "20px 20px 32px" }}
+              onClick={(e) => e.stopPropagation()}
+              data-theme={resolvedTheme}
+            >
+              <p style={{ fontSize: "1rem", fontWeight: 700, color: "var(--ink)", marginBottom: 8 }}>Update your plan?</p>
+              <p style={{ fontSize: "0.85rem", color: "var(--subtle-text)", marginBottom: 20 }}>
+                You changed exercises in today&apos;s session. RepIQ can update your remaining sessions to avoid overlap and keep things fresh.
+              </p>
+              <button
+                type="button"
+                className="primary-button"
+                style={{ width: "100%", marginBottom: 10 }}
+                onClick={() => {
+                  propagateRepIQChanges(repiqUpdatePrompt.weekIdx, repiqUpdatePrompt.dayIdx, repiqUpdatePrompt.completedExerciseIds);
+                  setRepiqUpdatePrompt(null);
+                }}
+              >
+                Yes, update future sessions
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                style={{ width: "100%" }}
+                onClick={() => setRepiqUpdatePrompt(null)}
+              >
+                Keep original plan
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -13470,8 +13589,8 @@ export function App() {
             </button>
 
             {repiqPlan && (() => {
-              const currentWeek = repiqPlan.weeks[repiqPlan.currentWeekIndex];
-              const hasNextWorkout = currentWeek && !currentWeek.isCompleted && currentWeek.days.length > 0;
+              const nextSession = getNextRepIQSession(repiqPlan);
+              const hasNextWorkout = nextSession !== null;
               return (
                 <article className="session-card home-plan-card">
                   <p className="label">Your Plan</p>
@@ -13481,7 +13600,7 @@ export function App() {
                     <button
                       className="primary-button home-plan-start-btn"
                       type="button"
-                      onClick={() => startRepIQSession(repiqPlan.currentWeekIndex, 0)}
+                      onClick={() => nextSession && startRepIQSession(nextSession.weekIdx, nextSession.dayIdx)}
                     >
                       Start Next Workout
                     </button>
