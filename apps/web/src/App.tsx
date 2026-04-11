@@ -8124,6 +8124,8 @@ function OnboardingPage({
   const [successVision, setSuccessVision] = useState<string | null>(null);
   const [mindsetReveal, setMindsetReveal] = useState(1);
 
+  const [maxStep, setMaxStep] = useState(1);
+
   const canAdvance =
     step === 1 ? true :
     step === 3 ? goal !== null :
@@ -8131,7 +8133,12 @@ function OnboardingPage({
     true;
 
   function advance() {
-    if (step < TOTAL) { setStep((s) => s + 1); return; }
+    if (step < TOTAL) {
+      const next = step + 1;
+      setMaxStep((m) => Math.max(m, next));
+      setStep(next);
+      return;
+    }
     const finalHeightCm = unitSystem === "metric" ? heightCm : Math.round(heightFt * 30.48 + heightIn * 2.54);
     const finalWeightKg = unitSystem === "metric" ? weightKg : Math.round(weightLbs * 0.4536);
     onComplete({
@@ -8576,20 +8583,13 @@ function OnboardingPage({
               const active = n === step;
               return (
                 <Fragment key={n}>
-                  {done ? (
+                  {n <= maxStep ? (
                     <button
                       type="button"
-                      className="ob-dot is-done is-clickable"
+                      className={`ob-dot is-clickable${done ? " is-done" : active ? " is-active" : " is-visited"}`}
                       onClick={() => setStep(n)}
-                      aria-label={`Go back to ${lbl}`}
-                    >✓</button>
-                  ) : active ? (
-                    <button
-                      type="button"
-                      className="ob-dot is-active is-clickable"
-                      onClick={() => setStep(n)}
-                      aria-label={lbl}
-                    >{n}</button>
+                      aria-label={done ? `Go back to ${lbl}` : lbl}
+                    >{done ? "✓" : n}</button>
                   ) : (
                     <div className="ob-dot">{n}</div>
                   )}

@@ -8526,6 +8526,10 @@ ol {
 .ob-dot.is-clickable:hover {
   background: color-mix(in srgb, var(--accent) 28%, var(--paper));
 }
+.ob-dot.is-visited {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: color-mix(in srgb, var(--accent) 60%, var(--muted));
+}
 
 /* ── Progressive disclosure — locked section preview ── */
 .ob-locked-section {
@@ -8736,7 +8740,7 @@ ol {
 
 .ob-chip-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 
