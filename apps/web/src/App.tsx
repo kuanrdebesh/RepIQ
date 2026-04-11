@@ -5040,6 +5040,9 @@ function PlannerHomePage({
   defaultLevel,
   defaultEquipment,
   repiqPlan,
+  initialPlannerMode,
+  onStartRepIQSession,
+  onRegeneratePlan,
 }: {
   plans: WorkoutPlan[];
   library: ExerciseDraft[];
@@ -5066,6 +5069,9 @@ function PlannerHomePage({
   onUseTemplate: (template: WorkoutPlan) => void;
   onResumeWorkout: () => void;
   repiqPlan?: RepIQPlan | null;
+  initialPlannerMode?: "repiq" | "custom";
+  onStartRepIQSession?: (weekIdx: number, dayIdx: number) => void;
+  onRegeneratePlan?: () => void;
 }) {
   // Generate state
   const [genGoal, setGenGoal] = useState("Hypertrophy");
@@ -5082,7 +5088,7 @@ function PlannerHomePage({
   const [libLevel, setLibLevel] = useState<string | null>(defaultLevel);
   const [libGoal, setLibGoal] = useState<string | null>(defaultGoal);
   const [libEquipment, setLibEquipment] = useState<string | null>(defaultEquipment);
-  const [plannerMode, setPlannerMode] = useState<"repiq" | "custom">("repiq");
+  const [plannerMode, setPlannerMode] = useState<"repiq" | "custom">(initialPlannerMode ?? "repiq");
   const [plannerModeOpen, setPlannerModeOpen] = useState(false);
   const [libFilterOpen, setLibFilterOpen] = useState(false);
   const [libFilterFocus, setLibFilterFocus] = useState<string | null>(null);
@@ -5428,14 +5434,21 @@ function PlannerHomePage({
       {repiqPlan && plannerMode === "repiq" && (
         <div className="planner-repiq-section">
           <div className="repiq-plan-header">
-            <h2 className="repiq-plan-title">{repiqPlan.planName}</h2>
-            <div className="repiq-plan-meta-row">
-              <span>{SPLIT_LABEL[repiqPlan.splitType]}</span>
-              <span className="repiq-meta-dot">·</span>
-              <span>{repiqPlan.daysPerWeek} days/week</span>
-              <span className="repiq-meta-dot">·</span>
-              <span>{repiqPlan.mesocycleLengthWeeks} weeks</span>
+            <div>
+              <h2 className="repiq-plan-title">{repiqPlan.planName}</h2>
+              <div className="repiq-plan-meta-row">
+                <span>{SPLIT_LABEL[repiqPlan.splitType]}</span>
+                <span className="repiq-meta-dot">·</span>
+                <span>{repiqPlan.daysPerWeek} days/week</span>
+                <span className="repiq-meta-dot">·</span>
+                <span>{repiqPlan.mesocycleLengthWeeks} weeks</span>
+              </div>
             </div>
+            {onRegeneratePlan && (
+              <button type="button" className="repiq-regenerate-btn" onClick={onRegeneratePlan}>
+                ↺ Regenerate
+              </button>
+            )}
           </div>
           <div className="repiq-weeks-list">
             {repiqPlan.weeks.map((week, wi) => {
@@ -5456,12 +5469,31 @@ function PlannerHomePage({
                     <div className="repiq-day-list">
                       {week.days.map((day, di) => (
                         <div key={di} className="repiq-day-row">
-                          <span className="repiq-day-num">Day {di + 1}</span>
                           <div className="repiq-day-info">
-                            <p className="repiq-day-name">{day.sessionLabel}</p>
-                            <p className="repiq-day-focus">{day.focus}</p>
+                            <div className="repiq-day-header-row">
+                              <span className="repiq-day-num">Day {di + 1}</span>
+                              <p className="repiq-day-name">{day.sessionLabel}</p>
+                            </div>
+                            <ul className="repiq-ex-list">
+                              {day.exercises.map((e) => {
+                                const exName = library.find((ex) => ex.id === e.exerciseId)?.name ?? e.exerciseId;
+                                return (
+                                  <li key={e.exerciseId} className="repiq-ex-item">
+                                    {exName} <span className="repiq-ex-sets">{e.sets}×{e.reps}</span>
+                                  </li>
+                                );
+                              })}
+                            </ul>
                           </div>
-                          <span className="repiq-day-count">{day.exercises.length} ex</span>
+                          {onStartRepIQSession && isCurrent && !week.isCompleted && (
+                            <button
+                              type="button"
+                              className="repiq-day-start-btn"
+                              onClick={() => onStartRepIQSession(wi, di)}
+                            >
+                              Start
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -10362,6 +10394,7 @@ export function App() {
   const DEV_MODE = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("dev");
   const [showDevPage, setShowDevPage] = useState(DEV_MODE);
   const [devBypassGate, setDevBypassGate] = useState(false);
+  const [plannerInitialMode, setPlannerInitialMode] = useState<"repiq" | "custom">("repiq");
   const [inlineGuidanceOpen, setInlineGuidanceOpen] = useState(false);
   const [showTopGuidance, setShowTopGuidance] = useState(false);
   const [topGuidanceExpanded, setTopGuidanceExpanded] = useState(false);
@@ -12547,6 +12580,50 @@ export function App() {
     setAppView("logger");
   }
 
+  function startRepIQSession(weekIdx: number, dayIdx: number) {
+    if (!repiqPlan) return;
+    const day = repiqPlan.weeks[weekIdx]?.days[dayIdx];
+    if (!day) return;
+    resetWorkout();
+    const planExercises: ExerciseDraft[] = day.exercises.flatMap((pe) => {
+      const template = availableExerciseTemplates.find((e) => e.id === pe.exerciseId);
+      if (!template) return [];
+      const sets: DraftSet[] = Array.from({ length: pe.sets }, (_, i) => ({
+        id: `${pe.exerciseId}-${i}-${Date.now()}`,
+        setType: "normal" as DraftSetType,
+        weightInput: "",
+        repsInput: String(pe.reps),
+        rpeInput: "",
+        done: false,
+        failed: false,
+      }));
+      return [{ ...template, restTimer: String(pe.restSeconds), note: "", draftSets: sets }];
+    });
+    setExercises(planExercises);
+    setCollapsedExerciseIds([]);
+    setGuidanceCollapsed(false);
+    setFocusedExpandedExerciseId(null);
+    const now = new Date();
+    setWorkoutMeta({
+      date: formatDateInputValue(now),
+      startTime: formatTimeFromDate(now),
+      startedMinutesAgo: "0",
+      sessionName: day.sessionLabel,
+      startInstant: now.toISOString(),
+    });
+    setShowBottomRestDock(true);
+    setActivePlanSession({ source: "quick", planId: null, originalPlan: null });
+    setDiscardReturnView("planner");
+    setHasActiveWorkout(true);
+    setAppView("logger");
+  }
+
+  function regenerateRepIQPlan() {
+    const plan = generateRepIQPlan(psychProfile);
+    persistRepIQPlan(plan);
+    setRepiqPlan(plan);
+  }
+
   async function saveFinishedWorkout(images: WorkoutMediaAsset[]) {
     if (!finishWorkoutDraft) return;
     if (activeWorkoutHasTemplateChanges()) {
@@ -12887,6 +12964,9 @@ export function App() {
           defaultLevel={settings.preferredLevel}
           defaultEquipment={settings.preferredEquipment}
           repiqPlan={repiqPlan}
+          initialPlannerMode={plannerInitialMode}
+          onStartRepIQSession={startRepIQSession}
+          onRegeneratePlan={regenerateRepIQPlan}
         />
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
 
@@ -13126,17 +13206,30 @@ export function App() {
               </svg>
             </button>
 
-            {repiqPlan && (
-              <article className="session-card home-plan-card">
-                <p className="label">Your Plan</p>
-                <h2 className="home-plan-name">{repiqPlan.planName}</h2>
-                <p className="home-plan-meta">{SPLIT_LABEL[repiqPlan.splitType]} · {repiqPlan.daysPerWeek} days/week · {repiqPlan.mesocycleLengthWeeks} weeks</p>
-                <div className="home-plan-actions">
-                  <button className="primary-button" type="button" onClick={() => setAppView("planner")}>Explore Plan</button>
-                  <button className="secondary-button" type="button" onClick={() => { setAppView("planner"); }}>Custom</button>
-                </div>
-              </article>
-            )}
+            {repiqPlan && (() => {
+              const currentWeek = repiqPlan.weeks[repiqPlan.currentWeekIndex];
+              const hasNextWorkout = currentWeek && !currentWeek.isCompleted && currentWeek.days.length > 0;
+              return (
+                <article className="session-card home-plan-card">
+                  <p className="label">Your Plan</p>
+                  <h2 className="home-plan-name">{repiqPlan.planName}</h2>
+                  <p className="home-plan-meta">{SPLIT_LABEL[repiqPlan.splitType]} · {repiqPlan.daysPerWeek} days/week · {repiqPlan.mesocycleLengthWeeks} weeks</p>
+                  {hasNextWorkout && (
+                    <button
+                      className="primary-button home-plan-start-btn"
+                      type="button"
+                      onClick={() => startRepIQSession(repiqPlan.currentWeekIndex, 0)}
+                    >
+                      Start Next Workout
+                    </button>
+                  )}
+                  <div className="home-plan-actions">
+                    <button className="secondary-button" type="button" onClick={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}>Explore Plan</button>
+                    <button className="secondary-button" type="button" onClick={() => { setPlannerInitialMode("custom"); setAppView("planner"); }}>Custom</button>
+                  </div>
+                </article>
+              );
+            })()}
 
             {/* Latest workout card */}
             <article className="session-card home-latest-card" onClick={savedWorkoutData ? () => { setReportWorkout(savedWorkoutData); setAppView("report"); } : undefined} style={savedWorkoutData ? { cursor: "pointer" } : undefined}>
