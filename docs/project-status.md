@@ -110,13 +110,17 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
 
 ## Exercise Flows
 
-- Exercise actions exist through a bottom sheet
-- Supported actions include:
-  - view details
-  - replace exercise
-  - reorder
-  - remove exercise
-  - add to superset / remove from superset
+- Exercise actions exist through a bottom sheet (⋮ menu)
+- Sheet header shows:
+  - Exercise name as a tappable link (navigates to exercise detail; back returns to sheet)
+  - Movement pattern accent pill (e.g. "Squat") followed by primary muscle in bold + secondary muscles in muted text
+- Supported actions rendered as a 2-column icon tile grid (white card, elevation shadow):
+  - Replace exercise
+  - Add note / Edit note
+  - Superset / Unsuperset
+  - Reorder
+  - Remove (danger tile, red)
+- View details and Muscles Worked removed from the menu — accessible from the exercise detail page and the Muscles › button respectively
 - Exercise details exist as a separate screen with:
   - summary
   - history
@@ -508,9 +512,8 @@ These are documented and should not be forgotten:
 - Paywall at onboarding end or feature gate
 
 ### Immediate next session
-- Populate `movementPattern`, `angle`, `equipment`, `difficultyLevel` on all exercises in `exerciseLibrary`
-- Build `SmartReplaceSheet` UI component
-- Wire logger ⋮ menu "Replace exercise" to the sheet
+- Home redesign: streak always visible, context-aware primary CTA, this-week snapshot, last workout card, PR highlight (Phase 1 completion)
+- Then Phase 2: post-workout psych capture UI (mood/energy chips after Report screen)
 
 ## Planned Logger Enhancement
 

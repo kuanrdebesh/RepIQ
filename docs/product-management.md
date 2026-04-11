@@ -521,4 +521,25 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - Overlay never obscures the face/body — gradient only from bottom edge
 - Tap → full-screen lightbox; session detail accessible by scrolling up
 - Compare mode: two photos side by side, one stat-diff line between them
+
+## Exercise Replacement — Deferred Until Exercise Repository Is Built
+
+**Decision (2026-04-11):** Smart Replace will not ship as an in-session flow until a curated exercise repository exists with verified, complete taxonomy for every exercise.
+
+**What exists today:**
+- `getSmartReplacements()` scoring engine is fully implemented (movement pattern, angle, equipment, difficulty, session fatigue)
+- `smartReplaceCatalog` has ~136 exercises with full taxonomy
+- Movement pattern is shown as an informational pill in the exercise detail Summary tab
+- "Browse all exercises →" link on the detail page lets users manually find a replacement
+
+**Why deferred:**
+- Scoring accuracy depends on complete, correct taxonomy across the full library — partial data produces misleading suggestions
+- Showing ranked suggestions creates false confidence when the ranking can be wrong
+- The user experience of "replace with a single tap" requires trust in the list; that trust can only come from a verified catalog
+
+**When to build:**
+- Phase: after the exercise repository is built with full taxonomy coverage
+- Entry point: ⋮ menu → Replace exercise → scored suggestion sheet (the scoring engine is already written)
+- The UI should show movement pattern + equipment of each suggestion, not just name
+- Reason picker (machine taken / no equipment / too difficult / pain / preference) can be added at that point to tune scoring
 - No body measurement overlays or composition prompts unless user has entered them
