@@ -56,7 +56,7 @@ type ExerciseDraft = {
 type DetailTab = "summary" | "history" | "howto";
 type ThemePreference = "light" | "dark" | "system";
 type DraftSetType = "warmup" | "normal" | "drop" | "restpause" | "failure";
-type AppView = "home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "profile";
+type AppView = "home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "profile" | "history-detail";
 
 // ── Psychological Data Layer ──────────────────────────────────────────────────
 // V1: types and storage stubs defined now so data is captured from day one.
@@ -105,6 +105,7 @@ interface UserPsychProfile {
   schemaVersion: 1;
   motivationalWhy: MotivationalWhy | null;
   primaryGoal: TrainingGoal | null;
+  secondaryGoal: TrainingGoal | null;
   experienceLevel: ExperienceLevel | null;
   equipmentAccess: EquipmentAccess | null;
   scheduleCommitment: ScheduleCommitment | null;
@@ -122,11 +123,13 @@ interface UserPsychProfile {
   sessionLengthPref: number | null;
   bestTimePref: string | null;
   workoutStylePref: string | null;
+  planLengthWeeksPref: number | null; // mesocycle length preference (default 12)
   // ── Mindset / psych ──
   preWorkoutFeeling: string | null;
   isReturningAfterBreak: boolean;
   breakMonths: number | null;
   successVision: string | null;
+  biggestObstacles: string[];
   lastGoalCheckAt: string | null;          // ISO timestamp — 90-day re-check prompt
   // Consent flags — each capture dimension can be individually disabled
   capturePostWorkoutMood: boolean;
@@ -207,10 +210,56 @@ interface DerivedPsychProfile {
   goalDriftDetectedAt: string | null;
 }
 
+// ── RepIQ Generated Plan — V1 rules-based, V2 will add AI layer ───────────────
+type SplitType = "full_body" | "upper_lower" | "ppl" | "body_part";
+
+interface RepIQPlanExercise {
+  exerciseId: string;
+  sets: number;
+  reps: string;
+  restSeconds: number;
+}
+
+interface RepIQPlanDay {
+  sessionLabel: string;
+  focus: string;
+  exercises: RepIQPlanExercise[];
+  completedAt: string | null;
+}
+
+interface RepIQPlanWeek {
+  weekNumber: number;
+  isCompleted: boolean;
+  days: RepIQPlanDay[];
+}
+
+interface RepIQPlan {
+  schemaVersion: 1;
+  id: string;
+  generatedAt: string;
+  startDate: string;
+  planName: string;
+  goal: TrainingGoal;
+  secondaryGoal: TrainingGoal | null;
+  experienceLevel: ExperienceLevel;
+  daysPerWeek: number;
+  sessionLengthMin: number;
+  splitType: SplitType;
+  mesocycleLengthWeeks: number;
+  currentWeekIndex: number;
+  weeks: RepIQPlanWeek[];
+  status?: "active" | "paused";
+  needsReview?: boolean;            // set when extra volume was logged outside the plan
+  extraVolumeCount?: number;        // how many cross-plan workouts triggered the flag
+  extraVolumeWorkoutIds?: string[]; // savedAt IDs of those workouts (for delete cleanup)
+  lastRegeneratedAt?: string;       // ISO timestamp of last full or partial regeneration
+}
+
 const DEFAULT_PSYCH_PROFILE: UserPsychProfile = {
   schemaVersion: 1,
   motivationalWhy: null,
   primaryGoal: null,
+  secondaryGoal: null,
   experienceLevel: null,
   equipmentAccess: null,
   scheduleCommitment: null,
@@ -226,10 +275,12 @@ const DEFAULT_PSYCH_PROFILE: UserPsychProfile = {
   sessionLengthPref: null,
   bestTimePref: null,
   workoutStylePref: null,
+  planLengthWeeksPref: null,
   preWorkoutFeeling: null,
   isReturningAfterBreak: false,
   breakMonths: null,
   successVision: null,
+  biggestObstacles: [],
   lastGoalCheckAt: null,
   capturePostWorkoutMood: true,
   capturePostWorkoutEnergy: true,
@@ -327,7 +378,7 @@ type ActivePlanSession = {
   source: PlanSessionSource;
   planId: string | null;
   originalPlan: WorkoutPlan | null;
-} | null;
+} | { source: "repiq"; planId: null; originalPlan: null; weekIdx: number; dayIdx: number } | null;
 
 type WorkoutSettings = {
   defaultRestSeconds: string;
@@ -638,6 +689,7 @@ type FinishWorkoutDraft = {
   note: string;
   date: string;
   duration: string;
+  durationSeconds: number; // elapsed seconds — used to pre-seed timer on edit-from-history
   totalVolume: number;
   totalSets: number;
   exerciseCount: number;
@@ -653,6 +705,7 @@ type FinishWorkoutDraft = {
 
 type SavedWorkoutData = FinishWorkoutDraft & {
   savedAt: string; // ISO string
+  repiqSourceKey?: string; // "weekIdx-dayIdx" if completed as part of a RepIQ plan session
 };
 
 type ExerciseRestDefaults = Record<string, string>;
@@ -716,6 +769,7 @@ const postWorkoutPsychStorageKey  = "repiq-post-workout-psych";
 const dailyReadinessStorageKey   = "repiq-daily-readiness";
 const sessionBehaviorStorageKey  = "repiq-session-behavior";
 const derivedPsychStorageKey     = "repiq-derived-psych";
+const repiqPlanStorageKey            = "repiq-generated-plan";
 
 const setTypeOptions: Array<{
   value: DraftSetType;
@@ -3133,6 +3187,14 @@ function persistSavedWorkout(workout: SavedWorkoutData): void {
   }
 }
 
+function persistSavedWorkoutsList(workouts: SavedWorkoutData[]): void {
+  try {
+    window.localStorage.setItem(savedWorkoutsStorageKey, JSON.stringify(workouts));
+  } catch {
+    // storage full or unavailable — ignore
+  }
+}
+
 // ── Psychological data storage ───────────────────────────────────────────────
 
 function getStoredPsychProfile(): UserPsychProfile {
@@ -3145,6 +3207,30 @@ function getStoredPsychProfile(): UserPsychProfile {
 
 function persistPsychProfile(profile: UserPsychProfile): void {
   try { window.localStorage.setItem(psychProfileStorageKey, JSON.stringify(profile)); } catch {}
+}
+
+function getStoredRepIQPlan(): RepIQPlan | null {
+  try {
+    const raw = window.localStorage.getItem(repiqPlanStorageKey);
+    if (!raw) return null;
+    const plan = JSON.parse(raw) as RepIQPlan;
+    // Migrate: ensure all days have completedAt field (added in schema v2)
+    const migrated: RepIQPlan = {
+      ...plan,
+      weeks: plan.weeks.map((week) => ({
+        ...week,
+        days: week.days.map((day) => ({
+          ...day,
+          completedAt: day.completedAt ?? null,
+        })),
+      })),
+    };
+    return migrated;
+  } catch { return null; }
+}
+
+function persistRepIQPlan(plan: RepIQPlan): void {
+  try { window.localStorage.setItem(repiqPlanStorageKey, JSON.stringify(plan)); } catch {}
 }
 
 function getStoredPostWorkoutPsych(): PostWorkoutPsych[] {
@@ -4158,8 +4244,9 @@ function getDisplaySetLabel(draftSets: DraftSet[], index: number) {
 function getPreviousReferenceSet(
   draftSets: DraftSet[],
   index: number,
-  lastSession: ExerciseHistorySession
+  lastSession: ExerciseHistorySession | undefined
 ) {
+  if (!lastSession) return undefined;
   const draftType = draftSets[index]?.setType;
   const targetOccurrence = getSetTypeOccurrence(draftSets, index);
   const matchingSets = lastSession.sets.filter(
@@ -4209,7 +4296,7 @@ function normalizeSupersetGroups(exercises: ExerciseDraft[]) {
 
 function buildCompletedSets(
   draftSets: DraftSet[],
-  lastSession: ExerciseHistorySession,
+  lastSession: ExerciseHistorySession | undefined,
   carryForwardDefaults: boolean,
   measurementType: MeasurementType = "reps_volume"
 ) {
@@ -4288,7 +4375,7 @@ function estimateOneRm(set?: WorkoutSet) {
 function resolveDraftSet(
   draftSets: DraftSet[],
   index: number,
-  lastSession: ExerciseHistorySession,
+  lastSession: ExerciseHistorySession | undefined,
   carryForwardDefaults: boolean,
   measurementType: MeasurementType = "reps_volume"
 ) {
@@ -4845,7 +4932,15 @@ function PlanCard({
   onDrop?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [menuOpen]);
   const musclePreview = planMusclePreview(plan, library);
   const tags = [...(plan.userTags ?? [])].reverse(); // latest first
   const statsRef = useRef<HTMLDivElement>(null);
@@ -4877,85 +4972,115 @@ function PlanCard({
   const hiddenCount = tags.length - visibleCount;
 
   return (
-    <>
-      <article
-        className={`plan-card plan-card--tappable${draggable ? " is-draggable" : ""}`}
-        draggable={draggable}
-        onClick={onOpen}
-        onDragStart={draggable ? onDragStart : undefined}
-        onDragOver={draggable ? onDragOver : undefined}
-        onDrop={draggable ? onDrop : undefined}
-      >
-        <div className="plan-card-top">
-          <div className="plan-card-meta">
-            <h3 className="plan-card-name">{plan.name}</h3>
-            {plan.note && <p className="plan-card-note">{plan.note}</p>}
-          </div>
-          {!isTemplate && (
-            <div className="plan-card-actions" onClick={(e) => e.stopPropagation()}>
-              <button
-                className="plan-card-menu-btn"
-                type="button"
-                onClick={() => setMenuOpen((v) => !v)}
-                aria-label="Plan options"
-              >
-                ⋮
-              </button>
-              {menuOpen && (
-                <div className="plan-card-menu" onClick={() => setMenuOpen(false)}>
-                  <button type="button" onClick={onShare}>Share</button>
-                  <button type="button" onClick={onEdit}>Edit</button>
-                  <button type="button" onClick={onEditTags}>Edit Tags</button>
-                  <button type="button" onClick={onDuplicate}>Duplicate</button>
-                  {onDelete && (
-                    <button type="button" className="is-danger" onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setConfirmDelete(true); }}>Delete</button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+    <article
+      className={`plan-card plan-card--tappable${draggable ? " is-draggable" : ""}`}
+      draggable={draggable}
+      onClick={onOpen}
+      onDragStart={draggable ? onDragStart : undefined}
+      onDragOver={draggable ? onDragOver : undefined}
+      onDrop={draggable ? onDrop : undefined}
+    >
+      <div className="plan-card-top">
+        <div className="plan-card-meta">
+          <h3 className="plan-card-name">{plan.name}</h3>
+          {plan.note && <p className="plan-card-note">{plan.note}</p>}
         </div>
-
-        {tags.length > 0 && (
-          <div className="plan-card-stats" ref={statsRef}>
-            {tags.map((t, i) => (
-              <span
-                key={t}
-                data-tag
-                className="plan-tag-inline"
-                style={i >= visibleCount ? { display: "none" } : undefined}
-              >
-                {t}
-              </span>
-            ))}
-            {hiddenCount > 0 && (
-              <span className="plan-tags-more">+{hiddenCount} more</span>
+        {!isTemplate && (
+          <div className="plan-card-actions" ref={menuRef} onClick={(e) => e.stopPropagation()}>
+            <button
+              className="plan-card-menu-btn"
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label="Plan options"
+            >
+              ⋮
+            </button>
+            {menuOpen && (
+              <div className="plan-card-menu" onClick={() => setMenuOpen(false)}>
+                <button type="button" onClick={onShare}>Share</button>
+                <button type="button" onClick={onEdit}>Edit</button>
+                <button type="button" onClick={onEditTags}>Edit Tags</button>
+                <button type="button" onClick={onDuplicate}>Duplicate</button>
+                {onDelete && (
+                  <button type="button" className="is-danger" onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(); }}>Delete</button>
+                )}
+              </div>
             )}
           </div>
         )}
-        <p className="plan-card-excount">
-          {plan.exercises.length} {plan.exercises.length === 1 ? "exercise" : "exercises"}
-        </p>
-        {musclePreview && <p className="plan-card-muscles-line">{musclePreview}</p>}
-        {position !== undefined && (
-          <span className="plan-card-position" aria-hidden="true">{position}</span>
-        )}
-      </article>
+      </div>
 
-      {confirmDelete && (
-        <div className="plan-delete-confirm-overlay" onClick={() => setConfirmDelete(false)}>
-          <div className="plan-delete-confirm-sheet" onClick={(e) => e.stopPropagation()}>
-            <p className="plan-delete-confirm-title">Delete "{plan.name}"?</p>
-            <p className="plan-delete-confirm-body">This workout will be permanently removed. You can&apos;t undo this.</p>
-            <div className="plan-delete-confirm-actions">
-              <button type="button" className="secondary-button" onClick={() => setConfirmDelete(false)}>Cancel</button>
-              <button type="button" className="danger-button" onClick={() => { setConfirmDelete(false); onDelete?.(); }}>Delete</button>
-            </div>
-          </div>
+      {tags.length > 0 && (
+        <div className="plan-card-stats" ref={statsRef}>
+          {tags.map((t, i) => (
+            <span
+              key={t}
+              data-tag
+              className="plan-tag-inline"
+              style={i >= visibleCount ? { display: "none" } : undefined}
+            >
+              {t}
+            </span>
+          ))}
+          {hiddenCount > 0 && (
+            <span className="plan-tags-more">+{hiddenCount} more</span>
+          )}
         </div>
       )}
-    </>
+      <p className="plan-card-excount">
+        {plan.exercises.length} {plan.exercises.length === 1 ? "exercise" : "exercises"}
+      </p>
+      {musclePreview && <p className="plan-card-muscles-line">{musclePreview}</p>}
+      {position !== undefined && (
+        <span className="plan-card-position" aria-hidden="true">{position}</span>
+      )}
+    </article>
   );
+}
+
+function buildPlanContext(plan: RepIQPlan, profile: UserPsychProfile | null): string {
+  const days = plan.daysPerWeek;
+  const split = plan.splitType;
+  const goal = plan.goal;
+  const why = profile?.motivationalWhy ?? null;
+  const exp = plan.experienceLevel;
+
+  // Sentence 1 — opening hook tied to why the user is here
+  const whySentence: Record<string, string> = {
+    inconsistent:      `You told us consistency has been your challenge — so this plan is designed to be simple enough to show up for, ${days} times a week.`,
+    plateau:           `You said you've hit a plateau and need structure — this plan gives you that, with ${days} sessions a week and progressive overload built in week over week.`,
+    look_feel_stronger:`You're here to look and feel stronger — so we structured ${days} sessions a week with the volume and intensity that drives visible, lasting change.`,
+    fresh_start:       `You're starting fresh — this plan gives you a clean, repeatable structure: ${days} focused sessions a week, nothing more than you need.`,
+    feel_good:         `You want to feel good and stay consistent — this plan keeps it sustainable: ${days} sessions a week, leaving room to recover and come back strong.`,
+  };
+  const opening = why && whySentence[why]
+    ? whySentence[why]
+    : `${days} sessions a week, each designed to move you toward ${
+        goal === "build_muscle" ? "building muscle" :
+        goal === "get_stronger" ? "getting stronger" :
+        goal === "improve_fitness" ? "better overall fitness" :
+        goal === "athletic_performance" ? "athletic performance" :
+        "your goals"
+      }.`;
+
+  // Sentence 2 — why this split for this person
+  const splitSentence: Record<string, string> = {
+    full_body:   `Every session hits all major muscle groups — so even if you miss a day, nothing gets left behind.`,
+    upper_lower: `Upper and lower body alternate each session, so each muscle group gets trained twice a week with proper recovery in between.`,
+    ppl:         `Push, Pull, and Legs each get their own day — enough dedicated volume per muscle group to drive real progression.`,
+    body_part:   `Each session focuses on one muscle group, maximising the stimulus and giving it a full week to recover before you hit it again.`,
+  };
+  const splitLine = splitSentence[split] ?? "";
+
+  // Sentence 3 — experience-honest note, no labels
+  const expSentence =
+    (exp === "never" || exp === "beginner")
+      ? `The rep ranges and set counts are calibrated for where you are right now — enough to drive adaptation without burning you out early.`
+      : exp === "intermediate"
+      ? `Sets, reps, and rest are tuned for your training age — enough stimulus to keep driving progress without unnecessary junk volume.`
+      : `Volume and intensity are set for a trained athlete — structured to challenge you and keep the adaptation signal strong.`;
+
+  return [opening, splitLine, expSentence].filter(Boolean).join(" ");
 }
 
 function PlannerHomePage({
@@ -4983,6 +5108,18 @@ function PlannerHomePage({
   defaultGoal,
   defaultLevel,
   defaultEquipment,
+  repiqPlan,
+  initialPlannerMode,
+  onStartRepIQSession,
+  onRegeneratePlan,
+  onRegenerateRemaining,
+  onSaveSessionToLibrary,
+  psychProfile,
+  onToggleRepIQStatus,
+  onDismissReview,
+  savedWorkouts,
+  onOpenHistoryWorkout,
+  onSaveHistoryWorkout,
 }: {
   plans: WorkoutPlan[];
   library: ExerciseDraft[];
@@ -5008,6 +5145,18 @@ function PlannerHomePage({
   onDeletePlan: (planId: string) => void;
   onUseTemplate: (template: WorkoutPlan) => void;
   onResumeWorkout: () => void;
+  repiqPlan?: RepIQPlan | null;
+  initialPlannerMode?: "repiq" | "custom";
+  onStartRepIQSession?: (weekIdx: number, dayIdx: number) => void;
+  onRegeneratePlan?: (prefs: { goal: string; experience: string; daysPerWeek: number; sessionLength: number; planLengthWeeks: number; splitPref: string | null }) => void;
+  onRegenerateRemaining?: () => void;
+  onSaveSessionToLibrary?: (day: RepIQPlanDay, sessionLabel: string) => void;
+  psychProfile?: UserPsychProfile | null;
+  onToggleRepIQStatus?: () => void;
+  onDismissReview?: () => void;
+  savedWorkouts?: SavedWorkoutData[];
+  onOpenHistoryWorkout?: (workout: SavedWorkoutData | null, weekIdx: number, dayIdx: number, label: string, sessionNum: number) => void;
+  onSaveHistoryWorkout?: (workout: SavedWorkoutData) => void;
 }) {
   // Generate state
   const [genGoal, setGenGoal] = useState("Hypertrophy");
@@ -5024,6 +5173,33 @@ function PlannerHomePage({
   const [libLevel, setLibLevel] = useState<string | null>(defaultLevel);
   const [libGoal, setLibGoal] = useState<string | null>(defaultGoal);
   const [libEquipment, setLibEquipment] = useState<string | null>(defaultEquipment);
+  const [plannerMode, setPlannerMode] = useState<"repiq" | "custom">(initialPlannerMode ?? "repiq");
+  const [plannerModeOpen, setPlannerModeOpen] = useState(false);
+  const plannerModeDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!plannerModeOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (plannerModeDropdownRef.current && !plannerModeDropdownRef.current.contains(e.target as Node)) {
+        setPlannerModeOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [plannerModeOpen]);
+  const [showPrefsOverlay, setShowPrefsOverlay] = useState(false);
+  const [prefGoal, setPrefGoal] = useState<string>(repiqPlan?.goal ?? "build_muscle");
+  const [prefExp, setPrefExp] = useState<string>(repiqPlan?.experienceLevel ?? "beginner");
+  const [prefDays, setPrefDays] = useState<number>(repiqPlan?.daysPerWeek ?? 3);
+  const [prefLength, setPrefLength] = useState<number>(repiqPlan?.sessionLengthMin ?? 45);
+  const [prefWeeks, setPrefWeeks] = useState<number>(repiqPlan?.mesocycleLengthWeeks ?? 12);
+  const [prefSplit, setPrefSplit] = useState<string | null>(null);
+  const [sessionMenuIdx, setSessionMenuIdx] = useState<string | null>(null);
+  const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
+  const [editingSessionName, setEditingSessionName] = useState("");
+  const [completedExpanded, setCompletedExpanded] = useState(false);
+  const [toggledSessionKeys, setToggledSessionKeys] = useState<Set<string>>(new Set());
+  const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
+  const [savedToast, setSavedToast] = useState(false);
   const [libFilterOpen, setLibFilterOpen] = useState(false);
   const [libFilterFocus, setLibFilterFocus] = useState<string | null>(null);
   const [libDraftCategory, setLibDraftCategory] = useState<string | null>(null);
@@ -5262,6 +5438,28 @@ function PlannerHomePage({
               >
                 Start Workout
               </button>
+              {!detailIsTemplate && (
+                <>
+                  <button
+                    type="button"
+                    className="plan-detail-icon-btn"
+                    title="Edit workout"
+                    onClick={() => { setDetailPlan(null); onEditPlan(detailPlan); }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  {!SAMPLE_PLAN_IDS.has(detailPlan.id) && (
+                    <button
+                      type="button"
+                      className="plan-detail-icon-btn plan-detail-icon-btn--danger"
+                      title="Delete workout"
+                      onClick={() => { setDetailPlan(null); setDeletingPlanId(detailPlan.id); }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    </button>
+                  )}
+                </>
+              )}
             </>
           )}
         </div>
@@ -5323,13 +5521,478 @@ function PlannerHomePage({
           ←
         </button>
         <div className="planner-topbar-copy">
-          <h1>Workout Planner</h1>
+          {repiqPlan ? (
+            <div className="planner-mode-dropdown-wrap" ref={plannerModeDropdownRef}>
+              <button
+                className="planner-mode-dropdown-btn"
+                type="button"
+                onClick={() => setPlannerModeOpen((v) => !v)}
+              >
+                <span className="planner-mode-dropdown-label">
+                  {plannerMode === "repiq" ? "✦ RepIQ Plan" : "Custom Workout Planner"}
+                </span>
+                <svg
+                  className={`planner-mode-chevron${plannerModeOpen ? " is-open" : ""}`}
+                  width="12" height="12" viewBox="0 0 12 12"
+                  fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                >
+                  <polyline points="2,4 6,8 10,4"/>
+                </svg>
+              </button>
+              {plannerModeOpen && (
+                <div className="planner-mode-dropdown-menu">
+                  {(["repiq", "custom"] as const).map((m) => (
+                    <button
+                      key={m}
+                      className={`planner-mode-option${plannerMode === m ? " is-active" : ""}`}
+                      type="button"
+                      onClick={() => { setPlannerMode(m); setPlannerModeOpen(false); }}
+                    >
+                      {m === "repiq" ? "✦ RepIQ Plan" : "Custom Workout Planner"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <h1>Workout Planner</h1>
+          )}
         </div>
         <button type="button" className="theme-toggle-btn" onClick={onToggleTheme} aria-label="Toggle theme">
           {resolvedTheme === "dark" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
         </button>
       </header>
 
+      {repiqPlan && plannerMode === "repiq" && (() => {
+        // Minimum 1 full week unlocked; each completed session unlocks 1 more beyond that
+        const totalCompleted = repiqPlan.weeks.reduce(
+          (acc, week) => acc + week.days.filter((d) => d.completedAt).length, 0
+        );
+        const sessionsPerWeek = repiqPlan.weeks[0]?.days.length ?? repiqPlan.daysPerWeek;
+        const totalUnlocked = sessionsPerWeek + totalCompleted;
+        // Build flat sessions list
+        let sessionNum = 0;
+        const allSessions = repiqPlan.weeks.flatMap((week, wi) =>
+          week.days.map((day, di) => {
+            sessionNum++;
+            const globalIdx = sessionNum - 1; // 0-indexed
+            return {
+              key: `${wi}-${di}`,
+              weekIdx: wi,
+              dayIdx: di,
+              sessionNum,
+              label: day.sessionLabel,
+              focus: day.focus,
+              exercises: day.exercises,
+              isCompleted: !!day.completedAt,
+              isCurrent: wi === repiqPlan.currentWeekIndex && !week.isCompleted,
+              isLocked: globalIdx >= totalUnlocked,
+            };
+          })
+        );
+
+        const completedSessions = allSessions.filter(s => s.isCompleted);
+        const activeSessions = allSessions.filter(s => !s.isCompleted && !s.isLocked);
+        const lockedSessions = allSessions.filter(s => s.isLocked);
+
+        return (
+          <div className="planner-repiq-section">
+            {/* Header */}
+            <div className="repiq-plan-header">
+              <div>
+                <h2 className="repiq-plan-title">{repiqPlan.planName}</h2>
+                <div className="repiq-plan-meta-row">
+                  <span>{SPLIT_LABEL[repiqPlan.splitType]}</span>
+                  <span className="repiq-meta-dot">·</span>
+                  <span>{repiqPlan.daysPerWeek} days/week</span>
+                  <span className="repiq-meta-dot">·</span>
+                  <span>{repiqPlan.mesocycleLengthWeeks} weeks</span>
+                </div>
+              </div>
+              <div className="repiq-plan-header-btns">
+                {onToggleRepIQStatus && (
+                  <button
+                    type="button"
+                    className={`repiq-status-btn${repiqPlan.status === "paused" ? " is-paused" : ""}`}
+                    onClick={onToggleRepIQStatus}
+                  >
+                    {repiqPlan.status === "paused" ? "▶ Resume" : "⏸ Pause"}
+                  </button>
+                )}
+                {onRegeneratePlan && (
+                  <button
+                    type="button"
+                    className="repiq-regenerate-btn"
+                    onClick={() => {
+                      setPrefGoal(repiqPlan.goal);
+                      setPrefExp(repiqPlan.experienceLevel);
+                      setPrefDays(repiqPlan.daysPerWeek);
+                      setPrefLength(repiqPlan.sessionLengthMin);
+                      setPrefSplit(null);
+                      setShowPrefsOverlay(true);
+                    }}
+                  >
+                    ✦ Adjust Preferences
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Paused notice */}
+            {repiqPlan.status === "paused" && (
+              <div className="repiq-paused-banner">
+                <span>⏸ Plan paused</span>
+                <span className="repiq-paused-sub">Sessions won't count toward plan progress. Resume when you're ready.</span>
+              </div>
+            )}
+
+            {/* Needs-review notice */}
+            {repiqPlan.needsReview && (
+              <div className="repiq-needs-review-banner">
+                <div className="repiq-needs-review-body">
+                  <p className="repiq-needs-review-title">Your remaining sessions may need a refresh</p>
+                  <p className="repiq-needs-review-sub">
+                    You logged {repiqPlan.extraVolumeCount ?? 1} session{(repiqPlan.extraVolumeCount ?? 1) !== 1 ? "s" : ""} outside this plan. RepIQ can regenerate your remaining sessions to account for the extra volume and avoid overlap.
+                  </p>
+                </div>
+                <div className="repiq-needs-review-actions">
+                  {onRegenerateRemaining && (
+                    <button
+                      type="button"
+                      className="repiq-needs-review-regen-btn"
+                      onClick={onRegenerateRemaining}
+                    >
+                      Regenerate remaining sessions
+                    </button>
+                  )}
+                  {onDismissReview && (
+                    <button
+                      type="button"
+                      className="repiq-needs-review-dismiss-btn"
+                      onClick={onDismissReview}
+                    >
+                      Dismiss
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Plan context — why this plan was chosen */}
+            <div className="repiq-plan-context">
+              <p className="repiq-plan-context-text">{buildPlanContext(repiqPlan, psychProfile ?? null)}</p>
+            </div>
+
+            {/* Active / upcoming sessions */}
+            <div className="repiq-sessions-list">
+              {activeSessions.map((s, idx) => {
+                const isNext = idx === 0;
+                const isMenuOpen = sessionMenuIdx === s.key;
+                const isEditing = editingSessionKey === s.key;
+                // Next card: expanded by default; others: collapsed by default
+                const isToggled = toggledSessionKeys.has(s.key);
+                const isExpanded = isNext ? !isToggled : isToggled;
+                const toggleExpand = () => setToggledSessionKeys(prev => {
+                  const next = new Set(prev);
+                  if (next.has(s.key)) next.delete(s.key); else next.add(s.key);
+                  return next;
+                });
+                return (
+                  <div key={s.key} className={`repiq-session-card${isNext ? " is-next" : ""}`}>
+                    {/* Row 1: session number + badges + actions */}
+                    <div className="repiq-session-header">
+                      <div className="repiq-session-meta">
+                        <span className="repiq-session-num">Session {s.sessionNum}</span>
+                        {isNext && <span className="repiq-session-badge">Next</span>}
+                      </div>
+                      <div className="repiq-session-header-right">
+                        {onStartRepIQSession && (
+                          <button
+                            type="button"
+                            className={`repiq-session-start-pill${isNext ? " is-next" : ""}${repiqPlan.status === "paused" ? " is-paused-disabled" : ""}`}
+                            onClick={(e) => { e.stopPropagation(); if (repiqPlan.status !== "paused") onStartRepIQSession(s.weekIdx, s.dayIdx); }}
+                            disabled={repiqPlan.status === "paused"}
+                            title={repiqPlan.status === "paused" ? "Resume plan to start sessions" : undefined}
+                          >
+                            Start
+                          </button>
+                        )}
+                        <div className="repiq-session-menu-wrap">
+                          <button
+                            type="button"
+                            className="repiq-session-menu-btn"
+                            onClick={() => setSessionMenuIdx(isMenuOpen ? null : s.key)}
+                            aria-label="Session options"
+                          >⋯</button>
+                          {isMenuOpen && (
+                            <div className="repiq-session-menu">
+                              <button type="button" onClick={() => {
+                                setEditingSessionName(s.label);
+                                setEditingSessionKey(s.key);
+                                setSessionMenuIdx(null);
+                              }}>Rename session</button>
+                              {onSaveSessionToLibrary && (
+                                <button type="button" onClick={() => {
+                                  const week = repiqPlan.weeks[s.weekIdx];
+                                  onSaveSessionToLibrary(week.days[s.dayIdx], s.label);
+                                  setSessionMenuIdx(null);
+                                  setSavedToast(true);
+                                  setTimeout(() => setSavedToast(false), 2500);
+                                }}>Save to My Workouts</button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Row 2: session name */}
+                    {isEditing ? (
+                      <div className="repiq-session-rename-row">
+                        <input
+                          className="repiq-session-rename-input"
+                          value={editingSessionName}
+                          onChange={e => setEditingSessionName(e.target.value)}
+                          autoFocus
+                        />
+                        <button type="button" className="repiq-session-rename-save" onClick={() => setEditingSessionKey(null)}>Save</button>
+                        <button type="button" className="repiq-session-rename-cancel" onClick={() => setEditingSessionKey(null)}>✕</button>
+                      </div>
+                    ) : (
+                      <p className="repiq-session-name">{s.label}</p>
+                    )}
+                    {/* Row 3: muscles/focus */}
+                    {s.focus && <p className="repiq-session-focus">{s.focus}</p>}
+                    {/* Expandable exercise list */}
+                    <button type="button" className="repiq-session-expand-toggle" onClick={toggleExpand}>
+                      {isExpanded ? "Hide exercises ›" : `${s.exercises.length} exercises ›`}
+                    </button>
+                    {isExpanded && (
+                      <ul className="repiq-ex-list">
+                        {s.exercises.map((e) => {
+                          const exName = library.find((ex) => ex.id === e.exerciseId)?.name ?? e.exerciseId;
+                          return (
+                            <li key={e.exerciseId} className="repiq-ex-item">
+                              {exName} <span className="repiq-ex-sets">{e.sets}×{e.reps}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Locked upcoming sessions */}
+              {lockedSessions.slice(0, 4).map((s) => (
+                <div key={s.key} className="repiq-session-card is-locked">
+                  <div className="repiq-session-header">
+                    <div className="repiq-session-meta">
+                      <span className="repiq-session-num">Session {s.sessionNum}</span>
+                    </div>
+                    <span className="repiq-session-lock">🔒</span>
+                  </div>
+                  <p className="repiq-session-name">{s.label}</p>
+                  {s.focus && <p className="repiq-session-focus">{s.focus}</p>}
+                </div>
+              ))}
+              {lockedSessions.length > 4 && (
+                <p className="repiq-more-locked">🔒 Future sessions unlock as you complete each week</p>
+              )}
+            </div>
+
+            {/* Completed sessions — last 2 weeks shown inline */}
+            {completedSessions.length > 0 && (() => {
+              const twoWeeksCount = 2 * (repiqPlan.weeks[0]?.days.length ?? repiqPlan.daysPerWeek);
+              const recentCompleted = completedSessions.slice(-twoWeeksCount);
+              const olderCount = completedSessions.length - recentCompleted.length;
+              return (
+                <div className="repiq-completed-section">
+                  <button
+                    type="button"
+                    className="repiq-completed-toggle"
+                    onClick={() => setCompletedExpanded(v => !v)}
+                  >
+                    <span>Completed · {completedSessions.length} sessions</span>
+                    <span className={`repiq-completed-chevron${completedExpanded ? " is-open" : ""}`}>›</span>
+                  </button>
+                  {completedExpanded && (
+                    <div className="repiq-sessions-list">
+                      {olderCount > 0 && (
+                        <p className="repiq-history-see-all">
+                          {olderCount} earlier session{olderCount !== 1 ? "s" : ""} — see full history in <strong>Workout History</strong>
+                        </p>
+                      )}
+                      {recentCompleted.map((s) => {
+                        const historyMatch = savedWorkouts?.find(w => w.repiqSourceKey === s.key) ?? null;
+                        return (
+                          <div
+                            key={s.key}
+                            className="repiq-session-card is-done"
+                            style={{ cursor: "pointer" }}
+                            onClick={() => onOpenHistoryWorkout?.(historyMatch, s.weekIdx, s.dayIdx, s.label, s.sessionNum)}
+                          >
+                            <div className="repiq-session-header">
+                              <div className="repiq-session-meta">
+                                <span className="repiq-session-num">Session {s.sessionNum}</span>
+                                {s.focus && <span className="repiq-session-focus">{s.focus}</span>}
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span className="repiq-week-badge is-done">✓ Done</span>
+                                <span className="repiq-session-chevron">›</span>
+                              </div>
+                            </div>
+                            <p className="repiq-session-name">{s.label}</p>
+                            {historyMatch && onSaveHistoryWorkout && (
+                              <button
+                                type="button"
+                                className="repiq-history-save-btn"
+                                onClick={(e) => { e.stopPropagation(); onSaveHistoryWorkout(historyMatch); }}
+                              >
+                                Save to My Workouts
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Preferences overlay */}
+            {showPrefsOverlay && (
+              <div className="repiq-prefs-overlay" onClick={() => setShowPrefsOverlay(false)}>
+                <div className="repiq-prefs-sheet" onClick={e => e.stopPropagation()}>
+                  <div className="repiq-prefs-header">
+                    <h3 className="repiq-prefs-title">Adjust Plan Preferences</h3>
+                    <button type="button" className="repiq-prefs-close" onClick={() => setShowPrefsOverlay(false)}>✕</button>
+                  </div>
+
+                  <div className="repiq-prefs-body">
+                    {/* Goal */}
+                    <div className="ob-field">
+                      <label className="ob-field-label">Primary Goal</label>
+                      <div className="ob-chip-grid">
+                        {([
+                          { value: "build_muscle", label: "💪 Build Muscle" },
+                          { value: "get_stronger", label: "🏋️ Get Stronger" },
+                          { value: "improve_fitness", label: "🏃 Improve Fitness" },
+                          { value: "fat_loss", label: "🔥 Fat Loss" },
+                          { value: "athletic_performance", label: "⚡ Performance" },
+                          { value: "stay_active", label: "🌿 Stay Active" },
+                        ] as { value: string; label: string }[]).map(o => (
+                          <button
+                            key={o.value}
+                            type="button"
+                            className={`ob-chip${prefGoal === o.value ? " is-active" : ""}`}
+                            onClick={() => setPrefGoal(o.value)}
+                          >
+                            <span className="ob-chip-check" style={{ visibility: prefGoal === o.value ? "visible" : "hidden" }}>✓</span>
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Experience */}
+                    <div className="ob-field">
+                      <label className="ob-field-label">Experience Level</label>
+                      <div className="ob-chip-grid">
+                        {([
+                          { value: "never", label: "🌱 New to training" },
+                          { value: "beginner", label: "🚶 Getting started" },
+                          { value: "intermediate", label: "🏃 Building foundations" },
+                          { value: "advanced", label: "💪 Experienced" },
+                          { value: "veteran", label: "🦅 Veteran" },
+                        ] as { value: string; label: string }[]).map(o => (
+                          <button
+                            key={o.value}
+                            type="button"
+                            className={`ob-chip${prefExp === o.value ? " is-active" : ""}`}
+                            onClick={() => setPrefExp(o.value)}
+                          >
+                            <span className="ob-chip-check" style={{ visibility: prefExp === o.value ? "visible" : "hidden" }}>✓</span>
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Days per week */}
+                    <div className="ob-field">
+                      <label className="ob-field-label">Days per week</label>
+                      <div className="ob-chip-row">
+                        {[1, 2, 3, 4, 5, 6, 7].map(d => (
+                          <button
+                            key={d}
+                            type="button"
+                            className={`ob-chip${prefDays === d ? " is-active" : ""}`}
+                            onClick={() => setPrefDays(d)}
+                          >
+                            <span className="ob-chip-check" style={{ visibility: prefDays === d ? "visible" : "hidden" }}>✓</span>
+                            {d}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Session length */}
+                    <div className="ob-field">
+                      <label className="ob-field-label">Session length</label>
+                      <div className="ob-chip-row">
+                        {([30, 45, 60, 75, 90] as number[]).map(l => (
+                          <button
+                            key={l}
+                            type="button"
+                            className={`ob-chip${prefLength === l ? " is-active" : ""}`}
+                            onClick={() => setPrefLength(l)}
+                          >
+                            <span className="ob-chip-check" style={{ visibility: prefLength === l ? "visible" : "hidden" }}>✓</span>
+                            {l} min
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Plan length */}
+                    <div className="ob-field">
+                      <label className="ob-field-label">Plan Length</label>
+                      <div className="ob-chip-row">
+                        {([4, 6, 8, 10, 12, 16] as number[]).map(w => (
+                          <button
+                            key={w}
+                            type="button"
+                            className={`ob-chip${prefWeeks === w ? " is-active" : ""}`}
+                            onClick={() => setPrefWeeks(w)}
+                          >
+                            <span className="ob-chip-check" style={{ visibility: prefWeeks === w ? "visible" : "hidden" }}>✓</span>
+                            {w}w
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="repiq-prefs-footer">
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => {
+                        onRegeneratePlan?.({ goal: prefGoal, experience: prefExp, daysPerWeek: prefDays, sessionLength: prefLength, planLengthWeeks: prefWeeks, splitPref: prefSplit });
+                        setShowPrefsOverlay(false);
+                      }}
+                    >
+                      Regenerate Plan
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+      <div style={repiqPlan && plannerMode === "repiq" ? { display: "none" } : undefined}>
       <section className="planner-actions-strip">
         <div className="planner-top-actions-row">
           <button
@@ -5345,8 +6008,15 @@ function PlannerHomePage({
             onClick={onStartEmpty}
             disabled={hasActiveWorkout}
           >
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor" aria-hidden="true" style={{flexShrink:0}}>
-              <path d="M7.5 1L2 7.5h4.5L5 12l6.5-7H7L7.5 1z"/>
+            <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden="true" style={{flexShrink:0, filter:"drop-shadow(0 0 3px rgba(251,113,20,0.55))"}}>
+              <defs>
+                <linearGradient id="planner-flame" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#facc15"/>
+                  <stop offset="50%" stopColor="#f97316"/>
+                  <stop offset="100%" stopColor="#ef4444"/>
+                </linearGradient>
+              </defs>
+              <path d="M7.5 1L2 7.5h4.5L5 12l6.5-7H7L7.5 1z" fill="url(#planner-flame)"/>
             </svg>
             Quick
           </button>
@@ -5448,7 +6118,7 @@ function PlannerHomePage({
                       onShare={() => void onSharePlan(plan)}
                       onEditTags={() => onEditTags(plan)}
                       onDuplicate={() => onDuplicatePlan(plan)}
-                      onDelete={SAMPLE_PLAN_IDS.has(plan.id) ? undefined : () => onDeletePlan(plan.id)}
+                      onDelete={SAMPLE_PLAN_IDS.has(plan.id) ? undefined : () => setDeletingPlanId(plan.id)}
                     />
                   ))}
                 </div>
@@ -5599,6 +6269,25 @@ function PlannerHomePage({
           </div>
         </div>
       )}
+      </div>
+      {savedToast && (
+        <div className="repiq-saved-toast">Saved to My Workouts</div>
+      )}
+      {deletingPlanId && (() => {
+        const plan = plans.find((p) => p.id === deletingPlanId);
+        return (
+          <div className="plan-delete-confirm-overlay" onClick={() => setDeletingPlanId(null)}>
+            <div className="plan-delete-confirm-sheet" onClick={(e) => e.stopPropagation()}>
+              <p className="plan-delete-confirm-title">Delete "{plan?.name}"?</p>
+              <p className="plan-delete-confirm-body">This workout will be permanently removed. You can&apos;t undo this.</p>
+              <div className="plan-delete-confirm-actions">
+                <button type="button" className="secondary-button" onClick={() => setDeletingPlanId(null)}>Cancel</button>
+                <button type="button" className="danger-button" onClick={() => { const id = deletingPlanId; setDeletingPlanId(null); onDeletePlan(id); }}>Delete</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </main>
   );
 }
@@ -5681,6 +6370,7 @@ function PlanBuilderPage({
   onChange,
   onAddExercise,
   onSavePlan,
+  onDeletePlan,
   onOpenExerciseDetails,
   resolvedTheme,
   onToggleTheme,
@@ -5693,6 +6383,7 @@ function PlanBuilderPage({
   onChange: (plan: WorkoutPlan) => void;
   onAddExercise: () => void;
   onSavePlan: (plan: WorkoutPlan) => void;
+  onDeletePlan?: () => void;
   onOpenExerciseDetails: (exerciseId: string) => void;
   resolvedTheme: string;
   onToggleTheme: () => void;
@@ -5800,6 +6491,15 @@ function PlanBuilderPage({
         >
           {mode === "edit" ? "Save Changes" : "Save Workout"}
         </button>
+        {mode === "edit" && onDeletePlan && (
+          <button
+            type="button"
+            className="danger-button plan-detail-manage-btn"
+            onClick={onDeletePlan}
+          >
+            Delete
+          </button>
+        )}
       </div>
 
       <section className="planner-section planner-builder-section">
@@ -7530,110 +8230,386 @@ function getCanonicalMuscle(primaryMuscle: string): CanonicalMuscle {
   return MUSCLE_TO_CANONICAL[primaryMuscle] ?? "Other";
 }
 
-// ── Post-onboarding "What's Next" screen ─────────────────────────────────────
-function PostOnboardingPage({
+// ── RepIQ Plan — rules engine (V1) ───────────────────────────────────────────
+const PLAN_GOAL_LABEL: Record<string, string> = {
+  build_muscle: "Muscle Building", get_stronger: "Strength",
+  improve_fitness: "Fitness", athletic_performance: "Performance",
+  stay_active: "Active Lifestyle", muscle_strength: "Muscle & Strength",
+  fat_loss: "Fat Loss", endurance: "Endurance", general_fitness: "General Fitness",
+};
+
+const SPLIT_LABEL: Record<SplitType, string> = {
+  full_body:   "Full Body",
+  upper_lower: "Upper / Lower",
+  ppl:         "Push · Pull · Legs",
+  body_part:   "Body Part Split",
+};
+
+function pickSplitType(
+  days: number,
+  exp: ExperienceLevel,
+  stylePref?: string | null,
+): SplitType {
+  if (days <= 2) return "full_body";
+  if (days === 3) return (exp === "beginner" || exp === "never") ? "full_body" : "ppl";
+  if (days === 4) return "upper_lower";
+  if (days <= 6) return (exp === "beginner") ? "ppl" : "body_part";
+  return "body_part"; // 7 days
+}
+
+function getMesocycleLength(exp: ExperienceLevel): 4 | 6 | 8 {
+  if (exp === "never" || exp === "beginner") return 4;
+  if (exp === "intermediate") return 6;
+  return 8;
+}
+
+function getPlanSetRepScheme(goal: TrainingGoal): { sets: number; reps: string; restSeconds: number } {
+  switch (goal) {
+    case "get_stronger":          return { sets: 4, reps: "3–5",  restSeconds: 180 };
+    case "build_muscle":
+    case "muscle_strength":       return { sets: 3, reps: "8–12", restSeconds: 90 };
+    case "fat_loss":
+    case "improve_fitness":
+    case "general_fitness":       return { sets: 3, reps: "12–15",restSeconds: 60 };
+    case "endurance":             return { sets: 2, reps: "15–20",restSeconds: 45 };
+    case "athletic_performance":  return { sets: 4, reps: "5–8",  restSeconds: 120 };
+    default:                      return { sets: 3, reps: "10–12",restSeconds: 90 };
+  }
+}
+
+type PlanExerciseSlot = { patterns: MovementPattern[]; primaryMuscle?: string };
+type PlanDayTemplate = { label: string; focus: string; slots: PlanExerciseSlot[] };
+
+function buildDayTemplates(split: SplitType, days: number): PlanDayTemplate[] {
+  const fullBody: PlanDayTemplate = {
+    label: "Full Body", focus: "Full Body",
+    slots: [
+      { patterns: ["squat", "hip_hinge"],            primaryMuscle: "Quads" },
+      { patterns: ["horizontal_push"],                primaryMuscle: "Chest" },
+      { patterns: ["vertical_pull","horizontal_pull"],primaryMuscle: "Back" },
+      { patterns: ["vertical_push"],                  primaryMuscle: "Shoulders" },
+      { patterns: ["isolation_pull"],                 primaryMuscle: "Biceps" },
+      { patterns: ["isolation_push"],                 primaryMuscle: "Triceps" },
+    ],
+  };
+  const push: PlanDayTemplate = {
+    label: "Push", focus: "Chest · Shoulders · Triceps",
+    slots: [
+      { patterns: ["horizontal_push"], primaryMuscle: "Chest" },
+      { patterns: ["vertical_push"],   primaryMuscle: "Shoulders" },
+      { patterns: ["horizontal_push"], primaryMuscle: "Chest" },
+      { patterns: ["isolation_push"],  primaryMuscle: "Triceps" },
+      { patterns: ["isolation_push"],  primaryMuscle: "Triceps" },
+    ],
+  };
+  const pull: PlanDayTemplate = {
+    label: "Pull", focus: "Back · Biceps",
+    slots: [
+      { patterns: ["vertical_pull"],   primaryMuscle: "Lats" },
+      { patterns: ["horizontal_pull"], primaryMuscle: "Upper Back" },
+      { patterns: ["vertical_pull"],   primaryMuscle: "Lats" },
+      { patterns: ["isolation_pull"],  primaryMuscle: "Biceps" },
+      { patterns: ["isolation_pull"],  primaryMuscle: "Biceps" },
+    ],
+  };
+  const legs: PlanDayTemplate = {
+    label: "Legs", focus: "Quads · Hamstrings · Glutes",
+    slots: [
+      { patterns: ["squat"],          primaryMuscle: "Quads" },
+      { patterns: ["hip_hinge"],      primaryMuscle: "Hamstrings" },
+      { patterns: ["squat"],          primaryMuscle: "Quads" },
+      { patterns: ["hip_hinge"],      primaryMuscle: "Glutes" },
+      { patterns: ["isolation_legs"] },
+    ],
+  };
+  const upper: PlanDayTemplate = {
+    label: "Upper", focus: "Upper Body",
+    slots: [
+      { patterns: ["horizontal_push"], primaryMuscle: "Chest" },
+      { patterns: ["vertical_pull"],   primaryMuscle: "Back" },
+      { patterns: ["vertical_push"],   primaryMuscle: "Shoulders" },
+      { patterns: ["horizontal_pull"], primaryMuscle: "Upper Back" },
+      { patterns: ["isolation_pull"],  primaryMuscle: "Biceps" },
+      { patterns: ["isolation_push"],  primaryMuscle: "Triceps" },
+    ],
+  };
+  const lower: PlanDayTemplate = {
+    label: "Lower", focus: "Lower Body",
+    slots: [
+      { patterns: ["squat"],          primaryMuscle: "Quads" },
+      { patterns: ["hip_hinge"],      primaryMuscle: "Hamstrings" },
+      { patterns: ["squat"],          primaryMuscle: "Quads" },
+      { patterns: ["hip_hinge"],      primaryMuscle: "Glutes" },
+      { patterns: ["isolation_legs"] },
+    ],
+  };
+
+  if (split === "full_body") {
+    return Array(days).fill(null).map((_, i) => ({ ...fullBody, label: `Day ${i + 1}` }));
+  }
+  if (split === "upper_lower") {
+    const pattern = [upper, lower, upper, lower, upper, lower];
+    return pattern.slice(0, days);
+  }
+  if (split === "ppl") {
+    const pattern = [push, pull, legs, push, pull, legs];
+    return pattern.slice(0, days);
+  }
+  // body_part: chest/back/shoulders/arms/legs
+  const bodyPart: PlanDayTemplate[] = [
+    { label: "Chest", focus: "Chest · Triceps", slots: [
+      { patterns: ["horizontal_push"], primaryMuscle: "Chest" },
+      { patterns: ["horizontal_push"], primaryMuscle: "Upper Chest" },
+      { patterns: ["isolation_push"],  primaryMuscle: "Triceps" },
+      { patterns: ["isolation_push"] },
+    ]},
+    { label: "Back", focus: "Back · Biceps", slots: [
+      { patterns: ["vertical_pull"],   primaryMuscle: "Lats" },
+      { patterns: ["horizontal_pull"], primaryMuscle: "Upper Back" },
+      { patterns: ["vertical_pull"],   primaryMuscle: "Lats" },
+      { patterns: ["isolation_pull"],  primaryMuscle: "Biceps" },
+    ]},
+    { label: "Shoulders", focus: "Shoulders · Traps", slots: [
+      { patterns: ["vertical_push"],   primaryMuscle: "Shoulders" },
+      { patterns: ["vertical_push"] },
+      { patterns: ["isolation_push"] },
+      { patterns: ["isolation_pull"] },
+    ]},
+    { label: "Arms", focus: "Biceps · Triceps", slots: [
+      { patterns: ["isolation_pull"],  primaryMuscle: "Biceps" },
+      { patterns: ["isolation_push"],  primaryMuscle: "Triceps" },
+      { patterns: ["isolation_pull"] },
+      { patterns: ["isolation_push"] },
+    ]},
+    { label: "Legs", focus: "Quads · Hamstrings · Glutes", slots: [
+      { patterns: ["squat"],     primaryMuscle: "Quads" },
+      { patterns: ["hip_hinge"], primaryMuscle: "Hamstrings" },
+      { patterns: ["squat"] },
+      { patterns: ["hip_hinge"], primaryMuscle: "Glutes" },
+    ]},
+  ];
+  return bodyPart.slice(0, days);
+}
+
+function pickPlanExercise(
+  catalog: typeof smartReplaceCatalog,
+  slot: PlanExerciseSlot,
+  exp: ExperienceLevel,
+  used: Set<string>,
+): string | null {
+  const allowedDifficulty: Record<ExperienceLevel, ExerciseDifficulty[]> = {
+    never:        ["beginner"],
+    beginner:     ["beginner", "intermediate"],
+    intermediate: ["beginner", "intermediate", "advanced"],
+    advanced:     ["intermediate", "advanced"],
+    veteran:      ["intermediate", "advanced"],
+  };
+  const allowed = allowedDifficulty[exp] ?? ["beginner", "intermediate"];
+
+  let candidates = catalog.filter((ex) =>
+    slot.patterns.some((p) => ex.movementPattern === p) &&
+    (ex.difficultyLevel == null || allowed.includes(ex.difficultyLevel as ExerciseDifficulty)) &&
+    !used.has(ex.id)
+  );
+
+  if (slot.primaryMuscle) {
+    const preferred = candidates.filter((ex) => ex.primaryMuscle === slot.primaryMuscle);
+    if (preferred.length > 0) candidates = preferred;
+  }
+
+  if (candidates.length === 0) return null;
+  const pick = candidates[Math.floor(Math.random() * candidates.length)];
+  used.add(pick.id);
+  return pick.id;
+}
+
+function generateRepIQPlan(profile: UserPsychProfile): RepIQPlan {
+  const goal: TrainingGoal = profile.primaryGoal ?? "improve_fitness";
+  const exp: ExperienceLevel = profile.experienceLevel ?? "beginner";
+  const days = profile.daysPerWeekPref ?? 3;
+  const sessionLen = profile.sessionLengthPref ?? 45;
+
+  const splitType = pickSplitType(days, exp, profile.workoutStylePref);
+  const mesoWeeks = profile.planLengthWeeksPref ?? 12;
+  const scheme = getPlanSetRepScheme(goal);
+  const dayTemplates = buildDayTemplates(splitType, days);
+
+  const used = new Set<string>();
+  const weeks: RepIQPlanWeek[] = Array(mesoWeeks).fill(null).map((_, weekIdx) => ({
+    weekNumber: weekIdx + 1,
+    isCompleted: false,
+    days: dayTemplates.map((tmpl) => ({
+      sessionLabel: tmpl.label,
+      focus: tmpl.focus,
+      completedAt: null,
+      exercises: tmpl.slots
+        .map((slot) => {
+          const exerciseId = pickPlanExercise(smartReplaceCatalog, slot, exp, used);
+          if (!exerciseId) return null;
+          return {
+            exerciseId,
+            sets: scheme.sets,
+            reps: scheme.reps,
+            restSeconds: scheme.restSeconds,
+          } satisfies RepIQPlanExercise;
+        })
+        .filter((e): e is RepIQPlanExercise => e !== null),
+    })),
+  }));
+
+  const splitNames: Record<SplitType, string> = {
+    full_body:   "Full Body",
+    upper_lower: "Upper / Lower",
+    ppl:         "Push · Pull · Legs",
+    body_part:   "Body Part",
+  };
+  const goalLabel = PLAN_GOAL_LABEL[goal] ?? "Training";
+  const planName = `${goalLabel} — ${splitNames[splitType]}`;
+
+  const now = new Date().toISOString();
+  return {
+    schemaVersion: 1,
+    id: `plan-${Date.now()}`,
+    generatedAt: now,
+    startDate: now.slice(0, 10),
+    lastRegeneratedAt: now,
+    planName,
+    goal,
+    secondaryGoal: profile.secondaryGoal ?? null,
+    experienceLevel: exp,
+    daysPerWeek: days,
+    sessionLengthMin: sessionLen,
+    splitType,
+    mesocycleLengthWeeks: mesoWeeks,
+    currentWeekIndex: 0,
+    weeks,
+  };
+}
+
+// ── Volume compensation — called after RepIQ session completes ───────────────
+function computeVolumeCompensation(
+  plan: RepIQPlan,
+  completedWeekIdx: number,
+  completedDayIdx: number,
+  sessionExercises: ExerciseDraft[],
+  exerciseTemplates: ExerciseDraft[]
+): RepIQPlan {
+  const planDay = plan.weeks[completedWeekIdx]?.days[completedDayIdx];
+  if (!planDay) return plan;
+
+  // Compute deficit per primary muscle — cap individual exercise deficit at +2 sets
+  const muscleDeficits = new Map<string, number>();
+  for (const pe of planDay.exercises) {
+    const loggedEx = sessionExercises.find((e) => e.id === pe.exerciseId);
+    const actualDone = loggedEx ? loggedEx.draftSets.filter((s) => s.done).length : 0;
+    const deficit = pe.sets - actualDone;
+    if (deficit > 0) {
+      const template = exerciseTemplates.find((e) => e.id === pe.exerciseId);
+      if (template?.primaryMuscle) {
+        const existing = muscleDeficits.get(template.primaryMuscle) ?? 0;
+        muscleDeficits.set(template.primaryMuscle, existing + Math.min(deficit, 2));
+      }
+    }
+  }
+  if (muscleDeficits.size === 0) return plan;
+
+  // Apply deficit to the first future session targeting each deficient muscle (once per muscle)
+  const remaining = new Map(muscleDeficits);
+  const updatedWeeks = plan.weeks.map((week, wi) => ({
+    ...week,
+    days: week.days.map((day, di) => {
+      if (wi < completedWeekIdx) return day;
+      if (wi === completedWeekIdx && di <= completedDayIdx) return day;
+      if (day.completedAt) return day;
+      let changed = false;
+      const updatedExercises = day.exercises.map((pe) => {
+        const template = exerciseTemplates.find((e) => e.id === pe.exerciseId);
+        if (!template?.primaryMuscle) return pe;
+        const deficit = remaining.get(template.primaryMuscle);
+        if (!deficit || deficit <= 0) return pe;
+        remaining.set(template.primaryMuscle, 0);
+        changed = true;
+        return { ...pe, sets: pe.sets + deficit };
+      });
+      return changed ? { ...day, exercises: updatedExercises } : day;
+    }),
+  }));
+  return { ...plan, weeks: updatedWeeks };
+}
+
+// ── Plan Reveal — shown after onboarding completes ────────────────────────────
+function PlanRevealPage({
+  plan,
   profile,
   resolvedTheme,
-  onContinue,
+  onStart,
+  onBuildOwn,
 }: {
+  plan: RepIQPlan;
   profile: UserPsychProfile;
   resolvedTheme: string;
-  onContinue: () => void;
+  onStart: () => void;
+  onBuildOwn: () => void;
 }) {
   const firstName = profile.name?.split(" ")[0] ?? null;
-
-  const goalLabel: Record<string, string> = {
-    build_muscle:          "Build muscle",
-    get_stronger:          "Get stronger",
-    improve_fitness:       "Improve fitness",
-    athletic_performance:  "Athletic performance",
-    stay_active:           "Stay active",
-    muscle_strength:       "Muscle & strength",
-    fat_loss:              "Fat loss",
-    endurance:             "Endurance",
-    general_fitness:       "General fitness",
-  };
-  const goalEmoji: Record<string, string> = {
-    build_muscle: "💪", get_stronger: "🏋️", improve_fitness: "🏃",
-    athletic_performance: "⚡️", stay_active: "🚶", muscle_strength: "💪",
-    fat_loss: "🔥", endurance: "🏃", general_fitness: "✅",
-  };
-  const expLabel: Record<string, string> = {
-    never: "First time lifting", beginner: "Beginner",
-    intermediate: "Intermediate", advanced: "Advanced", veteran: "Veteran",
-  };
-
-  const cards: { icon: string; label: string; value: string }[] = [];
-  if (profile.primaryGoal)
-    cards.push({ icon: goalEmoji[profile.primaryGoal] ?? "🎯", label: "Goal", value: goalLabel[profile.primaryGoal] ?? profile.primaryGoal });
-  if (profile.experienceLevel)
-    cards.push({ icon: "📈", label: "Level", value: expLabel[profile.experienceLevel] ?? profile.experienceLevel });
-  if (profile.daysPerWeekPref)
-    cards.push({ icon: "📅", label: "Schedule", value: `${profile.daysPerWeekPref} day${profile.daysPerWeekPref > 1 ? "s" : ""} a week` });
-  if (profile.sessionLengthPref)
-    cards.push({ icon: "⏱️", label: "Session", value: `~${profile.sessionLengthPref} min` });
-  if (profile.bestTimePref)
-    cards.push({ icon: "🕐", label: "Best time", value: profile.bestTimePref });
+  const week1 = plan.weeks[0];
 
   return (
-    <div data-theme={resolvedTheme} className="pon-shell">
-      <div className="pon-hero">
-        <div className="pon-checkmark">✓</div>
-        <h1 className="pon-title">
-          {firstName ? `You're all set, ${firstName}!` : "You're all set!"}
+    <div data-theme={resolvedTheme} className="pr-shell">
+      <div className="pr-hero">
+        <div className="pr-badge">✦ RepIQ Plan</div>
+        <h1 className="pr-title">
+          {firstName ? `${firstName}, your\nplan is ready.` : "Your plan\nis ready."}
         </h1>
-        <p className="pon-sub">Here's what RepIQ knows about you so far.</p>
-      </div>
-
-      <div className="pon-body">
-        {profile.isReturningAfterBreak && (
-          <div className="pon-return-banner">
-            <span className="pon-return-icon">🔄</span>
-            <div>
-              <p className="pon-return-title">Getting back on track</p>
-              <p className="pon-return-sub">
-                {profile.breakMonths
-                  ? `After ${profile.breakMonths} month${profile.breakMonths > 1 ? "s" : ""} away, we'll ease you back in smart — no rushing.`
-                  : "We'll ease you back in at your own pace."}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {cards.length > 0 && (
-          <div className="pon-cards">
-            {cards.map((c) => (
-              <div key={c.label} className="pon-card">
-                <span className="pon-card-icon">{c.icon}</span>
-                <div>
-                  <p className="pon-card-label">{c.label}</p>
-                  <p className="pon-card-value">{c.value}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {profile.successVision && (
-          <div className="pon-vision">
-            <p className="pon-vision-label">Your vision</p>
-            <p className="pon-vision-text">"{profile.successVision}"</p>
-          </div>
-        )}
-
-        <div className="pon-next">
-          <p className="pon-next-label">What's next</p>
-          <ul className="pon-next-list">
-            <li>Log your first workout from the <strong>Home</strong> screen</li>
-            <li>Browse or generate a plan in <strong>Planner</strong></li>
-            <li>Track your progress in <strong>Insights</strong></li>
-          </ul>
+        <p className="pr-sub">
+          Built around your goal, schedule, and experience. Adjust any session as you train.
+        </p>
+        <div className="pr-meta-row">
+          <span className="pr-meta-chip">{PLAN_GOAL_LABEL[plan.goal] ?? plan.goal}</span>
+          <span className="pr-meta-chip">{SPLIT_LABEL[plan.splitType]}</span>
+          <span className="pr-meta-chip">{plan.daysPerWeek}×/week</span>
+          <span className="pr-meta-chip">{plan.mesocycleLengthWeeks} weeks</span>
         </div>
       </div>
 
-      <div className="pon-footer">
-        <button type="button" className="pon-cta" onClick={onContinue}>
-          Let's Go →
+      <div className="pr-body">
+        {profile.isReturningAfterBreak && (
+          <div className="pr-return-banner">
+            <span>🔄</span>
+            <p>We'll ease you back in — week 1 starts lighter to protect your joints.</p>
+          </div>
+        )}
+
+        {week1 && (
+          <div className="pr-week1-section">
+            <p className="pr-section-label">Week 1 — your first sessions</p>
+            <div className="pr-day-list">
+              {week1.days.map((day, i) => (
+                <div key={i} className="pr-day-row">
+                  <span className="pr-day-num">S{i + 1}</span>
+                  <div className="pr-day-info">
+                    <p className="pr-day-name">{day.sessionLabel}</p>
+                    <p className="pr-day-focus">{day.focus}</p>
+                  </div>
+                  <span className="pr-day-sets">{day.exercises.length} exercises</span>
+                </div>
+              ))}
+            </div>
+            {plan.mesocycleLengthWeeks > 1 && (
+              <p className="pr-unlock-note">
+                Weeks 2–{plan.mesocycleLengthWeeks} unlock as you finish each week.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="pr-footer">
+        <button type="button" className="pr-cta-primary" onClick={onStart}>
+          Let's go →
+        </button>
+        <button type="button" className="pr-cta-secondary" onClick={onBuildOwn}>
+          Build my own plan instead
         </button>
       </div>
     </div>
@@ -7740,7 +8716,8 @@ function OnboardingPage({
 
   // Step 3 — Goal
   const [goal, setGoal] = useState<TrainingGoal | null>(null);
-  const [biggestObstacle, setBiggestObstacle] = useState<string | null>(null);
+  const [secondaryGoal, setSecondaryGoal] = useState<TrainingGoal | null>(null);
+  const [biggestObstacles, setBiggestObstacles] = useState<string[]>([]);
 
   // Step 4 — Experience & Plan
   const [experience, setExperience] = useState<ExperienceLevel | null>(null);
@@ -7754,6 +8731,10 @@ function OnboardingPage({
   const [preWorkoutFeeling, setPreWorkoutFeeling] = useState<string | null>(null);
   const [workoutStyle, setWorkoutStyle] = useState<string | null>(null);
   const [successVision, setSuccessVision] = useState<string | null>(null);
+  const [optionalOpen, setOptionalOpen] = useState(false);
+  const optionalSectionRef = useRef<HTMLDivElement | null>(null);
+
+  const [maxStep, setMaxStep] = useState(1);
 
   const canAdvance =
     step === 1 ? true :
@@ -7762,7 +8743,12 @@ function OnboardingPage({
     true;
 
   function advance() {
-    if (step < TOTAL) { setStep((s) => s + 1); return; }
+    if (step < TOTAL) {
+      const next = step + 1;
+      setMaxStep((m) => Math.max(m, next));
+      setStep(next);
+      return;
+    }
     const finalHeightCm = unitSystem === "metric" ? heightCm : Math.round(heightFt * 30.48 + heightIn * 2.54);
     const finalWeightKg = unitSystem === "metric" ? weightKg : Math.round(weightLbs * 0.4536);
     onComplete({
@@ -7774,6 +8760,8 @@ function OnboardingPage({
       age,
       bodyFatBracket,
       primaryGoal: goal,
+      secondaryGoal,
+      biggestObstacles,
       experienceLevel: experience,
       scheduleCommitment: (Math.max(2, Math.min(6, daysPerWeek))) as ScheduleCommitment,
       daysPerWeekPref: daysPerWeek,
@@ -7813,7 +8801,7 @@ function OnboardingPage({
   function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
     return (
       <button type="button" className={`ob-chip ${active ? "is-active" : ""}`} onClick={onClick}>
-        {active && <span className="ob-chip-check">✓</span>}
+        <span className="ob-chip-check" style={{ visibility: active ? "visible" : "hidden" }}>✓</span>
         {label}
       </button>
     );
@@ -7937,16 +8925,10 @@ function OnboardingPage({
 
     3: (
       <div className="ob-step" key="step-3">
-        <div className="ob-trust-card">
-          <span className="ob-trust-icon">{trustMessages[3].icon}</span>
-          <div>
-            <strong className="ob-trust-headline">{trustMessages[3].headline}</strong>
-            <p className="ob-trust-body">{trustMessages[3].body}</p>
-          </div>
-        </div>
         <div className="ob-fields">
           <div className="ob-field">
             <label className="ob-field-label">Primary training goal <span className="ob-required">*</span></label>
+            <p className="ob-field-hint">A clear goal helps RepIQ prioritise your program — pick the one that matters most right now.</p>
             <div className="ob-chip-grid">
               {([
                 { value: "build_muscle", label: "💪 Build Muscle" },
@@ -7956,24 +8938,34 @@ function OnboardingPage({
                 { value: "athletic_performance", label: "⚡ Athletic Performance" },
                 { value: "stay_active", label: "🌿 Stay Active" },
               ] as { value: TrainingGoal; label: string }[]).map((g) => (
-                <Chip key={g.value} label={g.label} active={goal === g.value} onClick={() => setGoal(g.value)} />
+                <Chip key={g.value} label={g.label} active={goal === g.value} onClick={() => {
+                  setGoal(g.value);
+                  if (secondaryGoal === g.value) setSecondaryGoal(null);
+                }} />
               ))}
             </div>
           </div>
-          <div className="ob-field">
-            <label className="ob-field-label">Biggest challenge right now <span className="ob-optional">(optional)</span></label>
-            <div className="ob-chip-grid">
-              {[
-                { value: "time", label: "⏱ Not enough time" },
-                { value: "motivation", label: "😴 Staying motivated" },
-                { value: "knowledge", label: "📚 What to do" },
-                { value: "injury", label: "🩹 Recovery / injury" },
-                { value: "consistency", label: "🔁 Staying consistent" },
-              ].map((o) => (
-                <Chip key={o.value} label={o.label} active={biggestObstacle === o.value} onClick={() => setBiggestObstacle(biggestObstacle === o.value ? null : o.value)} />
-              ))}
+
+          {goal && (
+            <div className="ob-field">
+              <label className="ob-field-label">Secondary goal <span className="ob-optional">(optional)</span></label>
+              <div className="ob-chip-grid">
+                {([
+                  { value: "build_muscle", label: "💪 Build Muscle" },
+                  { value: "fat_loss", label: "🔥 Lose Fat" },
+                  { value: "get_stronger", label: "🏋️ Get Stronger" },
+                  { value: "improve_fitness", label: "🏃 Improve Fitness" },
+                  { value: "athletic_performance", label: "⚡ Athletic Performance" },
+                  { value: "stay_active", label: "🌿 Stay Active" },
+                ] as { value: TrainingGoal; label: string }[])
+                  .filter((g) => g.value !== goal)
+                  .map((g) => (
+                    <Chip key={g.value} label={g.label} active={secondaryGoal === g.value} onClick={() => setSecondaryGoal(secondaryGoal === g.value ? null : g.value)} />
+                  ))}
+              </div>
             </div>
-          </div>
+          )}
+
         </div>
       </div>
     ),
@@ -8073,58 +9065,105 @@ function OnboardingPage({
 
     5: (
       <div className="ob-step" key="step-5">
-        <div className="ob-trust-card">
-          <span className="ob-trust-icon">{trustMessages[5].icon}</span>
-          <div>
-            <strong className="ob-trust-headline">{trustMessages[5].headline}</strong>
-            <p className="ob-trust-body">{trustMessages[5].body}</p>
-          </div>
-        </div>
         <div className="ob-fields">
+          {/* Mandatory — Biggest challenge */}
           <div className="ob-field">
-            <label className="ob-field-label">Before a workout, you usually feel <span className="ob-optional">(optional)</span></label>
+            <label className="ob-field-label">Biggest challenge right now <span className="ob-optional">(pick all that apply)</span></label>
             <div className="ob-chip-grid">
               {[
-                { value: "energised", label: "⚡ Energised & ready" },
-                { value: "neutral", label: "😐 Neutral" },
-                { value: "reluctant", label: "😤 Reluctant, but I go" },
-                { value: "tired", label: "😴 Usually tired" },
-              ].map((f) => (
-                <Chip key={f.value} label={f.label} active={preWorkoutFeeling === f.value} onClick={() => setPreWorkoutFeeling(preWorkoutFeeling === f.value ? null : f.value)} />
+                { value: "time",        label: "⏱ Not enough time" },
+                { value: "motivation",  label: "😴 Staying motivated" },
+                { value: "knowledge",   label: "📚 Not sure what to do" },
+                { value: "injury",      label: "🩹 Recovery / injury" },
+                { value: "consistency", label: "🔁 Staying consistent" },
+              ].map((o) => (
+                <Chip
+                  key={o.value}
+                  label={o.label}
+                  active={biggestObstacles.includes(o.value)}
+                  onClick={() => {
+                    setBiggestObstacles((prev) =>
+                      prev.includes(o.value) ? prev.filter((x) => x !== o.value) : [...prev, o.value]
+                    );
+                    if (!optionalOpen) {
+                      setOptionalOpen(true);
+                      setTimeout(() => optionalSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+                    }
+                  }}
+                />
               ))}
             </div>
           </div>
-          <div className="ob-field">
-            <label className="ob-field-label">Preferred workout style <span className="ob-optional">(optional)</span></label>
-            <div className="ob-chip-grid">
-              {[
-                { value: "full_body", label: "🔄 Full Body" },
-                { value: "upper_lower", label: "↕️ Upper / Lower" },
-                { value: "ppl", label: "🔀 Push · Pull · Legs" },
-                { value: "body_part", label: "🎯 Body Part Split" },
-                { value: "any", label: "🤷 No preference" },
-              ].map((s) => (
-                <Chip key={s.value} label={s.label} active={workoutStyle === s.value} onClick={() => setWorkoutStyle(workoutStyle === s.value ? null : s.value)} />
-              ))}
+
+          {/* Optional section toggle / expanded */}
+          {!optionalOpen ? (
+            <button
+              type="button"
+              className="ob-optional-toggle"
+              onClick={() => {
+                setOptionalOpen(true);
+                setTimeout(() => optionalSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+              }}
+            >
+              <span className="ob-optional-toggle-label">Optional · 3 more questions</span>
+              <span className="ob-optional-toggle-arrow">›</span>
+            </button>
+          ) : (
+            <div ref={optionalSectionRef} className="ob-optional-section">
+              {/* Pre-workout feeling */}
+              <div className="ob-field ob-field-revealed">
+                <label className="ob-field-label">Before a workout, you usually feel <span className="ob-optional">(optional)</span></label>
+                <div className="ob-chip-grid">
+                  {[
+                    { value: "energised", label: "⚡ Energised & ready" },
+                    { value: "neutral",   label: "😐 Neutral" },
+                    { value: "reluctant", label: "😤 Reluctant, but I go" },
+                    { value: "tired",     label: "😴 Usually tired" },
+                  ].map((f) => (
+                    <Chip key={f.value} label={f.label} active={preWorkoutFeeling === f.value} onClick={() =>
+                      setPreWorkoutFeeling(preWorkoutFeeling === f.value ? null : f.value)
+                    } />
+                  ))}
+                </div>
+              </div>
+
+              {/* Workout style */}
+              <div className="ob-field ob-field-revealed">
+                <label className="ob-field-label">Preferred workout style <span className="ob-optional">(optional)</span></label>
+                <div className="ob-chip-grid">
+                  {[
+                    { value: "full_body",   label: "🔄 Full Body" },
+                    { value: "upper_lower", label: "↕️ Upper / Lower" },
+                    { value: "ppl",         label: "🔀 Push · Pull · Legs" },
+                    { value: "body_part",   label: "🎯 Body Part Split" },
+                    { value: "any",         label: "🤷 No preference" },
+                  ].map((s) => (
+                    <Chip key={s.value} label={s.label} active={workoutStyle === s.value} onClick={() =>
+                      setWorkoutStyle(workoutStyle === s.value ? null : s.value)
+                    } />
+                  ))}
+                </div>
+              </div>
+
+              {/* Success vision */}
+              <div className="ob-field ob-field-revealed">
+                <label className="ob-field-label">In 3 months, success means <span className="ob-optional">(optional)</span></label>
+                <div className="ob-chip-grid">
+                  {[
+                    { value: "look_different", label: "🪞 I look noticeably different" },
+                    { value: "stronger",       label: "💪 I'm significantly stronger" },
+                    { value: "consistent",     label: "📅 I've trained consistently" },
+                    { value: "healthier",      label: "❤️ I feel healthier overall" },
+                    { value: "habit",          label: "🔥 I've built a real habit" },
+                  ].map((v) => (
+                    <Chip key={v.value} label={v.label} active={successVision === v.value} onClick={() =>
+                      setSuccessVision(successVision === v.value ? null : v.value)
+                    } />
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="ob-field">
-            <label className="ob-field-label">In 3 months, success means <span className="ob-optional">(optional)</span></label>
-            <div className="ob-chip-grid">
-              {[
-                { value: "look_different", label: "🪞 I look noticeably different" },
-                { value: "stronger", label: "💪 I'm significantly stronger" },
-                { value: "consistent", label: "📅 I've trained consistently" },
-                { value: "healthier", label: "❤️ I feel healthier overall" },
-                { value: "habit", label: "🔥 I've built a real habit" },
-              ].map((v) => (
-                <Chip key={v.value} label={v.label} active={successVision === v.value} onClick={() => setSuccessVision(successVision === v.value ? null : v.value)} />
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="ob-ready-close">
-          <p className="ob-ready-copy">You're all set. RepIQ will personalise your experience as you train — the more you log, the smarter it gets.</p>
+          )}
         </div>
       </div>
     ),
@@ -8150,9 +9189,19 @@ function OnboardingPage({
               const active = n === step;
               return (
                 <Fragment key={n}>
-                  <div className={`ob-dot ${done ? "is-done" : ""} ${active ? "is-active" : ""}`}>
-                    {done ? "✓" : n}
-                  </div>
+                  {n <= maxStep || (n === step + 1 && canAdvance) ? (
+                    <button
+                      type="button"
+                      className={`ob-dot is-clickable${done ? " is-done" : active ? " is-active" : " is-visited"}`}
+                      onClick={() => {
+                        if (n > maxStep) setMaxStep(n);
+                        setStep(n);
+                      }}
+                      aria-label={done ? `Go back to ${lbl}` : lbl}
+                    >{done ? "✓" : n}</button>
+                  ) : (
+                    <div className="ob-dot">{n}</div>
+                  )}
                   {i < TOTAL - 1 && <div className={`ob-connector ${n < step ? "is-filled" : ""}`} />}
                 </Fragment>
               );
@@ -9707,7 +10756,9 @@ function WorkoutReportPage({
           {data.exercises.map((ex) => (
             <div key={ex.id} className="finish-exercise-row">
               <span className="finish-exercise-name">{ex.name}</span>
-              <span className="finish-exercise-sets">{ex.loggedSets} sets</span>
+              <span className={`finish-exercise-sets${ex.loggedSets === 0 ? " is-unlogged" : ""}`}>
+                {ex.loggedSets === 0 ? "not logged" : `${ex.loggedSets} sets`}
+              </span>
             </div>
           ))}
         </section>
@@ -9727,19 +10778,125 @@ function WorkoutReportPage({
   );
 }
 
+// ── Workout History Detail Page ───────────────────────────────────────────────
+function WorkoutHistoryDetailPage({
+  workout,
+  onBack,
+  onEdit,
+  onShare,
+  resolvedTheme,
+  onToggleTheme,
+}: {
+  workout: SavedWorkoutData;
+  onBack: () => void;
+  onEdit?: () => void;
+  onShare?: () => void;
+  resolvedTheme?: string;
+  onToggleTheme?: () => void;
+}) {
+  const isRepIQ = !!workout.repiqSourceKey;
+  return (
+    <main className="detail-page finish-workout-page" data-theme={resolvedTheme}>
+      <div className="finish-hero">
+        <div className="finish-hero-topbar">
+          <button className="finish-hero-back" type="button" onClick={onBack} aria-label="Back">←</button>
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <p className="finish-hero-eyebrow label" style={{ color: "rgba(255,255,255,0.7)", margin: 0 }}>
+              {isRepIQ ? "RepIQ Session" : "Workout"}
+            </p>
+          </div>
+          {resolvedTheme && onToggleTheme ? (
+            <button type="button" className="theme-toggle-btn theme-toggle-btn--ghost" onClick={onToggleTheme} aria-label="Toggle theme">
+              {resolvedTheme === "dark"
+                ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+            </button>
+          ) : <span style={{ width: 38 }} />}
+        </div>
+        <h1 className="finish-hero-title">{workout.sessionName}</h1>
+        <p className="finish-hero-date">{new Date(workout.date).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</p>
+        <div className="finish-hero-stats">
+          <div className="finish-hero-stat"><span className="finish-hero-stat-label">Duration</span><strong className="finish-hero-stat-value">{workout.duration}</strong></div>
+          <div className="finish-hero-stat"><span className="finish-hero-stat-label">Sets</span><strong className="finish-hero-stat-value">{workout.totalSets}</strong></div>
+          <div className="finish-hero-stat"><span className="finish-hero-stat-label">Exercises</span><strong className="finish-hero-stat-value">{workout.exerciseCount}</strong></div>
+          {workout.totalVolume > 0 && <div className="finish-hero-stat"><span className="finish-hero-stat-label">Volume</span><strong className="finish-hero-stat-value">{workout.totalVolume.toFixed(0)} kg</strong></div>}
+        </div>
+      </div>
+
+      <div className="finish-workout-body">
+        <section className="finish-workout-card">
+          <p className="label" style={{ marginBottom: 8 }}>Exercises Performed</p>
+          {workout.exercises.map((ex) => (
+            <div key={ex.id} className="finish-exercise-row">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span className="finish-exercise-name">{ex.name}</span>
+                <span className="finish-exercise-muscle" style={{ fontSize: "0.76rem", color: "var(--muted)", display: "block", marginTop: 1 }}>{ex.primaryMuscle}</span>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <span className={`finish-exercise-sets${ex.loggedSets === 0 ? " is-unlogged" : ""}`}>
+                  {ex.loggedSets === 0 ? "not logged" : `${ex.loggedSets} sets`}
+                </span>
+                {ex.loggedVolume > 0 && (
+                  <span style={{ fontSize: "0.76rem", color: "var(--muted)", display: "block", marginTop: 1 }}>{ex.loggedVolume.toFixed(0)} kg</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </section>
+
+        {workout.note && (
+          <section className="finish-workout-card">
+            <p className="label" style={{ marginBottom: 6 }}>Note</p>
+            <p className="settings-note" style={{ margin: 0 }}>{workout.note}</p>
+          </section>
+        )}
+
+        {(onEdit || onShare) && (
+          <div className="history-detail-actions">
+            {onEdit && (
+              <button className="secondary-button history-detail-action-btn" type="button" onClick={onEdit}>
+                Edit Session
+              </button>
+            )}
+            {onShare && (
+              <button className="primary-button history-detail-action-btn" type="button" onClick={onShare}>
+                Share Summary
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
+
 // ── Insights Page ─────────────────────────────────────────────────────────────
 function InsightsPage({
   savedWorkouts,
   onOpenReport,
+  onRedoWorkout,
+  onSaveToMyWorkouts,
+  onDeleteWorkout,
   resolvedTheme,
   onToggleTheme,
 }: {
   savedWorkouts: SavedWorkoutData[];
   onOpenReport: (workout: SavedWorkoutData) => void;
+  onRedoWorkout?: (workout: SavedWorkoutData) => void;
+  onSaveToMyWorkouts?: (workout: SavedWorkoutData) => void;
+  onDeleteWorkout?: (savedAt: string) => void;
   resolvedTheme?: string;
   onToggleTheme?: () => void;
 }) {
   const [tab, setTab] = useState<"analyzer" | "reports">("reports");
+  const [savedToast, setSavedToast] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  function handleSave(w: SavedWorkoutData) {
+    onSaveToMyWorkouts?.(w);
+    setSavedToast(w.savedAt);
+    setTimeout(() => setSavedToast(null), 2200);
+  }
 
   return (
     <main className="shell selector-shell" data-theme={resolvedTheme}>
@@ -9774,18 +10931,44 @@ function InsightsPage({
               </div>
             ) : (
               <div className="plan-list">
-                {savedWorkouts.map((w) => (
-                  <article key={w.savedAt} className="session-card" style={{ cursor: "pointer" }} onClick={() => onOpenReport(w)}>
-                    <div className="session-card-top">
-                      <div>
-                        <p className="label">{new Date(w.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</p>
-                        <h3 style={{ margin: "2px 0 0", fontWeight: 700, fontSize: "1rem" }}>{w.sessionName}</h3>
+                {savedWorkouts.map((w) => {
+                  const isRepIQ = !!w.repiqSourceKey;
+                  const alreadySaved = savedToast === w.savedAt;
+                  return (
+                    <article key={w.savedAt} className="report-card">
+                      <div className="report-card-header" onClick={() => onOpenReport(w)}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                            <p className="report-card-meta">{new Date(w.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</p>
+                            {isRepIQ && <span className="report-card-repiq-badge">RepIQ Plan</span>}
+                          </div>
+                          <p className="report-card-name">{w.sessionName}</p>
+                          <p className="report-card-stats">{w.duration} · {w.totalSets} sets · {w.exerciseCount} exercises</p>
+                        </div>
+                        <span className="report-card-chevron">›</span>
                       </div>
-                      <span style={{ color: "var(--muted)", fontSize: "1.2rem" }}>›</span>
-                    </div>
-                    <p className="settings-note" style={{ margin: "6px 0 0" }}>{w.duration} · {w.totalSets} sets · {w.exerciseCount} exercises</p>
-                  </article>
-                ))}
+                      <div className="report-card-actions">
+                        {!isRepIQ && onRedoWorkout && (
+                          <button
+                            type="button"
+                            className="report-card-action-btn"
+                            onClick={() => onRedoWorkout(w)}
+                          >
+                            Redo
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="report-card-action-btn"
+                          onClick={() => handleSave(w)}
+                          disabled={alreadySaved}
+                        >
+                          {alreadySaved ? "Saved ✓" : "Save to My Workouts"}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             )}
           </section>
@@ -9797,6 +10980,21 @@ function InsightsPage({
             </div>
           </section>
         )}
+        {deleteConfirmId && (() => {
+          const w = savedWorkouts.find(x => x.savedAt === deleteConfirmId);
+          return (
+            <div className="plan-delete-confirm-overlay" onClick={() => setDeleteConfirmId(null)}>
+              <div className="plan-delete-confirm-sheet" onClick={e => e.stopPropagation()}>
+                <p className="plan-delete-confirm-title">Delete "{w?.sessionName}"?</p>
+                <p className="plan-delete-confirm-body">This will be permanently removed from your history. You can&apos;t undo this.</p>
+                <div className="plan-delete-confirm-actions">
+                  <button type="button" className="secondary-button" onClick={() => setDeleteConfirmId(null)}>Cancel</button>
+                  <button type="button" className="danger-button" onClick={() => { const id = deleteConfirmId; setDeleteConfirmId(null); onDeleteWorkout?.(id); }}>Delete</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </section>
     </main>
   );
@@ -9890,6 +11088,9 @@ export function App() {
   const [activePlanSession, setActivePlanSession] = useState<ActivePlanSession>(null);
   const [discardReturnView, setDiscardReturnView] = useState<"home" | "planner">("home");
   const [reportWorkout, setReportWorkout] = useState<SavedWorkoutData | null>(null);
+  const [historyDetailWorkout, setHistoryDetailWorkout] = useState<SavedWorkoutData | null>(null);
+  const [historyDetailReturnView, setHistoryDetailReturnView] = useState<AppView>("planner");
+  const [historyDetailPlanContext, setHistoryDetailPlanContext] = useState<{ weekIdx: number; dayIdx: number; label: string; sessionNum: number } | null>(null);
   const [savedWorkoutsList, setSavedWorkoutsList] = useState<SavedWorkoutData[]>(getStoredSavedWorkouts);
   const [templateApplyPromptImages, setTemplateApplyPromptImages] = useState<WorkoutMediaAsset[] | null>(null);
   const [tagPlanId, setTagPlanId] = useState<string | null>(null);
@@ -9918,8 +11119,15 @@ export function App() {
   const [psychProfile, setPsychProfile] = useState<UserPsychProfile>(getStoredPsychProfile);
   const onboardingComplete = psychProfile.onboardingCompletedAt !== null;
   const [showPostOnboarding, setShowPostOnboarding] = useState(false);
+  const [repiqPlan, setRepiqPlan] = useState<RepIQPlan | null>(getStoredRepIQPlan);
+  const [repiqUpdatePrompt, setRepiqUpdatePrompt] = useState<{ weekIdx: number; dayIdx: number; completedExerciseIds: string[] } | null>(null);
+  // tracks which repiq session is currently being logged, so we can tag the saved workout
+  const [activeRepIQSessionKey, setActiveRepIQSessionKey] = useState<string | null>(null);
+  // no cross-plan modal — plan is flagged silently and user is prompted contextually
   const DEV_MODE = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("dev");
   const [showDevPage, setShowDevPage] = useState(DEV_MODE);
+  const [devBypassGate, setDevBypassGate] = useState(false);
+  const [plannerInitialMode, setPlannerInitialMode] = useState<"repiq" | "custom">("repiq");
   const [inlineGuidanceOpen, setInlineGuidanceOpen] = useState(false);
   const [showTopGuidance, setShowTopGuidance] = useState(false);
   const [topGuidanceExpanded, setTopGuidanceExpanded] = useState(false);
@@ -10186,7 +11394,8 @@ export function App() {
     const saved: SavedWorkoutData = {
       ...finishWorkoutDraft,
       images,
-      savedAt: new Date().toISOString()
+      savedAt: new Date().toISOString(),
+      ...(activeRepIQSessionKey ? { repiqSourceKey: activeRepIQSessionKey } : {}),
     };
     persistSavedWorkout(saved);
 
@@ -10229,9 +11438,62 @@ export function App() {
     setReportWorkout(saved);
     setSavedWorkoutsList(getStoredSavedWorkouts());
     setTemplateApplyPromptImages(null);
+    // ── RepIQ plan day completion ──────────────────────────────────────────────
+    const snapshotSession = activePlanSession;
     setActivePlanSession(null);
     resetWorkout();
     setHasActiveWorkout(false);
+    if (snapshotSession?.source === "repiq" && repiqPlan) {
+      const { weekIdx, dayIdx } = snapshotSession;
+      const completedAt = new Date().toISOString();
+      const updatedWeeks = repiqPlan.weeks.map((week, wi) => {
+        if (wi !== weekIdx) return week;
+        const updatedDays = week.days.map((day, di) => {
+          if (di !== dayIdx) return day;
+          return { ...day, completedAt };
+        });
+        const weekDone = updatedDays.every((d) => d.completedAt !== null);
+        return { ...week, days: updatedDays, isCompleted: weekDone };
+      });
+      // Advance currentWeekIndex if current week just completed
+      const currentWeekCompleted = updatedWeeks[repiqPlan.currentWeekIndex]?.isCompleted;
+      const newCurrentWeekIndex = currentWeekCompleted
+        ? Math.min(repiqPlan.currentWeekIndex + 1, repiqPlan.weeks.length - 1)
+        : repiqPlan.currentWeekIndex;
+      // Volume compensation: add deficit sets to next sessions targeting same muscles
+      const compensatedPlan = computeVolumeCompensation(
+        { ...repiqPlan, weeks: updatedWeeks, currentWeekIndex: newCurrentWeekIndex },
+        weekIdx,
+        dayIdx,
+        exercises,
+        availableExerciseTemplates
+      );
+      persistRepIQPlan(compensatedPlan);
+      setRepiqPlan(compensatedPlan);
+      // Check if today's exercises differ from plan
+      const planDay = repiqPlan.weeks[weekIdx]?.days[dayIdx];
+      const planExIds = new Set(planDay?.exercises.map((e) => e.exerciseId) ?? []);
+      const actualExIds = exercises.map((e) => e.id);
+      const hasDiff = actualExIds.some((id) => !planExIds.has(id)) || planExIds.size !== actualExIds.length;
+      if (hasDiff) {
+        setRepiqUpdatePrompt({ weekIdx, dayIdx, completedExerciseIds: actualExIds });
+      }
+    } else if (!activeRepIQSessionKey && repiqPlan && repiqPlan.status !== "paused") {
+      // Non-plan workout completed while RepIQ plan is active.
+      // Only flag if it occurred after the last plan regeneration (i.e., not already accounted for).
+      const lastRegen = repiqPlan.lastRegeneratedAt ?? repiqPlan.generatedAt;
+      if (saved.savedAt > lastRegen) {
+        const updatedPlan: RepIQPlan = {
+          ...repiqPlan,
+          needsReview: true,
+          extraVolumeCount: (repiqPlan.extraVolumeCount ?? 0) + 1,
+          extraVolumeWorkoutIds: [...(repiqPlan.extraVolumeWorkoutIds ?? []), saved.savedAt],
+        };
+        persistRepIQPlan(updatedPlan);
+        setRepiqPlan(updatedPlan);
+      }
+    }
+    setActiveRepIQSessionKey(null);
     setAppView("report");
   }
 
@@ -10254,7 +11516,7 @@ export function App() {
           loggedVolume: sumSessionVolume(completedSets)
         };
       })
-      .filter((exercise) => exercise.loggedSets > 0);
+      ;
 
     const rewardSnapshot = [...loggerRewards];
     const rewardSnapshotSummary = summarizeRewards(rewardSnapshot);
@@ -10281,11 +11543,16 @@ export function App() {
       } ready to save.`;
     }
 
+    const elapsedSeconds = workoutMeta.startInstant
+      ? Math.floor((Date.now() - Date.parse(workoutMeta.startInstant)) / 1000)
+      : 0;
+
     return {
       sessionName: workoutMeta.sessionName.trim() || generateWorkoutName(exercises),
       note: "",
       date: workoutMeta.date,
       duration: derivedDuration,
+      durationSeconds: elapsedSeconds,
       totalVolume: workoutSummary.volume,
       totalSets: workoutSummary.sets,
       exerciseCount: exercises.length,
@@ -11058,6 +12325,7 @@ export function App() {
     setTimingOpen(false);
     setLeavePromptOpen(false);
     setFinishConfirmOpen(false);
+    setFinishConfirmOpen(false);
     setFinishWorkoutDraft(null);
     setSupersetSheetExerciseId(null);
     setSupersetSelectionIds([]);
@@ -11093,6 +12361,7 @@ export function App() {
     setShowBottomRestDock(true);
     setHasActiveWorkout(true);
     setActivePlanSession({ source: "quick", planId: null, originalPlan: null });
+    setActiveRepIQSessionKey(null);
     setAppView("logger");
   }
 
@@ -11930,6 +13199,7 @@ export function App() {
 
   function openFinishWorkoutPage(ignoredIncompleteSets: number) {
     setFinishConfirmOpen(false);
+    setFinishConfirmOpen(false);
     setWorkoutMenuOpen(false);
     setRewardSheetOpen(false);
     setInlineGuidanceOpen(false);
@@ -11944,11 +13214,13 @@ export function App() {
     if (completedSetCount === 0) {
       return; // button is disabled — guard in case of direct call
     }
-    if (incompleteSetCount > 0) {
+    const hasIssues = incompleteSetCount > 0 || exercises.some(ex =>
+      ex.draftSets.some(s => s.done && s.repsInput.trim() === "")
+    );
+    if (hasIssues) {
       setFinishConfirmOpen(true);
       return;
     }
-
     openFinishWorkoutPage(0);
   }
 
@@ -12100,9 +13372,322 @@ export function App() {
       planId: source === "saved" ? plan.id : null,
       originalPlan: source === "saved" ? plan : null
     });
+    setActiveRepIQSessionKey(null);
     setDiscardReturnView("planner");
     setHasActiveWorkout(true);
     setAppView("logger");
+  }
+
+  function redoWorkout(workout: SavedWorkoutData) {
+    const redoExercises: ExerciseDraft[] = workout.exercises.flatMap((summary) => {
+      const template = availableExerciseTemplates.find((e) => e.id === summary.id);
+      if (!template) return [];
+      const setCount = Math.max(summary.loggedSets, 1);
+      const sets: DraftSet[] = Array.from({ length: setCount }, (_, i) => ({
+        id: `${summary.id}-redo-${i}`,
+        setType: "normal" as const,
+        weightInput: "",
+        repsInput: "",
+        rpeInput: "",
+        done: false,
+        failed: false,
+      }));
+      return [{ ...template, note: "", draftSets: sets }];
+    });
+
+    if (redoExercises.length === 0) return;
+    setExercises(redoExercises);
+    setCollapsedExerciseIds([]);
+    setGuidanceCollapsed(false);
+    setFocusedExpandedExerciseId(null);
+    const now = new Date();
+    setWorkoutMeta({
+      date: formatDateInputValue(now),
+      startTime: formatTimeFromDate(now),
+      startedMinutesAgo: "0",
+      sessionName: workout.sessionName,
+      startInstant: now.toISOString(),
+    });
+    setShowBottomRestDock(true);
+    setActivePlanSession(null);
+    setActiveRepIQSessionKey(null);
+    setDiscardReturnView("home");
+    setHasActiveWorkout(true);
+    setAppView("logger");
+  }
+
+  function editHistoryWorkout(workout: SavedWorkoutData) {
+    // Re-loads the logger with the same exercises as the original session.
+    // Timer is pre-seeded from durationSeconds so elapsed time starts where the session left off.
+    const sourceKey = workout.repiqSourceKey;
+    let sourceExercises: ExerciseDraft[] = [];
+    if (sourceKey && repiqPlan) {
+      // repiqSourceKey format: "wi-di" (e.g. "0-2")
+      const match = sourceKey.match(/^(\d+)-(\d+)$/);
+      if (match) {
+        const wi = parseInt(match[1], 10);
+        const di = parseInt(match[2], 10);
+        const day = repiqPlan.weeks[wi]?.days[di];
+        if (day) {
+          sourceExercises = day.exercises.flatMap((pe) => {
+            const template = availableExerciseTemplates.find((e) => e.id === pe.exerciseId);
+            if (!template) return [];
+            const sets: DraftSet[] = Array.from({ length: pe.sets }, (_, i) => ({
+              id: `${pe.exerciseId}-edit-${i}`,
+              setType: "normal" as const,
+              weightInput: "",
+              repsInput: "",
+              rpeInput: "",
+              done: false,
+              failed: false,
+            }));
+            return [{ ...template, note: "", draftSets: sets }];
+          });
+        }
+      }
+    }
+    // Fall back to summary exercise list if plan day not found
+    if (sourceExercises.length === 0) {
+      sourceExercises = workout.exercises.flatMap((summary) => {
+        const template = availableExerciseTemplates.find((e) => e.id === summary.id);
+        if (!template) return [];
+        const sets: DraftSet[] = Array.from({ length: Math.max(summary.loggedSets, 1) }, (_, i) => ({
+          id: `${summary.id}-edit-${i}`,
+          setType: "normal" as const,
+          weightInput: "",
+          repsInput: "",
+          rpeInput: "",
+          done: false,
+          failed: false,
+        }));
+        return [{ ...template, note: "", draftSets: sets }];
+      });
+    }
+    if (sourceExercises.length === 0) return;
+    setExercises(sourceExercises);
+    setCollapsedExerciseIds([]);
+    setGuidanceCollapsed(false);
+    setFocusedExpandedExerciseId(null);
+    // Pre-seed timer from the workout's stored duration.
+    // durationSeconds may be 0 for older sessions — parse the formatted duration string as fallback.
+    let elapsed = workout.durationSeconds ?? 0; // durationSeconds is in FinishWorkoutDraft
+    if (elapsed === 0 && workout.duration && workout.duration !== "—") {
+      const parts = workout.duration.split(":").map(Number);
+      if (parts.length === 3 && parts.every(Number.isFinite)) {
+        elapsed = parts[0] * 3600 + parts[1] * 60 + parts[2];
+      } else if (parts.length === 2 && parts.every(Number.isFinite)) {
+        elapsed = parts[0] * 60 + parts[1];
+      }
+    }
+    const fakeStart = new Date(Date.now() - elapsed * 1000);
+    setWorkoutMeta({
+      date: formatDateInputValue(fakeStart),
+      startTime: formatTimeFromDate(fakeStart),
+      startedMinutesAgo: String(Math.floor(elapsed / 60)),
+      sessionName: workout.sessionName,
+      startInstant: fakeStart.toISOString(),
+    });
+    setShowBottomRestDock(true);
+    setActivePlanSession(null);
+    setActiveRepIQSessionKey(null);
+    setDiscardReturnView("planner");
+    setHasActiveWorkout(true);
+    setAppView("logger");
+  }
+
+  function saveHistoryWorkoutToMyWorkouts(workout: SavedWorkoutData) {
+    const now = new Date().toISOString();
+    const plan: WorkoutPlan = {
+      id: `plan-${Date.now()}`,
+      name: workout.sessionName,
+      exercises: workout.exercises.flatMap((summary) => {
+        const template = availableExerciseTemplates.find((e) => e.id === summary.id);
+        if (!template) return [];
+        return [{
+          exerciseId: summary.id,
+          setCount: Math.max(summary.loggedSets, 1),
+          restTimer: `${settings.defaultRestSeconds ?? "90"}s`,
+        }];
+      }),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const updated = [plan, ...workoutPlans];
+    setWorkoutPlans(updated);
+    persistWorkoutPlans(updated);
+  }
+
+  function regenerateRemainingRepIQSessions() {
+    if (!repiqPlan) return;
+    const exp = repiqPlan.experienceLevel;
+    const dayTemplates = buildDayTemplates(repiqPlan.splitType, repiqPlan.daysPerWeek);
+    const scheme = getPlanSetRepScheme(repiqPlan.goal);
+    // Collect exercise IDs already used in completed sessions (avoid repeating them)
+    const used = new Set<string>();
+    repiqPlan.weeks.forEach(week =>
+      week.days.forEach(day => {
+        if (day.completedAt) day.exercises.forEach(e => used.add(e.exerciseId));
+      })
+    );
+    const updatedWeeks = repiqPlan.weeks.map((week) => ({
+      ...week,
+      days: week.days.map((day, di) => {
+        if (day.completedAt) return day; // keep completed sessions as-is
+        const tmpl = dayTemplates[di % dayTemplates.length];
+        return {
+          ...day,
+          exercises: tmpl.slots
+            .map(slot => {
+              const exerciseId = pickPlanExercise(smartReplaceCatalog, slot, exp, used);
+              if (!exerciseId) return null;
+              return { exerciseId, sets: scheme.sets, reps: scheme.reps, restSeconds: scheme.restSeconds } satisfies RepIQPlanExercise;
+            })
+            .filter((e): e is RepIQPlanExercise => e !== null),
+        };
+      }),
+    }));
+    const updated: RepIQPlan = {
+      ...repiqPlan,
+      weeks: updatedWeeks,
+      needsReview: false,
+      extraVolumeCount: 0,
+      extraVolumeWorkoutIds: [],
+      lastRegeneratedAt: new Date().toISOString(),
+    };
+    persistRepIQPlan(updated);
+    setRepiqPlan(updated);
+  }
+
+  function deleteHistoryWorkout(savedAt: string) {
+    const updated = savedWorkoutsList.filter(w => w.savedAt !== savedAt);
+    setSavedWorkoutsList(updated);
+    persistSavedWorkoutsList(updated);
+    if (!repiqPlan || repiqPlan.status === "paused") return;
+    const lastRegen = repiqPlan.lastRegeneratedAt ?? repiqPlan.generatedAt;
+    if (repiqPlan.extraVolumeWorkoutIds?.includes(savedAt)) {
+      // Was a tracked extra-volume workout — decrement count
+      const remainingIds = repiqPlan.extraVolumeWorkoutIds.filter(id => id !== savedAt);
+      const updatedPlan: RepIQPlan = {
+        ...repiqPlan,
+        extraVolumeWorkoutIds: remainingIds,
+        extraVolumeCount: remainingIds.length,
+        needsReview: remainingIds.length > 0,
+      };
+      persistRepIQPlan(updatedPlan);
+      setRepiqPlan(updatedPlan);
+    } else if (savedAt > lastRegen) {
+      // Volume decreased after last regeneration — plan may need adjustment
+      const updatedPlan: RepIQPlan = {
+        ...repiqPlan,
+        needsReview: true,
+      };
+      persistRepIQPlan(updatedPlan);
+      setRepiqPlan(updatedPlan);
+    }
+  }
+
+  function getNextRepIQSession(plan: RepIQPlan): { weekIdx: number; dayIdx: number } | null {
+    for (let wi = plan.currentWeekIndex; wi < plan.weeks.length; wi++) {
+      const week = plan.weeks[wi];
+      if (week.isCompleted) continue;
+      for (let di = 0; di < week.days.length; di++) {
+        if (!week.days[di].completedAt) return { weekIdx: wi, dayIdx: di };
+      }
+    }
+    return null;
+  }
+
+  function startRepIQSession(weekIdx: number, dayIdx: number) {
+    if (!repiqPlan) return;
+    const day = repiqPlan.weeks[weekIdx]?.days[dayIdx];
+    if (!day) return;
+    resetWorkout();
+    const planExercises: ExerciseDraft[] = day.exercises.flatMap((pe) => {
+      const template = availableExerciseTemplates.find((e) => e.id === pe.exerciseId);
+      if (!template) return [];
+      const sets: DraftSet[] = Array.from({ length: pe.sets }, (_, i) => ({
+        id: `${pe.exerciseId}-${i}-${Date.now()}`,
+        setType: "normal" as DraftSetType,
+        weightInput: "",
+        repsInput: String(pe.reps),
+        rpeInput: "",
+        done: false,
+        failed: false,
+      }));
+      return [{ ...template, restTimer: String(pe.restSeconds), note: "", draftSets: sets }];
+    });
+    setExercises(planExercises);
+    setCollapsedExerciseIds([]);
+    setGuidanceCollapsed(false);
+    setFocusedExpandedExerciseId(null);
+    const now = new Date();
+    setWorkoutMeta({
+      date: formatDateInputValue(now),
+      startTime: formatTimeFromDate(now),
+      startedMinutesAgo: "0",
+      sessionName: day.sessionLabel,
+      startInstant: now.toISOString(),
+    });
+    setShowBottomRestDock(true);
+    setActivePlanSession({ source: "repiq", planId: null, originalPlan: null, weekIdx, dayIdx });
+    setActiveRepIQSessionKey(`${weekIdx}-${dayIdx}`);
+    setDiscardReturnView("planner");
+    setHasActiveWorkout(true);
+    setAppView("logger");
+  }
+
+  function propagateRepIQChanges(weekIdx: number, dayIdx: number, completedExerciseIds: string[]) {
+    if (!repiqPlan) return;
+    const usedIds = new Set<string>(completedExerciseIds);
+    // Add all previously completed exercise IDs too
+    repiqPlan.weeks.forEach((week, wi) => {
+      week.days.forEach((day, di) => {
+        if (day.completedAt && !(wi === weekIdx && di === dayIdx)) {
+          day.exercises.forEach((e) => usedIds.add(e.exerciseId));
+        }
+      });
+    });
+    const scheme = getPlanSetRepScheme(repiqPlan.goal as TrainingGoal);
+    const exp = repiqPlan.experienceLevel as ExperienceLevel;
+    const dayTemplates = buildDayTemplates(repiqPlan.splitType, repiqPlan.daysPerWeek);
+    const updatedWeeks = repiqPlan.weeks.map((week, wi) => {
+      if (wi <= weekIdx) return week;
+      return {
+        ...week,
+        days: week.days.map((day, di) => {
+          const tmpl = dayTemplates[di % dayTemplates.length];
+          const newExercises = tmpl.slots
+            .map((slot) => {
+              const id = pickPlanExercise(smartReplaceCatalog, slot, exp, usedIds);
+              if (!id) return null;
+              usedIds.add(id);
+              return { exerciseId: id, sets: scheme.sets, reps: scheme.reps, restSeconds: scheme.restSeconds } satisfies RepIQPlanExercise;
+            })
+            .filter((e): e is RepIQPlanExercise => e !== null);
+          return { ...day, exercises: newExercises };
+        }),
+      };
+    });
+    const updatedPlan = { ...repiqPlan, weeks: updatedWeeks };
+    persistRepIQPlan(updatedPlan);
+    setRepiqPlan(updatedPlan);
+  }
+
+  function regenerateRepIQPlan(prefs: { goal: string; experience: string; daysPerWeek: number; sessionLength: number; planLengthWeeks: number; splitPref: string | null }) {
+    const updatedProfile: UserPsychProfile = {
+      ...psychProfile,
+      primaryGoal: prefs.goal as TrainingGoal,
+      experienceLevel: prefs.experience as ExperienceLevel,
+      daysPerWeekPref: prefs.daysPerWeek,
+      sessionLengthPref: prefs.sessionLength,
+      planLengthWeeksPref: prefs.planLengthWeeks,
+      workoutStylePref: prefs.splitPref,
+    };
+    persistPsychProfile(updatedProfile);
+    setPsychProfile(updatedProfile);
+    const plan = generateRepIQPlan(updatedProfile);
+    persistRepIQPlan(plan);
+    setRepiqPlan(plan);
   }
 
   async function saveFinishedWorkout(images: WorkoutMediaAsset[]) {
@@ -12120,7 +13705,7 @@ export function App() {
       <DevLandingPage
         resolvedTheme={resolvedTheme}
         onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
-        onGoTo={(view) => { setAppView(view); setShowDevPage(false); }}
+        onGoTo={(view) => { setAppView(view); setShowDevPage(false); setDevBypassGate(true); }}
         onShowPostOnboarding={() => { setShowPostOnboarding(true); setShowDevPage(false); }}
         onResetOnboarding={() => {
           const reset: UserPsychProfile = { ...psychProfile, onboardingCompletedAt: null };
@@ -12133,7 +13718,7 @@ export function App() {
   }
 
   // ── Onboarding gate ──────────────────────────────────────────────────────────
-  if (!onboardingComplete) {
+  if (!onboardingComplete && !devBypassGate) {
     return (
       <div data-theme={resolvedTheme} className="ob-shell">
         <OnboardingPage
@@ -12147,6 +13732,9 @@ export function App() {
             };
             persistPsychProfile(updated);
             setPsychProfile(updated);
+            const plan = generateRepIQPlan(updated);
+            persistRepIQPlan(plan);
+            setRepiqPlan(plan);
             setShowPostOnboarding(true);
           }}
         />
@@ -12154,13 +13742,15 @@ export function App() {
     );
   }
 
-  // ── Post-onboarding "What's Next" ────────────────────────────────────────────
-  if (showPostOnboarding) {
+  // ── Post-onboarding plan reveal ──────────────────────────────────────────────
+  if (showPostOnboarding && repiqPlan) {
     return (
-      <PostOnboardingPage
+      <PlanRevealPage
+        plan={repiqPlan}
         profile={psychProfile}
         resolvedTheme={resolvedTheme}
-        onContinue={() => setShowPostOnboarding(false)}
+        onStart={() => { setShowPostOnboarding(false); setAppView("planner"); }}
+        onBuildOwn={() => { setShowPostOnboarding(false); setAppView("planner"); }}
       />
     );
   }
@@ -12275,6 +13865,91 @@ export function App() {
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+        {/* ── RepIQ plan update prompt ─────────────────────────────────────── */}
+        {repiqUpdatePrompt && (
+          <div
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 600, display: "flex", alignItems: "flex-end" }}
+            onClick={() => setRepiqUpdatePrompt(null)}
+          >
+            <div
+              style={{ width: "100%", maxWidth: 430, margin: "0 auto", background: "var(--paper)", borderRadius: "20px 20px 0 0", padding: "20px 20px 32px" }}
+              onClick={(e) => e.stopPropagation()}
+              data-theme={resolvedTheme}
+            >
+              <p style={{ fontSize: "1rem", fontWeight: 700, color: "var(--ink)", marginBottom: 8 }}>Update your plan?</p>
+              <p style={{ fontSize: "0.85rem", color: "var(--subtle-text)", marginBottom: 20 }}>
+                You changed exercises in today&apos;s session. RepIQ can update your remaining sessions to avoid overlap and keep things fresh.
+              </p>
+              <button
+                type="button"
+                className="primary-button"
+                style={{ width: "100%", marginBottom: 10 }}
+                onClick={() => {
+                  propagateRepIQChanges(repiqUpdatePrompt.weekIdx, repiqUpdatePrompt.dayIdx, repiqUpdatePrompt.completedExerciseIds);
+                  setRepiqUpdatePrompt(null);
+                }}
+              >
+                Yes, update future sessions
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                style={{ width: "100%" }}
+                onClick={() => setRepiqUpdatePrompt(null)}
+              >
+                Keep original plan
+              </button>
+            </div>
+          </div>
+        )}
+        {/* cross-plan prompt removed — plan is flagged silently; review notice shown inline on home and planner */}
+      </div>
+    );
+  }
+
+  if (appView === "history-detail" && (historyDetailWorkout || historyDetailPlanContext)) {
+    // Build a plan-only fallback when no saved workout exists
+    const planDay = historyDetailPlanContext && repiqPlan
+      ? repiqPlan.weeks[historyDetailPlanContext.weekIdx]?.days[historyDetailPlanContext.dayIdx]
+      : null;
+    const effectiveWorkout: SavedWorkoutData | null = historyDetailWorkout ?? (planDay && historyDetailPlanContext ? {
+      sessionName: historyDetailPlanContext.label,
+      note: "",
+      date: planDay.completedAt ?? new Date().toISOString(),
+      duration: "—",
+      durationSeconds: 0,
+      totalVolume: 0,
+      totalSets: 0,
+      exerciseCount: planDay.exercises.length,
+      loggedExerciseCount: 0,
+      ignoredIncompleteSets: 0,
+      exercises: planDay.exercises.map(pe => ({
+        id: pe.exerciseId,
+        name: availableExerciseTemplates.find(t => t.id === pe.exerciseId)?.name ?? pe.exerciseId,
+        primaryMuscle: availableExerciseTemplates.find(t => t.id === pe.exerciseId)?.primaryMuscle ?? "",
+        loggedSets: 0,
+        loggedVolume: 0,
+      })),
+      rewards: [],
+      rewardSummary: { total: 0, session: 0, exercise: 0, set: 0 },
+      takeawayTitle: "",
+      takeawayBody: "",
+      images: [],
+      savedAt: planDay.completedAt ?? new Date().toISOString(),
+      repiqSourceKey: `${historyDetailPlanContext.weekIdx}-${historyDetailPlanContext.dayIdx}`,
+    } : null);
+    if (!effectiveWorkout) { setAppView(historyDetailReturnView); return null; }
+    const canEdit = !!(effectiveWorkout.repiqSourceKey);
+    return (
+      <div data-theme={resolvedTheme}>
+        <WorkoutHistoryDetailPage
+          workout={effectiveWorkout}
+          onBack={() => setAppView(historyDetailReturnView)}
+          onEdit={canEdit ? () => editHistoryWorkout(effectiveWorkout) : undefined}
+          onShare={canEdit ? () => { setReportWorkout(effectiveWorkout); setAppView("report"); } : undefined}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+        />
       </div>
     );
   }
@@ -12285,6 +13960,9 @@ export function App() {
         <InsightsPage
           savedWorkouts={savedWorkoutsList}
           onOpenReport={(workout) => { setReportWorkout(workout); setAppView("report"); }}
+          onRedoWorkout={redoWorkout}
+          onSaveToMyWorkouts={saveHistoryWorkoutToMyWorkouts}
+          onDeleteWorkout={deleteHistoryWorkout}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
@@ -12439,6 +14117,47 @@ export function App() {
           defaultGoal={settings.preferredGoal}
           defaultLevel={settings.preferredLevel}
           defaultEquipment={settings.preferredEquipment}
+          repiqPlan={repiqPlan}
+          initialPlannerMode={plannerInitialMode}
+          onStartRepIQSession={startRepIQSession}
+          onRegeneratePlan={regenerateRepIQPlan}
+          onRegenerateRemaining={regenerateRemainingRepIQSessions}
+          onSaveSessionToLibrary={(day, label) => {
+            const plan: WorkoutPlan = {
+              id: `plan-${Date.now()}`,
+              name: label,
+              exercises: day.exercises.map((e) => ({
+                exerciseId: e.exerciseId,
+                setCount: e.sets,
+                restTimer: String(e.restSeconds),
+              })),
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            savePlan(plan);
+            setPlannerView("mine");
+          }}
+          psychProfile={psychProfile}
+          onToggleRepIQStatus={() => {
+            if (!repiqPlan) return;
+            const updated = { ...repiqPlan, status: repiqPlan.status === "paused" ? "active" as const : "paused" as const };
+            persistRepIQPlan(updated);
+            setRepiqPlan(updated);
+          }}
+          onDismissReview={() => {
+            if (!repiqPlan) return;
+            const updated = { ...repiqPlan, needsReview: false };
+            persistRepIQPlan(updated);
+            setRepiqPlan(updated);
+          }}
+          savedWorkouts={savedWorkoutsList}
+          onOpenHistoryWorkout={(workout, weekIdx, dayIdx, label, sessionNum) => {
+            setHistoryDetailWorkout(workout);
+            setHistoryDetailPlanContext(repiqPlan ? { weekIdx, dayIdx, label, sessionNum } : null);
+            setHistoryDetailReturnView("planner");
+            setAppView("history-detail");
+          }}
+          onSaveHistoryWorkout={saveHistoryWorkoutToMyWorkouts}
         />
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
 
@@ -12587,16 +14306,25 @@ export function App() {
           mode={planBuilderMode}
           library={availableExerciseTemplates}
           existingTags={existingUserTags}
-          onBack={() => setAppView("planner")}
+          onBack={() => { setPlannerInitialMode("custom"); setAppView("planner"); }}
           onChange={setPlanBuilderDraft}
           onAddExercise={() => setBuilderAddExerciseOpen(true)}
           onOpenExerciseDetails={(exerciseId) => openDetails(exerciseId)}
+          onDeletePlan={planBuilderMode === "edit" && editingPlan ? () => {
+            deletePlan(editingPlan.id);
+            setEditingPlan(null);
+            setPlanBuilderDraft(null);
+            setPlanBuilderMode("create");
+            setPlannerInitialMode("custom");
+            setAppView("planner");
+          } : undefined}
           onSavePlan={(plan) => {
             savePlan(plan);
             setEditingPlan(planBuilderMode === "edit" ? plan : null);
             setPlanBuilderDraft(null);
             setPlanBuilderMode("create");
             setPlannerView("mine");
+            setPlannerInitialMode("custom");
             setAppView("planner");
           }}
           resolvedTheme={resolvedTheme}
@@ -12659,15 +14387,60 @@ export function App() {
           </header>
 
           <section className="selector-stack">
-            <button
-              className="quick-workout-card"
-              type="button"
-              disabled={hasActiveWorkout}
-              onClick={() => openQuickSession("home")}
-            >
-              Quick Workout
-              <span className="quick-workout-card-arrow" aria-hidden="true">→</span>
-            </button>
+            {/* ── Start section ── */}
+            {repiqPlan ? (() => {
+              const nextSession = getNextRepIQSession(repiqPlan);
+              if (!nextSession) return <p className="home-plan-done-note">All sessions complete — great work!</p>;
+              const nextDay = repiqPlan.weeks[nextSession.weekIdx]?.days[nextSession.dayIdx];
+              return (
+                <div className="home-start-section">
+                  <div className="home-next-preview">
+                    <p className="home-next-label">Next up</p>
+                    <p className="home-next-name">{nextDay?.sessionLabel ?? "Next Session"}</p>
+                    <p className="home-next-meta">{nextDay?.exercises.length ?? 0} exercises · Week {nextSession.weekIdx + 1}</p>
+                  </div>
+                  <button
+                    className="primary-button home-start-primary"
+                    type="button"
+                    disabled={hasActiveWorkout}
+                    onClick={() => startRepIQSession(nextSession.weekIdx, nextSession.dayIdx)}
+                  >
+                    Start Next Workout
+                  </button>
+                </div>
+              );
+            })() : null}
+
+            {/* ── Plan card (planning actions only) ── */}
+            {repiqPlan && (
+              <article className="session-card home-plan-card">
+                <div className="session-card-top">
+                  <div>
+                    <p className="label">Your Plan</p>
+                    <h2 className="home-plan-name">{repiqPlan.planName}</h2>
+                  </div>
+                </div>
+                <p className="home-plan-meta">{SPLIT_LABEL[repiqPlan.splitType]} · {repiqPlan.daysPerWeek} days/week · {repiqPlan.mesocycleLengthWeeks} weeks</p>
+                {repiqPlan.needsReview && (
+                  <div className="repiq-needs-review-notice">
+                    <span className="repiq-needs-review-text">
+                      {repiqPlan.extraVolumeCount ?? 1} extra session{(repiqPlan.extraVolumeCount ?? 1) !== 1 ? "s" : ""} logged outside your plan — your remaining sessions may need a refresh.
+                    </span>
+                    <button
+                      type="button"
+                      className="repiq-needs-review-btn"
+                      onClick={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}
+                    >
+                      Review →
+                    </button>
+                  </div>
+                )}
+                <div className="home-plan-actions">
+                  <button className="secondary-button" type="button" onClick={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}>Explore Plan</button>
+                  <button className="secondary-button" type="button" onClick={() => { setPlannerInitialMode("custom"); setAppView("planner"); }}>Custom</button>
+                </div>
+              </article>
+            )}
 
             {/* Latest workout card */}
             <article className="session-card home-latest-card" onClick={savedWorkoutData ? () => { setReportWorkout(savedWorkoutData); setAppView("report"); } : undefined} style={savedWorkoutData ? { cursor: "pointer" } : undefined}>
@@ -12689,31 +14462,47 @@ export function App() {
               )}
             </article>
 
-            <article className="session-card">
-              <div className="session-card-top">
-                <div>
-                  <p className="label">Workout Planner</p>
-                  <h2>Your routines</h2>
+            {!repiqPlan && (
+              <article className="session-card">
+                <div className="session-card-top">
+                  <div>
+                    <p className="label">Workout Planner</p>
+                    <h2>Your routines</h2>
+                  </div>
                 </div>
-              </div>
-              <p className="settings-note">
-                Browse your saved routines and starter templates.
-              </p>
-              <div className="session-card-actions">
-                <button className="secondary-button" type="button" onClick={() => { setPlannerView("library"); setAppView("planner"); }}>
-                  Explore plans
-                </button>
-                <button className="primary-button" type="button" onClick={() => {
-                  setPlanBuilderDraft({ id: crypto.randomUUID(), name: "", exercises: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-                  setPlanBuilderMode("create");
-                  setAppView("plan-builder");
-                }}>
-                  Custom
-                </button>
-              </div>
-            </article>
+                <p className="settings-note">
+                  Browse your saved routines and starter templates.
+                </p>
+                <div className="session-card-actions">
+                  <button className="secondary-button" type="button" onClick={() => { setPlannerView("library"); setAppView("planner"); }}>
+                    Explore plans
+                  </button>
+                  <button className="primary-button" type="button" onClick={() => {
+                    setPlanBuilderDraft({ id: crypto.randomUUID(), name: "", exercises: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+                    setPlanBuilderMode("create");
+                    setAppView("plan-builder");
+                  }}>
+                    Custom
+                  </button>
+                </div>
+              </article>
+            )}
           </section>
         </section>
+
+        {/* Quick Workout FAB */}
+        <button
+          className="home-quick-fab"
+          type="button"
+          disabled={hasActiveWorkout}
+          onClick={() => openQuickSession("home")}
+          aria-label="Quick workout"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+          <span>Quick Workout</span>
+        </button>
 
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
 
@@ -13420,7 +15209,53 @@ export function App() {
                   <span>{measurementLabels.first}</span>
                   <span>{measurementLabels.second}</span>
                   {settings.showRpe && <span>RPE</span>}
-                  <span>Done</span>
+                  <label className="done-cell done-cell-header" title="Mark all sets done" onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={exercise.draftSets.length > 0 && exercise.draftSets.every(s => s.done)}
+                      onChange={() => {
+                        const allDone = exercise.draftSets.every(s => s.done);
+                        if (!allDone) {
+                          const targetId = exercise.id;
+                          setExercises(prev => prev.map(ex => {
+                            if (ex.id !== targetId) return ex;
+                            const lastSession = ex.history[ex.history.length - 1];
+                            return {
+                              ...ex,
+                              draftSets: ex.draftSets.map((set, i) => {
+                                if (set.done) return set;
+                                const measurementType = getExerciseMeasurementType(ex);
+                                const carrySource = getCurrentExerciseCarrySource(ex.draftSets, i);
+                                const previousSet = getPreviousReferenceSet(ex.draftSets, i, lastSession);
+                                const resolvedWeight = usesWeightInputForMeasurement(measurementType)
+                                  ? settings.carryForwardDefaults && set.weightInput.trim() === ""
+                                    ? carrySource?.weightInput?.trim().length ? carrySource.weightInput
+                                      : previousSet ? String(previousSet.weight) : ""
+                                    : set.weightInput
+                                  : "";
+                                const resolvedReps = settings.carryForwardDefaults && set.repsInput.trim() === ""
+                                  ? carrySource?.repsInput?.trim().length ? carrySource.repsInput
+                                    : previousSet ? String(previousSet.reps) : ""
+                                  : set.repsInput;
+                                const resolvedRpe = settings.carryForwardDefaults && set.rpeInput.trim() === ""
+                                  ? carrySource?.rpeInput?.trim().length ? carrySource.rpeInput
+                                    : typeof previousSet?.rpe === "number" && Number.isFinite(previousSet.rpe)
+                                      ? String(previousSet.rpe) : ""
+                                  : set.rpeInput;
+                                return { ...set, done: true, weightInput: resolvedWeight, repsInput: resolvedReps, rpeInput: resolvedRpe };
+                              })
+                            };
+                          }));
+                        } else {
+                          setExercises(prev => prev.map(ex =>
+                            ex.id === exercise.id
+                              ? { ...ex, draftSets: ex.draftSets.map(s => ({ ...s, done: false })) }
+                              : ex
+                          ));
+                        }
+                      }}
+                    />
+                  </label>
                 </div>
 
                 <div className="set-list">
@@ -13981,39 +15816,65 @@ export function App() {
           </section>
         )}
 
-        {finishConfirmOpen && (
-          <section className="sheet-overlay leave-center-overlay" onClick={() => setFinishConfirmOpen(false)}>
-            <div className="leave-center-card" onClick={(event) => event.stopPropagation()}>
-              <div className="sheet-head">
-                <div>
-                  <p className="label">Finish Workout</p>
-                  <h3>Some sets are still incomplete</h3>
+        {finishConfirmOpen && (() => {
+          const emptyExercises = exercises.filter(ex =>
+            ex.draftSets.some(s => s.done && s.repsInput.trim() === "")
+          );
+          const hasIncomplete = incompleteSetCount > 0;
+          const hasEmpty = emptyExercises.length > 0;
+          const allEmpty = exercises
+            .filter(ex => ex.draftSets.some(s => s.done))
+            .every(ex => ex.draftSets.every(s => !s.done || s.repsInput.trim() === ""));
+          const canFinishAnyway = !allEmpty;
+          return (
+            <section className="sheet-overlay leave-center-overlay" onClick={() => setFinishConfirmOpen(false)}>
+              <div className="leave-center-card" onClick={(event) => event.stopPropagation()}>
+                <div className="sheet-head">
+                  <div>
+                    <p className="label">Finish Workout</p>
+                    <h3>A few things to check</h3>
+                  </div>
+                  <button className="icon-button" type="button" onClick={() => setFinishConfirmOpen(false)}>×</button>
                 </div>
-                <button className="icon-button" type="button" onClick={() => setFinishConfirmOpen(false)}>
-                  ×
-                </button>
-              </div>
-              <p className="settings-note">
-                You still have {incompleteSetCount} incomplete {incompleteSetCount === 1 ? "set" : "sets"} in this
-                workout. You can go back and finish them, or finish the workout anyway and ignore the unfinished rows.
-              </p>
-              <div className="logger-end-actions finish-confirm-actions">
-                <div className="logger-end-actions-row finish-confirm-actions-row">
-                  <button
-                    className="secondary-button logger-action-button logger-add-button"
-                    type="button"
-                    onClick={() => setFinishConfirmOpen(false)}
-                  >
-                    Go Back And Finish
-                  </button>
+                {hasIncomplete && (
+                  <p className="settings-note" style={{ marginBottom: hasEmpty ? 6 : undefined }}>
+                    <strong>{incompleteSetCount} {incompleteSetCount === 1 ? "set is" : "sets are"} still incomplete.</strong> You can go back and finish them, or finish anyway and they'll be skipped.
+                  </p>
+                )}
+                {hasEmpty && (
+                  <>
+                    <p className="settings-note" style={{ marginBottom: 4 }}>
+                      {allEmpty
+                        ? "None of your completed sets have weight or reps entered."
+                        : `${emptyExercises.length === 1 ? "1 exercise has" : `${emptyExercises.length} exercises have`} sets marked done but no values:`}
+                    </p>
+                    {!allEmpty && (
+                      <ul style={{ margin: "0 0 10px", paddingLeft: "20px", fontSize: "0.88rem", color: "var(--ink)" }}>
+                        {emptyExercises.map(ex => <li key={ex.id}>{ex.name}</li>)}
+                      </ul>
+                    )}
+                  </>
+                )}
+                <div className="logger-end-actions finish-confirm-actions">
+                  <div className="logger-end-actions-row finish-confirm-actions-row">
+                    <button
+                      className="secondary-button logger-action-button logger-add-button"
+                      type="button"
+                      onClick={() => setFinishConfirmOpen(false)}
+                    >
+                      Go Back
+                    </button>
+                  </div>
+                  {canFinishAnyway && (
+                    <button className="primary-button logger-finish-button" type="button" onClick={() => void finishWorkoutAnyway()}>
+                      Finish Anyway
+                    </button>
+                  )}
                 </div>
-                <button className="primary-button logger-finish-button" type="button" onClick={() => void finishWorkoutAnyway()}>
-                  Finish Anyway
-                </button>
               </div>
-            </div>
-          </section>
-        )}
+            </section>
+          );
+        })()}
 
         {discardConfirmOpen && (
           <section className="sheet-overlay bottom-sheet-overlay" onClick={() => setDiscardConfirmOpen(false)}>
@@ -14158,6 +16019,45 @@ export function App() {
                   }}
                 >
                   Reorder
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    const targetId = activeMenuExercise.id;
+                    setExercises(prev => prev.map(ex => {
+                      if (ex.id !== targetId) return ex;
+                      const lastSession = ex.history[ex.history.length - 1];
+                      return {
+                        ...ex,
+                        draftSets: ex.draftSets.map((set, i) => {
+                          if (set.done) return set;
+                          const measurementType = getExerciseMeasurementType(ex);
+                          const carrySource = getCurrentExerciseCarrySource(ex.draftSets, i);
+                          const previousSet = getPreviousReferenceSet(ex.draftSets, i, lastSession);
+                          const resolvedWeight = usesWeightInputForMeasurement(measurementType)
+                            ? settings.carryForwardDefaults && set.weightInput.trim() === ""
+                              ? carrySource?.weightInput?.trim().length ? carrySource.weightInput
+                                : previousSet ? String(previousSet.weight) : ""
+                              : set.weightInput
+                            : "";
+                          const resolvedReps = settings.carryForwardDefaults && set.repsInput.trim() === ""
+                            ? carrySource?.repsInput?.trim().length ? carrySource.repsInput
+                              : previousSet ? String(previousSet.reps) : ""
+                            : set.repsInput;
+                          const resolvedRpe = settings.carryForwardDefaults && set.rpeInput.trim() === ""
+                            ? carrySource?.rpeInput?.trim().length ? carrySource.rpeInput
+                              : typeof previousSet?.rpe === "number" && Number.isFinite(previousSet.rpe)
+                                ? String(previousSet.rpe) : ""
+                            : set.rpeInput;
+                          return { ...set, done: true, weightInput: resolvedWeight, repsInput: resolvedReps, rpeInput: resolvedRpe };
+                        })
+                      };
+                    }));
+                    setMenuExerciseId(null);
+                  }}
+                >
+                  Mark all sets done
                 </button>
                 <button
                   type="button"
@@ -14535,6 +16435,45 @@ export function App() {
                 >
                   <span>{showBottomRestDock ? "Hide bottom rest timer" : "Show bottom rest timer"}</span>
                   <span className="workout-menu-check">{showBottomRestDock ? "✓" : ""}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExercises(prev => prev.map(ex => {
+                      const allDone = ex.draftSets.every(s => s.done);
+                      if (allDone) return ex;
+                      const lastSession = ex.history[ex.history.length - 1];
+                      return {
+                        ...ex,
+                        draftSets: ex.draftSets.map((set, i) => {
+                          if (set.done) return set;
+                          const measurementType = getExerciseMeasurementType(ex);
+                          const carrySource = getCurrentExerciseCarrySource(ex.draftSets, i);
+                          const previousSet = getPreviousReferenceSet(ex.draftSets, i, lastSession);
+                          const resolvedWeight = usesWeightInputForMeasurement(measurementType)
+                            ? settings.carryForwardDefaults && set.weightInput.trim() === ""
+                              ? carrySource?.weightInput?.trim().length ? carrySource.weightInput
+                                : previousSet ? String(previousSet.weight) : ""
+                              : set.weightInput
+                            : "";
+                          const resolvedReps = settings.carryForwardDefaults && set.repsInput.trim() === ""
+                            ? carrySource?.repsInput?.trim().length ? carrySource.repsInput
+                              : previousSet ? String(previousSet.reps) : ""
+                            : set.repsInput;
+                          const resolvedRpe = settings.carryForwardDefaults && set.rpeInput.trim() === ""
+                            ? carrySource?.rpeInput?.trim().length ? carrySource.rpeInput
+                              : typeof previousSet?.rpe === "number" && Number.isFinite(previousSet.rpe)
+                                ? String(previousSet.rpe) : ""
+                            : set.rpeInput;
+                          return { ...set, done: true, weightInput: resolvedWeight, repsInput: resolvedReps, rpeInput: resolvedRpe };
+                        })
+                      };
+                    }));
+                    setWorkoutMenuOpen(false);
+                  }}
+                >
+                  <span>Mark all sets done</span>
+                  <span className="workout-menu-chevron">›</span>
                 </button>
                 <button
                   type="button"
