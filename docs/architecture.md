@@ -126,3 +126,32 @@ These are not first-slice blockers, but they are part of the intended product di
 - Extend the token-based theme system with curated presets rather than arbitrary freeform colors first
 - Each preset should define background, surface, text, accent/button, and highlight tones together
 - Apply changes live without restart wherever possible
+
+## Exercise Taxonomy Architecture
+
+- Each exercise in the library carries three structural metadata fields in addition to existing muscle data:
+  - `movementPattern: MovementPattern` — 14 patterns (horizontal_push, vertical_pull, hip_hinge, squat, etc.)
+  - `angle: ExerciseAngle` — flat / incline / decline / overhead / neutral / prone / none
+  - `equipment: ExerciseEquipment` — barbell / dumbbell / cable / machine / bodyweight / kettlebell / band / landmine / smith_machine
+  - `difficultyLevel: ExerciseDifficulty` — beginner / intermediate / advanced
+- The `ExerciseWithTaxonomy` type alias wraps `ExerciseDraft` with optional taxonomy fields for backwards compatibility
+- Naming convention: `[Angle if not flat] [Equipment] [Base movement]` — e.g. "Incline Dumbbell Press"
+- Analytics and Smart Replace always operate on structural metadata, never on exercise names
+- The `groupSetsByMovementPattern()` helper aggregates session volume by pattern family for Insights use
+
+## Smart Replace Architecture
+
+- Scoring is a pure function: `scoreReplacement(original, candidate, sessionContext, reason, equipment, level) → number`
+- Score components: movement pattern match (30), angle match (20 bonus), primary muscle match (30), secondary overlap (15), equipment accessibility (5), session fatigue penalty (−10 to −25)
+- `getSmartReplacements()` returns top 5 scored alternatives with a `matchReason` string for the UI
+- `ReplacementEvent` is logged per swap to `repiq-replacement-events` for V2 pattern learning
+- The scoring engine has no external dependencies — it runs entirely client-side against the exerciseLibrary array
+- V2 will extend this with server-side personalisation using replacement history and psych profile
+
+## Community Data Boundary (Future)
+
+- Community features require backend: groups, members, leaderboard scores, activity feed, friend relationships
+- All community data is user-scoped and server-owned — nothing is derived from localStorage
+- Psych data, progress photos, and training data are never automatically shared with community features
+- Explicit share actions per item are required — no implicit visibility
+- Leaderboard scores are derived server-side from session data — not from client-reported numbers

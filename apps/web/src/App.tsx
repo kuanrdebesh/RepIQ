@@ -326,6 +326,241 @@ type CustomExerciseType =
   | "freestyle_cardio";
 type MeasurementType = "timed" | "reps_volume" | "weight_timed";
 type MovementSide = "unilateral" | "bilateral";
+
+// ── Smart Replace — see docs/smart-replace.md ─────────────────────────────────
+type MovementPattern =
+  | "horizontal_push"    // Bench press, push-up, dumbbell press
+  | "vertical_push"      // Overhead press, Arnold press, pike push-up
+  | "horizontal_pull"    // Row (barbell, dumbbell, cable, machine)
+  | "vertical_pull"      // Lat pulldown, pull-up, chin-up
+  | "hip_hinge"          // Deadlift, RDL, good morning, hip thrust
+  | "squat"              // Back squat, front squat, goblet squat, leg press
+  | "lunge"              // Lunge, split squat, step-up, Bulgarian
+  | "carry"              // Farmer carry, suitcase carry
+  | "core_anterior"      // Plank, crunch, leg raise, hollow hold
+  | "core_rotational"    // Russian twist, woodchop, cable rotation
+  | "isolation_push"     // Tricep pushdown, chest fly, lateral raise
+  | "isolation_pull"     // Bicep curl, face pull, rear delt fly
+  | "isolation_legs"     // Leg extension, leg curl, calf raise
+  | "cardio";            // Jump rope, sled, rowing machine
+
+type ExerciseDifficulty = "beginner" | "intermediate" | "advanced";
+
+// Exercise angle — describes the bench/body position for the movement
+type ExerciseAngle =
+  | "flat"        // Standard horizontal (bench press, bent-over row)
+  | "incline"     // Angled upward (incline press, incline curl)
+  | "decline"     // Angled downward (decline press)
+  | "overhead"    // Vertical pressing plane
+  | "neutral"     // Neutral grip / neutral stance variant
+  | "prone"       // Face-down (reverse fly, prone leg curl)
+  | "none";       // Not applicable (squat, deadlift, carry)
+
+// Equipment — more granular than exerciseType, used for matching and filtering
+type ExerciseEquipment =
+  | "barbell"
+  | "dumbbell"
+  | "cable"
+  | "machine"
+  | "bodyweight"
+  | "kettlebell"
+  | "resistance_band"
+  | "landmine"
+  | "smith_machine"
+  | "none";       // Bodyweight / no equipment needed
+
+type ReplacementReason =
+  | "machine_taken"
+  | "no_equipment"
+  | "too_difficult"
+  | "pain_discomfort"
+  | "preference";
+
+interface ReplacementEvent {
+  schemaVersion: 1;
+  sessionId: string;               // = SavedWorkoutData.savedAt
+  replacedAt: string;              // ISO timestamp
+  originalExerciseId: string;
+  replacementExerciseId: string;
+  reason: ReplacementReason;
+  setsAlreadyLogged: number;
+  matchScore: number;
+}
+
+const replacementEventsStorageKey = "repiq-replacement-events";
+
+function getStoredReplacementEvents(): ReplacementEvent[] {
+  try {
+    const raw = window.localStorage.getItem(replacementEventsStorageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+function persistReplacementEvent(event: ReplacementEvent): void {
+  try {
+    const existing = getStoredReplacementEvents();
+    const updated = [event, ...existing].slice(0, 500);
+    window.localStorage.setItem(replacementEventsStorageKey, JSON.stringify(updated));
+  } catch {}
+}
+
+// Movement family — used for partial-match scoring
+function getMovementFamily(pattern: MovementPattern): string {
+  if (["horizontal_push", "vertical_push", "isolation_push"].includes(pattern)) return "push";
+  if (["horizontal_pull", "vertical_pull", "isolation_pull"].includes(pattern)) return "pull";
+  if (["squat", "lunge", "hip_hinge", "isolation_legs"].includes(pattern)) return "legs";
+  if (["core_anterior", "core_rotational"].includes(pattern)) return "core";
+  if (pattern === "carry") return "carry";
+  return "cardio";
+}
+
+// Equipment accessibility — maps exerciseType to what the user needs available
+function getEquipmentAccessibility(type: CustomExerciseType): CustomExerciseType[] {
+  switch (type) {
+    case "bodyweight_only":          return ["bodyweight_only"];
+    case "bodyweight_weighted":      return ["bodyweight_only", "bodyweight_weighted"];
+    case "free_weights_accessories": return ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories"];
+    case "barbell":                  return ["barbell"];
+    case "machine":                  return ["machine"];
+    case "freestyle_cardio":         return ["freestyle_cardio"];
+  }
+}
+
+// Type alias for extended exercise draft with taxonomy fields
+type ExerciseWithTaxonomy = ExerciseDraft & {
+  movementPattern?: MovementPattern;
+  angle?: ExerciseAngle;
+  equipment?: ExerciseEquipment;
+  difficultyLevel?: ExerciseDifficulty;
+};
+
+// Core scoring function — returns 0–100
+// Priority: same pattern + same angle + different equipment (best swap)
+//           same pattern + different angle + same equipment
+//           same pattern + different everything (still valid)
+//           same movement family (broader fallback)
+function scoreReplacement(
+  original: ExerciseWithTaxonomy,
+  candidate: ExerciseWithTaxonomy,
+  sessionExercises: ExerciseDraft[],
+  reason: ReplacementReason,
+  availableEquipment: CustomExerciseType[],
+  userLevel: ExperienceLevel | null,
+): number {
+  // Hard exclusions
+  if (candidate.id === original.id) return -1;
+  if (sessionExercises.some(e => e.id === candidate.id)) return -1;
+
+  // Equipment filter
+  const needed = getEquipmentAccessibility(candidate.exerciseType ?? "bodyweight_only");
+  const canDo = needed.some(e => availableEquipment.includes(e));
+  if (!canDo) return -1;
+
+  // Difficulty filter when reason is too_difficult
+  if (reason === "too_difficult" && userLevel !== "advanced") {
+    if ((candidate.difficultyLevel ?? "intermediate") === "advanced") return -1;
+  }
+
+  let score = 0;
+
+  // ── Movement pattern + angle match (0–50) ─────────────────────────────────
+  // Most important: preserves session intent and balance
+  const origPattern = original.movementPattern;
+  const candPattern = candidate.movementPattern;
+  if (origPattern && candPattern) {
+    if (candPattern === origPattern) {
+      score += 30;
+      // Bonus for same angle (same stimulus, just different equipment)
+      if (original.angle && candidate.angle && candidate.angle === original.angle) {
+        score += 20;  // e.g. Incline Barbell → Incline Dumbbell Press ✦
+      } else if (original.angle && candidate.angle && candidate.angle !== original.angle) {
+        score += 8;   // e.g. Incline Barbell → Flat Barbell Press
+      }
+    } else if (getMovementFamily(candPattern) === getMovementFamily(origPattern)) {
+      score += 15;    // Same family (e.g. push), different pattern
+    }
+  }
+
+  // ── Muscle match (0–40) ────────────────────────────────────────────────────
+  const origPrimary = original.primaryMuscle.toLowerCase();
+  const candPrimary = candidate.primaryMuscle.toLowerCase();
+  if (candPrimary === origPrimary) score += 30;
+  else if (candidate.secondaryMuscles.some(m => m.toLowerCase() === origPrimary)) score += 12;
+
+  const origSecondary = original.secondaryMuscles.map(m => m.toLowerCase());
+  const candSecondary = candidate.secondaryMuscles.map(m => m.toLowerCase());
+  const secondaryOverlap = candSecondary.filter(m => origSecondary.includes(m)).length;
+  score += Math.min(secondaryOverlap * 5, 15);
+
+  // ── Equipment accessibility bonus ──────────────────────────────────────────
+  // Same equipment type as original = user knows how to use it
+  if (original.equipment && candidate.equipment && candidate.equipment === original.equipment) {
+    score += 5;
+  }
+  // Bodyweight is always accessible — slight boost
+  if (candidate.exerciseType === "bodyweight_only") score += 3;
+
+  // ── Session fatigue penalty ────────────────────────────────────────────────
+  const setsOnSameMuscle = sessionExercises
+    .filter(e => e.primaryMuscle.toLowerCase() === candPrimary)
+    .reduce((sum, e) => sum + e.draftSets.length, 0);
+  if (setsOnSameMuscle >= 6) score -= 25;
+  else if (setsOnSameMuscle >= 3) score -= 10;
+
+  return Math.max(score, 0);
+}
+
+// Main replacement function — returns up to 5 ranked suggestions
+function getSmartReplacements(
+  original: ExerciseWithTaxonomy,
+  sessionExercises: ExerciseDraft[],
+  reason: ReplacementReason,
+  availableEquipment: CustomExerciseType[],
+  allExercises: ExerciseWithTaxonomy[],
+  userLevel: ExperienceLevel | null,
+): Array<{ exercise: ExerciseWithTaxonomy; score: number; matchReason: string }> {
+  return allExercises
+    .map(candidate => {
+      const score = scoreReplacement(original, candidate, sessionExercises, reason, availableEquipment, userLevel);
+      // Generate a human-readable match reason for the UI chip
+      let matchReason = "";
+      if (score >= 0) {
+        if (candidate.movementPattern === original.movementPattern && candidate.angle === original.angle) {
+          matchReason = "Same movement, different equipment";
+        } else if (candidate.movementPattern === original.movementPattern) {
+          matchReason = "Same pattern, different angle";
+        } else if (candidate.primaryMuscle === original.primaryMuscle) {
+          matchReason = `Targets ${original.primaryMuscle}`;
+        } else if (getMovementFamily(candidate.movementPattern ?? "cardio") === getMovementFamily(original.movementPattern ?? "cardio")) {
+          matchReason = "Same movement family";
+        } else {
+          matchReason = "Similar muscle group";
+        }
+        if (candidate.exerciseType === "bodyweight_only") matchReason += " · No equipment";
+      }
+      return { exercise: candidate, score, matchReason };
+    })
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score);
+}
+
+// Insights helper — roll up session volume by movement pattern
+// Used by Insights → Analyzer to show "Horizontal Push: 18 sets this week"
+function groupSetsByMovementPattern(
+  exercises: ExerciseDraft[],
+): Record<string, { sets: number; exercises: string[] }> {
+  const result: Record<string, { sets: number; exercises: string[] }> = {};
+  for (const ex of exercises) {
+    const pattern = (ex as ExerciseWithTaxonomy).movementPattern;
+    const family = pattern ? getMovementFamily(pattern) : "unknown";
+    if (!result[family]) result[family] = { sets: 0, exercises: [] };
+    result[family].sets += ex.draftSets.length;
+    if (!result[family].exercises.includes(ex.name)) result[family].exercises.push(ex.name);
+  }
+  return result;
+}
 type CustomExerciseInput = {
   name: string;
   imageSrc?: string;
@@ -334,6 +569,7 @@ type CustomExerciseInput = {
   exerciseType: CustomExerciseType;
   measurementType: MeasurementType;
   movementSide: MovementSide;
+  movementPattern?: MovementPattern;
 };
 
 type LoggerReward = {
@@ -1667,7 +1903,7 @@ const seededCustomExercises: ExerciseDraft[] = [
   })
 ];
 
-const exerciseLibrary: ExerciseDraft[] = [
+const exerciseLibrary: ExerciseWithTaxonomy[] = [
   {
     id: "bench-press",
     name: "Bench Press",
@@ -1677,6 +1913,11 @@ const exerciseLibrary: ExerciseDraft[] = [
     imageSrc: benchPressImage,
     primaryMuscle: "Chest",
     secondaryMuscles: ["Front Delts", "Triceps"],
+    movementPattern: "horizontal_push",
+    angle: "flat",
+    equipment: "barbell",
+    difficultyLevel: "intermediate",
+    exerciseType: "barbell",
     howTo: [
       "Set your eyes under the bar and plant your feet before unracking.",
       "Lower the bar to your mid-chest with controlled elbows.",
@@ -1734,6 +1975,11 @@ const exerciseLibrary: ExerciseDraft[] = [
     imageSrc: inclineDumbbellPressImage,
     primaryMuscle: "Upper Chest",
     secondaryMuscles: ["Front Delts", "Triceps"],
+    movementPattern: "horizontal_push",
+    angle: "incline",
+    equipment: "dumbbell",
+    difficultyLevel: "beginner",
+    exerciseType: "free_weights_accessories",
     howTo: [
       "Set the bench incline before picking the dumbbells up into position.",
       "Lower the bells with elbows slightly tucked and wrists stacked.",
@@ -2110,6 +2356,172 @@ const exerciseTemplates: ExerciseDraft[] = [
   },
   ...selectorCategorySamples,
   ...expandedExerciseSamples
+];
+
+// ── Smart Replace catalog ─────────────────────────────────────────────────────
+// Full taxonomy-tagged exercise pool used for Smart Replace scoring.
+// Separate from exerciseTemplates so the selector remains unchanged.
+function makeExercise(
+  id: string,
+  name: string,
+  primaryMuscle: string,
+  secondaryMuscles: string[],
+  movementPattern: MovementPattern,
+  angle: ExerciseAngle,
+  equipment: ExerciseEquipment,
+  difficultyLevel: ExerciseDifficulty,
+  exerciseType: CustomExerciseType,
+  restTimer: string,
+  howTo: string[],
+): ExerciseWithTaxonomy {
+  const img = (equipment === "dumbbell" || equipment === "cable" || equipment === "none" || equipment === "bodyweight")
+    ? inclineDumbbellPressImage
+    : benchPressImage;
+  return {
+    id,
+    name,
+    note: "",
+    restTimer,
+    goal: "hypertrophy",
+    imageSrc: img,
+    primaryMuscle,
+    secondaryMuscles,
+    howTo,
+    history: [],
+    draftSets: [
+      { id: `${id}-1`, setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false },
+      { id: `${id}-2`, setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false },
+      { id: `${id}-3`, setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false }
+    ],
+    movementPattern,
+    angle,
+    equipment,
+    difficultyLevel,
+    exerciseType
+  };
+}
+
+const smartReplaceCatalog: ExerciseWithTaxonomy[] = [
+  // ── Horizontal Push ──────────────────────────────────────────────────────────
+  makeExercise("bench-press", "Bench Press", "Chest", ["Front Delts", "Triceps"], "horizontal_push", "flat", "barbell", "intermediate", "barbell", "01:30", ["Plant your feet, set your upper back tight before unracking.", "Lower the bar to mid-chest with controlled elbows.", "Press up keeping the upper back pinned."]),
+  makeExercise("dumbbell-bench-press", "Dumbbell Bench Press", "Chest", ["Front Delts", "Triceps"], "horizontal_push", "flat", "dumbbell", "beginner", "free_weights_accessories", "01:30", ["Kick the dumbbells up with a tight upper back.", "Lower with stacked wrists, elbows slightly tucked.", "Press together and up."]),
+  makeExercise("machine-chest-press", "Machine Chest Press", "Chest", ["Front Delts", "Triceps"], "horizontal_push", "flat", "machine", "beginner", "machine", "01:00", ["Adjust seat so handles align with lower chest.", "Press without shrugging or losing rib position.", "Control the return."]),
+  makeExercise("cable-chest-press", "Cable Chest Press", "Chest", ["Front Delts", "Triceps"], "horizontal_push", "flat", "cable", "beginner", "machine", "01:00", ["Set cable at chest height, step forward for tension.", "Press forward and slightly together.", "Control the return to stretch the chest."]),
+  makeExercise("push-up", "Push-Up", "Chest", ["Front Delts", "Triceps", "Core"], "horizontal_push", "flat", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Set a long straight plank before the first rep.", "Lower as one unit until the chest nearly touches the floor.", "Press away keeping ribs and hips locked."]),
+  makeExercise("incline-barbell-press", "Incline Barbell Press", "Upper Chest", ["Front Delts", "Triceps"], "horizontal_push", "incline", "barbell", "intermediate", "barbell", "01:30", ["Set bench to 30-45 degrees, grip slightly narrower than flat.", "Lower to upper chest with controlled elbows.", "Press up and slightly back."]),
+  makeExercise("incline-dumbbell-press", "Incline Dumbbell Press", "Upper Chest", ["Front Delts", "Triceps"], "horizontal_push", "incline", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Set the bench incline before picking the dumbbells up.", "Lower with elbows slightly tucked and wrists stacked.", "Drive upward in an arc through the upper chest."]),
+  makeExercise("incline-machine-press", "Incline Machine Press", "Upper Chest", ["Front Delts", "Triceps"], "horizontal_push", "incline", "machine", "beginner", "machine", "01:00", ["Set incline angle on the machine, adjust seat height.", "Press without shrugging or lifting off the pad.", "Control the return."]),
+  makeExercise("incline-cable-press", "Incline Cable Press", "Upper Chest", ["Front Delts", "Triceps"], "horizontal_push", "incline", "cable", "beginner", "machine", "01:00", ["Set cables low, lean forward at incline angle.", "Press up and slightly together.", "Control the return for a full chest stretch."]),
+  makeExercise("decline-barbell-press", "Decline Barbell Press", "Lower Chest", ["Front Delts", "Triceps"], "horizontal_push", "decline", "barbell", "intermediate", "barbell", "01:30", ["Secure your feet before unracking.", "Lower to lower chest with elbows flared slightly.", "Press up through the lower chest."]),
+  makeExercise("decline-dumbbell-press", "Decline Dumbbell Press", "Lower Chest", ["Front Delts", "Triceps"], "horizontal_push", "decline", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Set the decline, kick dumbbells up carefully.", "Lower with elbows tucked at 45 degrees.", "Press up through the lower chest."]),
+
+  // ── Vertical Push ────────────────────────────────────────────────────────────
+  makeExercise("overhead-barbell-press", "Overhead Barbell Press", "Shoulders", ["Triceps", "Upper Traps"], "vertical_push", "overhead", "barbell", "intermediate", "barbell", "01:30", ["Grip just outside shoulder width, bar resting on upper chest.", "Press straight up while keeping ribs down.", "Lock out at the top without excessive lean."]),
+  makeExercise("dumbbell-shoulder-press", "Dumbbell Shoulder Press", "Shoulders", ["Triceps", "Front Delts"], "vertical_push", "overhead", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Stack wrists over elbows before pressing overhead.", "Keep the ribcage down instead of leaning back.", "Finish with biceps near the ears without shrugging."]),
+  makeExercise("machine-shoulder-press", "Machine Shoulder Press", "Shoulders", ["Triceps"], "vertical_push", "overhead", "machine", "beginner", "machine", "01:00", ["Adjust seat so handles start at shoulder height.", "Press overhead without losing back contact with the pad.", "Control the return."]),
+  makeExercise("arnold-press", "Arnold Press", "Shoulders", ["Triceps", "Front Delts"], "vertical_push", "overhead", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Start with palms facing you at chin height.", "Rotate palms out as you press overhead.", "Reverse the rotation on the way down."]),
+  makeExercise("landmine-press", "Landmine Press", "Shoulders", ["Chest", "Triceps"], "vertical_push", "overhead", "landmine", "beginner", "barbell", "01:00", ["Set the bar in the landmine, start with elbow in front.", "Press up and forward without over-arching.", "Lower under control to the shoulder line."]),
+  makeExercise("pike-push-up", "Pike Push-Up", "Shoulders", ["Triceps", "Upper Chest"], "vertical_push", "overhead", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Form an inverted V with hips high.", "Lower your head toward the floor between your hands.", "Press back up through the shoulders."]),
+
+  // ── Horizontal Pull ──────────────────────────────────────────────────────────
+  makeExercise("barbell-bent-over-row", "Barbell Bent-Over Row", "Upper Back", ["Lats", "Biceps", "Rear Delts"], "horizontal_pull", "flat", "barbell", "intermediate", "barbell", "01:30", ["Hinge to about 45 degrees, brace hard.", "Drive elbows back while keeping the chest up.", "Lower under control with shoulder blades protracting."]),
+  makeExercise("dumbbell-row", "Dumbbell Row", "Upper Back", ["Lats", "Biceps"], "horizontal_pull", "flat", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Place knee and hand on bench for support.", "Drive elbow back toward your hip.", "Lower slowly to full stretch."]),
+  makeExercise("seated-cable-row", "Seated Cable Row", "Upper Back", ["Lats", "Biceps", "Rear Delts"], "horizontal_pull", "flat", "cable", "beginner", "machine", "01:00", ["Brace feet, sit tall before starting the pull.", "Drive elbows back keeping chest lifted.", "Let shoulder blades protract under control on return."]),
+  makeExercise("machine-row", "Machine Row", "Upper Back", ["Lats", "Biceps"], "horizontal_pull", "flat", "machine", "beginner", "machine", "01:00", ["Adjust chest pad so you can fully extend arms.", "Drive elbows back and squeeze the upper back.", "Control the return to full stretch."]),
+  makeExercise("chest-supported-dumbbell-row", "Chest-Supported Dumbbell Row", "Upper Back", ["Lats", "Rear Delts"], "horizontal_pull", "prone", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Set chest firmly against the incline bench.", "Drive elbows back without shrugging.", "Control the stretch on the way down."]),
+  makeExercise("chest-supported-machine-row", "Chest-Supported Machine Row", "Upper Back", ["Lats", "Rear Delts"], "horizontal_pull", "prone", "machine", "beginner", "machine", "01:00", ["Pin your chest firmly to the pad.", "Pull handles to your sides, squeezing shoulder blades.", "Control the return to full stretch."]),
+  makeExercise("pendlay-row", "Pendlay Row", "Upper Back", ["Lats", "Biceps"], "horizontal_pull", "flat", "barbell", "advanced", "barbell", "01:30", ["Start each rep from the floor, fully horizontal torso.", "Explode the bar to the lower chest.", "Lower back to the floor under control."]),
+  makeExercise("inverted-row", "Inverted Row", "Upper Back", ["Biceps", "Rear Delts"], "horizontal_pull", "flat", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Set bar at hip height, hang with straight body.", "Pull chest to bar keeping hips up.", "Lower slowly to full arm extension."]),
+
+  // ── Vertical Pull ────────────────────────────────────────────────────────────
+  makeExercise("lat-pulldown", "Lat Pulldown", "Lats", ["Upper Back", "Biceps"], "vertical_pull", "overhead", "cable", "beginner", "machine", "01:00", ["Set the thigh pad so you stay locked into the seat.", "Drive elbows down toward your ribs without swinging.", "Control the upward stretch before starting the next rep."]),
+  makeExercise("close-grip-lat-pulldown", "Close-Grip Lat Pulldown", "Lats", ["Biceps", "Upper Back"], "vertical_pull", "overhead", "cable", "beginner", "machine", "01:00", ["Use a close neutral grip, sit tall.", "Drive elbows straight down emphasizing the lats.", "Control the return to full stretch."]),
+  makeExercise("neutral-grip-pulldown", "Neutral-Grip Pulldown", "Lats", ["Biceps", "Upper Back"], "vertical_pull", "overhead", "cable", "beginner", "machine", "01:00", ["Grip the V-bar with neutral palms facing each other.", "Pull to upper chest while leaning back slightly.", "Control the return."]),
+  makeExercise("machine-pulldown", "Machine Pulldown", "Lats", ["Upper Back", "Biceps"], "vertical_pull", "overhead", "machine", "beginner", "machine", "01:00", ["Adjust knee pad, grip handles overhead.", "Pull down toward chest driving elbows to sides.", "Return slowly."]),
+  makeExercise("pull-up", "Pull-Up", "Lats", ["Upper Back", "Biceps"], "vertical_pull", "overhead", "bodyweight", "intermediate", "bodyweight_only", "01:15", ["Start from a dead hang with ribs down.", "Drive elbows toward the hips instead of pulling with neck.", "Lower all the way to full extension."]),
+  makeExercise("chin-up", "Chin-Up", "Lats", ["Biceps", "Upper Back"], "vertical_pull", "overhead", "bodyweight", "intermediate", "bodyweight_only", "01:15", ["Underhand grip shoulder width apart.", "Pull chest to bar while keeping elbows close.", "Lower slowly to full arm extension."]),
+  makeExercise("assisted-pull-up", "Assisted Pull-Up", "Lats", ["Upper Back", "Biceps"], "vertical_pull", "overhead", "machine", "beginner", "machine", "01:00", ["Set the assistance weight to support your bodyweight.", "Pull up until chin clears the bar.", "Lower slowly for full range of motion."]),
+
+  // ── Hip Hinge ────────────────────────────────────────────────────────────────
+  makeExercise("conventional-deadlift", "Conventional Deadlift", "Hamstrings", ["Glutes", "Lower Back", "Traps"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Hinge to the bar, brace hard before pulling.", "Drive the floor away while keeping the bar close.", "Lock out hips and knees at the top."]),
+  makeExercise("romanian-deadlift", "Romanian Deadlift", "Hamstrings", ["Glutes", "Lower Back"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "01:30", ["Unlock the knees and push hips back before the bar drifts.", "Keep the lats tight so the weight stays close.", "Stand tall by driving hips through, not leaning back."]),
+  makeExercise("dumbbell-romanian-deadlift", "Dumbbell Romanian Deadlift", "Hamstrings", ["Glutes", "Lower Back"], "hip_hinge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Hold dumbbells at thighs, soft knees.", "Push hips back, lower dumbbells along legs.", "Drive hips forward to stand."]),
+  makeExercise("sumo-deadlift", "Sumo Deadlift", "Hamstrings", ["Glutes", "Inner Thigh", "Traps"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Set a wide stance with toes turned out.", "Grip inside the legs, brace hard before pulling.", "Push the floor apart as you drive hips forward."]),
+  makeExercise("single-leg-romanian-deadlift", "Single-Leg Romanian Deadlift", "Hamstrings", ["Glutes", "Core"], "hip_hinge", "none", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Hold a dumbbell in the opposite hand from working leg.", "Hinge at the hip, let the back leg lift for counterbalance.", "Return to standing with control."]),
+  makeExercise("good-morning", "Good Morning", "Hamstrings", ["Lower Back", "Glutes"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "01:00", ["Bar rests on upper back, feet shoulder width.", "Hinge at the hips with a slight knee bend.", "Return by driving hips forward."]),
+  makeExercise("barbell-hip-thrust", "Barbell Hip Thrust", "Glutes", ["Hamstrings"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "01:15", ["Set the bench against the shoulder blades before the bar.", "Drive through heels and squeeze glutes hard at the top.", "Lower under control without losing ribcage position."]),
+  makeExercise("machine-hip-thrust", "Machine Hip Thrust", "Glutes", ["Hamstrings"], "hip_hinge", "none", "machine", "beginner", "machine", "01:00", ["Adjust pad height so it sits across the hips.", "Drive hips up squeezing glutes at the top.", "Control the return."]),
+  makeExercise("dumbbell-hip-thrust", "Dumbbell Hip Thrust", "Glutes", ["Hamstrings"], "hip_hinge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Place upper back on bench, dumbbell across hips.", "Drive hips up squeezing glutes fully.", "Lower with control."]),
+  makeExercise("cable-pull-through", "Cable Pull-Through", "Glutes", ["Hamstrings"], "hip_hinge", "none", "cable", "beginner", "machine", "01:00", ["Set cable low, grip between legs facing away.", "Hinge at the hips letting the cable pull back.", "Drive hips forward to stand."]),
+
+  // ── Squat ────────────────────────────────────────────────────────────────────
+  makeExercise("back-squat", "Back Squat", "Quads", ["Glutes", "Hamstrings", "Core"], "squat", "none", "barbell", "advanced", "barbell", "02:00", ["Set the bar across the upper back, brace before unracking.", "Sit down between the hips, keeping mid-foot pressure even.", "Drive up through the floor keeping chest over hips."]),
+  makeExercise("front-squat", "Front Squat", "Quads", ["Glutes", "Core"], "squat", "none", "barbell", "advanced", "barbell", "02:00", ["Rest bar on fingertips or crossed arms at shoulders.", "Keep torso upright as you descend.", "Drive up maintaining the upright position."]),
+  makeExercise("goblet-squat", "Goblet Squat", "Quads", ["Glutes", "Core"], "squat", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Hold a dumbbell vertically at chest height.", "Squat deep keeping elbows inside the knees.", "Drive up through the floor."]),
+  makeExercise("leg-press", "Leg Press", "Quads", ["Glutes", "Hamstrings"], "squat", "none", "machine", "beginner", "machine", "01:30", ["Plant the full foot on the platform before unlocking.", "Lower until knees and hips are deeply bent.", "Drive through mid-foot keeping knees tracking over toes."]),
+  makeExercise("hack-squat", "Hack Squat", "Quads", ["Glutes"], "squat", "none", "machine", "intermediate", "machine", "01:30", ["Set shoulder pads, feet shoulder width on platform.", "Lower under control to full depth.", "Drive up through the heels."]),
+  makeExercise("smith-machine-squat", "Smith Machine Squat", "Quads", ["Glutes", "Hamstrings"], "squat", "none", "smith_machine", "beginner", "machine", "01:30", ["Position feet slightly forward of bar.", "Squat to parallel or below.", "Drive up through the heels."]),
+  makeExercise("bodyweight-squat", "Bodyweight Squat", "Quads", ["Glutes"], "squat", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stand with feet shoulder width, arms forward.", "Squat until thighs are at least parallel.", "Drive up through the heels."]),
+  makeExercise("sissy-squat", "Sissy Squat", "Quads", [], "squat", "none", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["Hold something for balance if needed.", "Lean back slightly as you lower on your toes.", "Drive through the quads to stand."]),
+
+  // ── Lunge ────────────────────────────────────────────────────────────────────
+  makeExercise("dumbbell-forward-lunge", "Dumbbell Forward Lunge", "Quads", ["Glutes", "Hamstrings"], "lunge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Step forward with control, dumbbells at sides.", "Lower back knee toward the floor.", "Push back to start through the front heel."]),
+  makeExercise("dumbbell-reverse-lunge", "Dumbbell Reverse Lunge", "Quads", ["Glutes", "Hamstrings"], "lunge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Step back keeping the torso upright.", "Lower back knee toward the floor.", "Drive through the front heel to return."]),
+  makeExercise("barbell-lunge", "Barbell Lunge", "Quads", ["Glutes", "Hamstrings"], "lunge", "none", "barbell", "intermediate", "barbell", "01:30", ["Set the bar across the upper back.", "Step forward, lower with control.", "Drive through the front heel to return."]),
+  makeExercise("walking-lunge", "Walking Lunge", "Quads", ["Glutes", "Hamstrings"], "lunge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Carry dumbbells at sides.", "Step forward lowering the back knee.", "Drive through front heel and step forward continuously."]),
+  makeExercise("bulgarian-split-squat", "Bulgarian Split Squat", "Quads", ["Glutes", "Hamstrings"], "lunge", "none", "dumbbell", "intermediate", "free_weights_accessories", "01:30", ["Rear foot elevated on a bench, dumbbells at sides.", "Lower the back knee toward the floor.", "Drive up through the front heel."]),
+  makeExercise("step-up", "Step-Up", "Quads", ["Glutes"], "lunge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Hold dumbbells, face a box or bench.", "Step up through the heel, bring the other foot up.", "Step back down with control."]),
+  makeExercise("bodyweight-lunge", "Bodyweight Lunge", "Quads", ["Glutes"], "lunge", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Hands on hips or clasped in front.", "Step forward, lower with control.", "Push back through the front heel."]),
+
+  // ── Isolation Push ───────────────────────────────────────────────────────────
+  makeExercise("dumbbell-lateral-raise", "Dumbbell Lateral Raise", "Shoulders", ["Traps"], "isolation_push", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Soft elbow, slight forward lean.", "Raise out and slightly forward to shoulder height.", "Lower under control without letting shoulders creep up."]),
+  makeExercise("cable-lateral-raise", "Cable Lateral Raise", "Shoulders", ["Traps"], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Stand sideways to the cable, grab low attachment.", "Raise out to shoulder height with soft elbow.", "Lower slowly without letting the stack crash."]),
+  makeExercise("machine-lateral-raise", "Machine Lateral Raise", "Shoulders", [], "isolation_push", "none", "machine", "beginner", "machine", "00:45", ["Adjust the seat so arms start below shoulder height.", "Raise out with control.", "Lower slowly."]),
+  makeExercise("dumbbell-front-raise", "Dumbbell Front Raise", "Front Delts", ["Shoulders"], "isolation_push", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Lift with soft elbow and a quiet torso.", "Raise only to shoulder height.", "Lower slowly without swinging."]),
+  makeExercise("dumbbell-chest-fly", "Dumbbell Chest Fly", "Chest", ["Front Delts"], "isolation_push", "flat", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Slight bend in elbows throughout.", "Open arms wide feeling the chest stretch.", "Bring dumbbells together squeezing the chest."]),
+  makeExercise("cable-chest-fly", "Cable Chest Fly", "Chest", ["Front Delts"], "isolation_push", "flat", "cable", "beginner", "machine", "00:45", ["Set cables high, lean forward slightly.", "Bring handles together in a sweeping arc.", "Control the return feeling the stretch."]),
+  makeExercise("pec-deck", "Pec Deck", "Chest", ["Front Delts"], "isolation_push", "flat", "machine", "beginner", "machine", "00:45", ["Set handles at chest height.", "Bring pads together with a controlled squeeze.", "Control the return to full stretch."]),
+  makeExercise("incline-dumbbell-fly", "Incline Dumbbell Fly", "Upper Chest", ["Front Delts"], "isolation_push", "incline", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Set bench to 30 degrees, soft elbow bend.", "Open arms feeling the upper chest stretch.", "Bring dumbbells together squeezing upper chest."]),
+  makeExercise("tricep-pushdown", "Tricep Pushdown", "Triceps", [], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Lock elbows near the ribs before starting.", "Push down until elbows are fully extended.", "Control the return without letting elbows flare."]),
+  makeExercise("overhead-tricep-extension", "Overhead Tricep Extension", "Triceps", [], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Set cable low or use a dumbbell overhead.", "Keep elbows pointing up, extend through the triceps.", "Control the return feeling the stretch."]),
+  makeExercise("dumbbell-skull-crusher", "Dumbbell Skull Crusher", "Triceps", [], "isolation_push", "flat", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Lie flat, dumbbells above face with locked elbows.", "Lower by bending only the elbows.", "Press back up through the triceps."]),
+  makeExercise("close-grip-bench-press", "Close-Grip Bench Press", "Triceps", ["Chest", "Front Delts"], "isolation_push", "flat", "barbell", "intermediate", "barbell", "01:00", ["Grip shoulder width or slightly inside.", "Lower bar to lower chest with elbows tucked.", "Press up through the triceps."]),
+  makeExercise("diamond-push-up", "Diamond Push-Up", "Triceps", ["Chest"], "isolation_push", "flat", "bodyweight", "intermediate", "bodyweight_only", "00:45", ["Form diamond shape with thumbs and forefingers.", "Keep elbows close to the body throughout.", "Press away focusing on tricep contraction."]),
+
+  // ── Isolation Pull ───────────────────────────────────────────────────────────
+  makeExercise("barbell-curl", "Barbell Curl", "Biceps", ["Forearms"], "isolation_pull", "none", "barbell", "beginner", "barbell", "00:45", ["Stand tall with elbows slightly in front.", "Curl without swinging the shoulders.", "Lower under control to full extension."]),
+  makeExercise("dumbbell-curl", "Dumbbell Curl", "Biceps", ["Forearms"], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Alternate or both arms, elbows stable at sides.", "Curl and supinate at the top.", "Lower slowly."]),
+  makeExercise("cable-curl", "Cable Curl", "Biceps", ["Forearms"], "isolation_pull", "none", "cable", "beginner", "machine", "00:45", ["Set cable low, constant tension throughout.", "Curl to full contraction keeping elbows still.", "Lower under control."]),
+  makeExercise("hammer-curl", "Hammer Curl", "Biceps", ["Forearms"], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Neutral grip, thumbs up throughout.", "Curl without rotating the forearm.", "Lower slowly."]),
+  makeExercise("incline-dumbbell-curl", "Incline Dumbbell Curl", "Biceps", ["Forearms"], "isolation_pull", "incline", "dumbbell", "intermediate", "free_weights_accessories", "00:45", ["Recline on incline bench, arms hanging back.", "Curl from fully stretched position.", "Lower slowly to full stretch."]),
+  makeExercise("concentration-curl", "Concentration Curl", "Biceps", [], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Sit, brace elbow against inner thigh.", "Curl slowly focusing on full contraction.", "Lower under control."]),
+  makeExercise("machine-curl", "Machine Curl", "Biceps", ["Forearms"], "isolation_pull", "none", "machine", "beginner", "machine", "00:45", ["Adjust arm pad, full range of motion.", "Curl with control.", "Lower slowly."]),
+  makeExercise("face-pull", "Face Pull", "Rear Delts", ["Traps", "Upper Back"], "isolation_pull", "none", "cable", "beginner", "machine", "00:45", ["Set cable at face height, rope attachment.", "Pull to face keeping elbows high.", "Control the return."]),
+  makeExercise("dumbbell-rear-delt-fly", "Dumbbell Rear Delt Fly", "Rear Delts", ["Traps", "Upper Back"], "isolation_pull", "prone", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hinge forward or lie prone on incline bench.", "Raise arms out keeping slight elbow bend.", "Control the return."]),
+  makeExercise("machine-rear-delt-fly", "Machine Rear Delt Fly", "Rear Delts", ["Upper Back"], "isolation_pull", "prone", "machine", "beginner", "machine", "00:45", ["Face the pec deck in reverse.", "Sweep arms back squeezing rear delts.", "Control the return."]),
+  makeExercise("barbell-shrug", "Barbell Shrug", "Traps", [], "isolation_pull", "none", "barbell", "beginner", "barbell", "00:45", ["Hold bar at thighs, stand tall.", "Shrug straight up without rolling shoulders.", "Pause briefly at the top."]),
+  makeExercise("dumbbell-shrug", "Dumbbell Shrug", "Traps", ["Forearms"], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Stand tall, dumbbells at sides.", "Shrug straight up without rolling.", "Pause briefly at the top before lowering."]),
+
+  // ── Isolation Legs ───────────────────────────────────────────────────────────
+  makeExercise("leg-extension", "Leg Extension", "Quads", [], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Set pad just above the ankle.", "Extend fully, pause at the top.", "Lower slowly."]),
+  makeExercise("seated-leg-curl", "Seated Leg Curl", "Hamstrings", [], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Adjust pad above the ankles.", "Curl through full range squeezing at the bottom.", "Return slowly."]),
+  makeExercise("lying-leg-curl", "Lying Leg Curl", "Hamstrings", [], "isolation_legs", "prone", "machine", "beginner", "machine", "00:45", ["Lie face down, pad above ankles.", "Curl without lifting hips off the bench.", "Lower slowly to full stretch."]),
+  makeExercise("standing-calf-raise", "Standing Calf Raise", "Calves", [], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Let heels drop to full stretch at the bottom.", "Drive up through the big toe and hold briefly.", "Lower slowly without bouncing."]),
+  makeExercise("seated-calf-raise", "Seated Calf Raise", "Calves", [], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Pad rests above the knees.", "Lower heels to full stretch.", "Drive up and squeeze at the top."]),
+  makeExercise("hip-abduction-machine", "Hip Abduction Machine", "Glutes", ["Inner Thigh"], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Sit with pads on the outside of knees.", "Push legs apart against resistance.", "Control the return."]),
+  makeExercise("hip-adduction-machine", "Hip Adduction Machine", "Inner Thigh", ["Glutes"], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Sit with pads on the inside of knees.", "Squeeze legs together against resistance.", "Control the return."]),
+
+  // ── Core ─────────────────────────────────────────────────────────────────────
+  makeExercise("plank", "Plank", "Core", [], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Brace abs before lifting into position.", "Keep ribs and hips stacked, no sagging.", "Breathe behind the brace while holding."]),
+  makeExercise("ab-crunch", "Ab Crunch", "Core", [], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Feet flat, hands behind ears.", "Curl the rib cage toward the pelvis.", "Lower under control."]),
+  makeExercise("hanging-leg-raise", "Hanging Leg Raise", "Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "intermediate", "bodyweight_only", "00:45", ["Set ribs down before lifting legs.", "Raise with abs not by swinging.", "Lower slowly to keep tension through midline."]),
+  makeExercise("cable-crunch", "Cable Crunch", "Core", [], "core_anterior", "none", "cable", "beginner", "machine", "00:45", ["Kneel, rope at forehead, hips back.", "Crunch down pulling rib cage to hips.", "Control the return."]),
+  makeExercise("ab-wheel-rollout", "Ab Wheel Rollout", "Core", ["Shoulders", "Lats"], "core_anterior", "none", "none", "advanced", "bodyweight_only", "00:45", ["Start on knees, ab wheel in front.", "Roll out as far as you can with a braced core.", "Pull back with abs, not arms."]),
+  makeExercise("hollow-hold", "Hollow Hold", "Core", [], "core_anterior", "none", "bodyweight", "intermediate", "bodyweight_only", "00:30", ["Lie flat, press lower back into floor.", "Lift legs and shoulders together.", "Hold the banana shape breathing steadily."]),
+  makeExercise("russian-twist", "Russian Twist", "Core", [], "core_rotational", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Sit with knees bent, lean back slightly.", "Rotate side to side through the torso.", "Keep the lower back from rounding."]),
+  makeExercise("woodchop", "Woodchop", "Core", ["Shoulders"], "core_rotational", "none", "cable", "beginner", "machine", "00:45", ["Brace before rotating away from the stack.", "Turn through the torso not just the arms.", "Finish under control and resist the pull back."]),
+  makeExercise("side-plank", "Side Plank", "Core", ["Glutes"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stack feet or stagger them for balance.", "Keep hips lifted and stacked.", "Hold steady without the hips sagging."]),
+  makeExercise("dead-bug", "Dead Bug", "Core", [], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie on back, arms and knees at 90 degrees.", "Extend opposite arm and leg while pressing lower back down.", "Return and repeat on the other side."]),
 ];
 
 const replacementTemplates: Array<
@@ -6621,6 +7033,8 @@ function AddExercisePage({
   onUpdateCustom,
   resolvedTheme,
   onToggleTheme,
+  preFilterMuscle,
+  replaceMode,
 }: {
   templates: ExerciseDraft[];
   existingExerciseNames: string[];
@@ -6632,6 +7046,8 @@ function AddExercisePage({
   onUpdateCustom?: (exerciseId: string, draft: CustomExerciseInput) => string | null;
   resolvedTheme?: string;
   onToggleTheme?: () => void;
+  preFilterMuscle?: string;
+  replaceMode?: boolean;
 }) {
   const isEditingCustomExercise = Boolean(editorExercise);
   const [mode, setMode] = useState<AddExerciseMode>(editorExercise ? "create" : "browse");
@@ -6642,7 +7058,7 @@ function AddExercisePage({
   const [sortMode, setSortMode] = useState<"alphabetical" | "frequency" | "library">("alphabetical");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(preFilterMuscle ?? "");
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
   const [showInWorkoutOnly, setShowInWorkoutOnly] = useState(false);
   const [showSelectedOnly, setShowSelectedOnly] = useState(false);
@@ -6662,6 +7078,9 @@ function AddExercisePage({
   );
   const [customMovementSide, setCustomMovementSide] = useState<MovementSide | null>(
     editorExercise?.movementSide ?? null
+  );
+  const [customMovementPattern, setCustomMovementPattern] = useState<MovementPattern | null>(
+    (editorExercise as ExerciseWithTaxonomy)?.movementPattern ?? null
   );
   const [duplicateNamePrompt, setDuplicateNamePrompt] = useState<{
     requestedName: string;
@@ -6686,6 +7105,7 @@ function AddExercisePage({
     setCustomExerciseType(editorExercise.exerciseType ?? inferExerciseType(editorExercise));
     setCustomMeasurementType(getExerciseMeasurementType(editorExercise));
     setCustomMovementSide(editorExercise.movementSide ?? null);
+    setCustomMovementPattern((editorExercise as ExerciseWithTaxonomy).movementPattern ?? null);
     setDuplicateNamePrompt(null);
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [editorExercise]);
@@ -6923,7 +7343,8 @@ function AddExercisePage({
       secondaryMuscles: customSecondaryMuscles,
       exerciseType: customExerciseType,
       measurementType: customMeasurementType,
-      movementSide: customMovementSide
+      movementSide: customMovementSide,
+      movementPattern: customMovementPattern ?? undefined
     };
 
     const createdId =
@@ -7326,7 +7747,9 @@ function AddExercisePage({
                     type="button"
                     onClick={() => onAddSelected(selectedTemplateIds)}
                   >
-                    Add Exercise{selectedTemplateIds.length > 1 ? "s" : ""} ({selectedTemplateIds.length})
+                    {replaceMode
+                      ? "Replace with this exercise"
+                      : `Add Exercise${selectedTemplateIds.length > 1 ? "s" : ""} (${selectedTemplateIds.length})`}
                   </button>
                 </div>
               )}
@@ -7536,6 +7959,47 @@ function AddExercisePage({
                       >
                         <span className="custom-choice-label">{option.label}</span>
                         <span className="custom-choice-desc">{movementSideDescriptions[option.value]}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Movement pattern card — for Smart Replace intelligence */}
+                <div className="create-form-card">
+                  <div className="custom-form-label-row">
+                    <span className="custom-form-label">Movement pattern</span>
+                    <span className="custom-form-label-optional">Optional</span>
+                  </div>
+                  <p className="custom-form-copy" style={{ marginTop: -4 }}>
+                    Helps RepIQ suggest smarter replacements when this exercise is swapped mid-session.
+                  </p>
+                  <div className="custom-option-grid custom-option-grid-pattern">
+                    {(
+                      [
+                        { value: "horizontal_push", label: "Horizontal Push", desc: "Bench, push-up, chest press" },
+                        { value: "vertical_push", label: "Vertical Push", desc: "Overhead press, shoulder press" },
+                        { value: "horizontal_pull", label: "Horizontal Pull", desc: "Row, seated row" },
+                        { value: "vertical_pull", label: "Vertical Pull", desc: "Lat pulldown, pull-up" },
+                        { value: "hip_hinge", label: "Hip Hinge", desc: "Deadlift, RDL, hip thrust" },
+                        { value: "squat", label: "Squat", desc: "Back squat, leg press, goblet" },
+                        { value: "lunge", label: "Lunge", desc: "Lunge, split squat, step-up" },
+                        { value: "isolation_push", label: "Isolation Push", desc: "Fly, lateral raise, triceps" },
+                        { value: "isolation_pull", label: "Isolation Pull", desc: "Curl, face pull, rear delt" },
+                        { value: "isolation_legs", label: "Isolation Legs", desc: "Leg extension, leg curl, calf" },
+                        { value: "core_anterior", label: "Core", desc: "Plank, crunch, leg raise" },
+                        { value: "core_rotational", label: "Core Rotation", desc: "Russian twist, woodchop" },
+                        { value: "carry", label: "Carry", desc: "Farmer carry, suitcase" },
+                        { value: "cardio", label: "Cardio", desc: "Running, cycling, rowing" },
+                      ] as Array<{ value: MovementPattern; label: string; desc: string }>
+                    ).map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`custom-choice-button custom-choice-button-described${customMovementPattern === option.value ? " is-active" : ""}`}
+                        onClick={() => setCustomMovementPattern(prev => prev === option.value ? null : option.value)}
+                      >
+                        <span className="custom-choice-label">{option.label}</span>
+                        <span className="custom-choice-desc">{option.desc}</span>
                       </button>
                     ))}
                   </div>
@@ -8158,6 +8622,7 @@ export function App() {
   const [builderAddExerciseOpen, setBuilderAddExerciseOpen] = useState(false);
   const [trayDiscardOpen, setTrayDiscardOpen] = useState(false);
   const [supersetSheetExerciseId, setSupersetSheetExerciseId] = useState<string | null>(null);
+  const [smartReplaceExerciseId, setSmartReplaceExerciseId] = useState<string | null>(null);
   const [supersetSelectionIds, setSupersetSelectionIds] = useState<string[]>([]);
   const [exerciseRestDefaults, setExerciseRestDefaults] = useState<ExerciseRestDefaults>({});
   const [customExercises, setCustomExercises] = useState<ExerciseDraft[]>(getStoredCustomExercises);
@@ -9455,6 +9920,35 @@ export function App() {
     );
   }
 
+  function replaceExerciseWithTemplate(originalId: string, templateId: string) {
+    const template = availableExerciseTemplates.find(e => e.id === templateId);
+    if (!template) return;
+    const suffix = `${Date.now()}-1`;
+    const nextExercise = cloneExerciseTemplate(template, settings.defaultRestSeconds, suffix);
+    const configuredRestTimer = exerciseRestDefaults[template.name];
+    if (configuredRestTimer) nextExercise.restTimer = configuredRestTimer;
+    const setsAlreadyLogged = exercises.find(e => e.id === originalId)?.draftSets.filter(s => s.done).length ?? 0;
+    setExercises(current =>
+      current.map(ex => {
+        if (ex.id !== originalId) return ex;
+        return { ...nextExercise, id: ex.id, note: ex.note, supersetGroupId: ex.supersetGroupId };
+      })
+    );
+    const event: ReplacementEvent = {
+      schemaVersion: 1,
+      sessionId: workoutMeta.startInstant ?? new Date().toISOString(),
+      replacedAt: new Date().toISOString(),
+      originalExerciseId: originalId,
+      replacementExerciseId: templateId,
+      reason: "preference",
+      setsAlreadyLogged,
+      matchScore: 0,
+    };
+    persistReplacementEvent(event);
+    setSmartReplaceExerciseId(null);
+    setAddExerciseOpen(false);
+  }
+
   function addExercisesFromTemplates(templateIds: string[]) {
     if (templateIds.length === 0) {
       return;
@@ -10406,18 +10900,29 @@ export function App() {
   }
 
   if (addExerciseOpen) {
+    const replaceTarget = smartReplaceExerciseId
+      ? exercises.find(e => e.id === smartReplaceExerciseId)
+      : null;
     return (
       <div data-theme={resolvedTheme}>
         <AddExercisePage
           templates={availableExerciseTemplates}
           existingExerciseNames={exercises.map((exercise) => exercise.name)}
-          onBack={() => setAddExerciseOpen(false)}
-          onAddSelected={addExercisesFromTemplates}
+          onBack={() => { setAddExerciseOpen(false); setSmartReplaceExerciseId(null); }}
+          onAddSelected={(templateIds) => {
+            if (replaceTarget && templateIds[0]) {
+              replaceExerciseWithTemplate(replaceTarget.id, templateIds[0]);
+            } else {
+              addExercisesFromTemplates(templateIds);
+            }
+          }}
           onCreateCustom={createCustomExercise}
           onOpenDetails={(exerciseId) => openDetails(exerciseId)}
           onUpdateCustom={updateCustomExercise}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+          preFilterMuscle={replaceTarget?.primaryMuscle}
+          replaceMode={Boolean(replaceTarget)}
         />
       </div>
     );
@@ -12245,7 +12750,9 @@ export function App() {
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
-                    replaceExercise(activeMenuExercise.id);
+                    setSmartReplaceExerciseId(activeMenuExercise.id);
+                    setAddExerciseOpen(true);
+                    setMenuExerciseId(null);
                   }}
                 >
                   Replace exercise

@@ -8144,3 +8144,9 @@ ol {
 .planner-shell {
   padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 8px);
 }
+
+/* ── Movement pattern option grid (custom exercise form) ─────────────────────── */
+.custom-option-grid-pattern {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}

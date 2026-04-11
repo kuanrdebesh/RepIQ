@@ -266,6 +266,25 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
 - A dedicated psychological-data planning document now exists:
   - [psych-layer.md](/Users/debeshkuanr/Documents/RepIQ/docs/psych-layer.md)
 
+## Navigation Layer
+
+- Bottom navigation bar now implemented: Home / Planner / Insights tabs
+- `BottomNav` component renders on Home, Planner, and Insights views
+- `AppView` type expanded: `"home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "profile"`
+- All `"selector"` references renamed to `"home"`
+- New top-level pages added:
+  - `WorkoutReportPage` — post-finish report showing hero stats, rewards, exercises; routes to share
+  - `InsightsPage` — Reports + Analyzer tabs; tapping a report opens WorkoutReportPage
+  - `ProfilePage` — Settings group with Preferences / Account / Import/Export rows
+- Home upgraded:
+  - Profile avatar button (top-right) routes to Profile
+  - Latest workout card shows most recent session or empty-state prompt
+  - Quick Workout button disabled when active workout exists
+- Finish Workout now routes to `report` view instead of `share`; share is accessible from report
+- Profile page uses dedicated CSS classes (`profile-page`, `profile-header`, `profile-list`, `profile-row`) to avoid layout issues from shared `detail-page` grid stretching
+- CSS added for all new navigation components: `.bottom-nav`, `.bottom-nav-tab`, `.profile-*`, `.home-latest-*`, `.insights-*`, `.report-*`
+- `selector-shell` padding updated to accommodate fixed bottom nav height
+
 ## Psychological Data Layer
 
 - Psychological/readiness architecture is now documented and partially stubbed in the web app
@@ -278,6 +297,10 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
 - Current status:
   - schema and storage direction documented
   - capture UI and intelligence surfaces not yet built
+- `SessionBehaviorSignals` passive capture wired into `finalizeFinishedWorkoutSave` — fires automatically on every completed session with zero user friction
+- Session behavior captures: day of week, time of day, actual vs planned duration, set completion rate, session source (plan/template/generated/quick/resume), plan ID
+- Today's `DailyReadiness` entry is linked to the session ID on completion if one was captured that day
+- `buildSessionBehaviorSignals()` helper derives all fields from existing session state — no new user-facing UI required
 
 ## UX Direction Locked In
 
@@ -340,14 +363,76 @@ These are documented and should not be forgotten:
   - smoother gradients / intensity legend
   - clearer comparison between overall workout and selected exercise
 
-## Most Likely Next Surfaces
+## Smart Replace
 
-1. Library workout optimization and filters
-2. Workout builder refinement
-3. Goal Planner / generation refinement
-4. Insights and reports integration
-5. Profile, preferences, and import/export wiring
-5. App-level shell with clearer navigation between `Today`, `Workouts`, `Analyze`, and `Profile`
+- Smart exercise replacement designed and stubbed — entry point already exists in logger ⋮ menu
+- Core types added to App.tsx:
+  - `MovementPattern` — 14 patterns covering all movement types
+  - `ExerciseAngle` — flat / incline / decline / overhead / neutral / prone / none
+  - `ExerciseEquipment` — barbell / dumbbell / cable / machine / bodyweight / kettlebell / band / landmine / smith_machine
+  - `ExerciseDifficulty` — beginner / intermediate / advanced
+  - `ReplacementReason` — machine_taken / no_equipment / too_difficult / pain_discomfort / preference
+  - `ReplacementEvent` — logged per swap for V2 pattern learning
+- Scoring functions implemented:
+  - `scoreReplacement()` — scores candidates 0–100 using pattern + angle + muscle + equipment + session fatigue
+  - `getSmartReplacements()` — returns top 5 ranked alternatives with human-readable match reason chips
+  - `getMovementFamily()` — groups patterns into push/pull/legs/core/carry/cardio families
+  - `groupSetsByMovementPattern()` — aggregates session volume by pattern family for Insights
+- Storage: `repiq-replacement-events` key with `persistReplacementEvent()` / `getStoredReplacementEvents()`
+- Design spec in `docs/smart-replace.md`
+
+## Exercise Taxonomy
+
+- Two-layer taxonomy established: named exercises (user-facing) + structural metadata (analytics/matching)
+- Naming convention: `[Angle if not flat] [Equipment] [Base movement]`
+- Every exercise in the library will carry: `movementPattern`, `angle`, `equipment`, `difficultyLevel`
+- The taxonomy enables:
+  - Smart Replace precision: same pattern + same angle + different equipment = best swap
+  - Insights aggregation: "Horizontal Push — 18 sets this week" across all press variants
+  - Progression tracking across equivalent variants (alternating Barbell/Dumbbell Bench = continuous progress)
+  - Progressive overload suggestions: "Ready to try Barbell Bench after 6 weeks of Dumbbell Press?"
+- Full taxonomy and `~100` exercise library coverage documented in `docs/smart-replace.md`
+- `ExerciseWithTaxonomy` type alias wraps `ExerciseDraft` with optional taxonomy fields for backwards compatibility
+
+## Build Order (Agreed)
+
+### Phase 0 — Backend + Auth (unlocks everything)
+- Signup / Login / Logout
+- Session tokens, user record
+- Sync localStorage → server on first login
+- Decision needed: Supabase recommended
+
+### Phase 1 — Onboarding + Home (highest retention impact)
+- 5-step onboarding flow → plan generation → reveal
+- Home redesign: streak, contextual CTA, this-week snapshot, PR highlight
+- Goal Planner wired to same step UI as onboarding
+
+### Phase 2 — Psych capture UI (data compounds over time)
+- Post-workout mood + energy chips after Report screen
+- Home daily readiness card (sleep/stress/energy)
+- Consent toggles in Profile → Preferences
+
+### Phase 3 — Progress Photos
+- Photo capture prompt at Finish Workout
+- Insights → Progress tab (timeline + compare)
+
+### Phase 4 — Community
+- Groups, friends, leaderboard (friends/group scope first)
+- Surface from Home card + Profile initially (not bottom nav yet)
+
+### Phase 5 — V2 Psychological Intelligence
+- Skip prediction, deload recommendations
+- Motivation-style personalised copy
+- Insights → Analyzer with mood/readiness overlays
+
+### Phase 6 — Payments
+- Post-Phase 3 (after users have proven intent to stay)
+- Paywall at onboarding end or feature gate
+
+### Immediate next session
+- Populate `movementPattern`, `angle`, `equipment`, `difficultyLevel` on all exercises in `exerciseLibrary`
+- Build `SmartReplaceSheet` UI component
+- Wire logger ⋮ menu "Replace exercise" to the sheet
 
 ## Planned Logger Enhancement
 

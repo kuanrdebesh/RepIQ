@@ -275,3 +275,139 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - shorten the `Muscles Worked` page
 - replace current V1 visuals with more realistic vectors
 - improve scannability and reduce vertical sprawl
+
+## Navigation and Page Design Decisions
+
+### Bottom Navigation Slot Discipline
+- Bottom nav is reserved for the three highest-frequency destinations: Home, Planner, Insights
+- Profile stays accessible from Home (top-right avatar) — not in bottom nav
+- Community will be built in full but surfaced from Home card + Profile initially; it earns a bottom-nav slot only after it has proven density and daily return value
+- The nav slot decision is a product milestone, not a technical one
+
+### Home as a Motivation Surface
+- Home is not a task launcher — it is a momentum and motivation surface
+- Every return visit should show the user their own progress reflected back at them
+- Content hierarchy: contextual greeting + streak → primary CTA (context-aware, never static) → this week snapshot → last workout card → recent PR highlight → planner shortcut
+- The primary CTA label must change based on context: active plan → "Continue Push Day A →"; no plan → "Start a session →"; just trained yesterday → "Rest day — review your week →"
+- Streak is always visible, even at 0 — "Start your streak today" is motivating, not punishing
+- No feature promotion on Home. No banners. Home belongs to the user's own story.
+- Home empty state (no workouts logged): prompt to complete onboarding or start first session — not an empty screen
+
+### Onboarding as an Experience
+- Onboarding is the most important first-impression surface in the product — not a form
+- Emotional arc: arrive with hope/skepticism → feel seen → feel understood → feel anticipation → feel the reveal → feel momentum
+- Step 1 asks "What finally made you open this?" (emotional why) — not "select your goal"
+- Each step reflects their answers back: "So you're training 4 days/week with a full gym, focused on strength"
+- The generate step is a ritual — exercises appearing, days filling in — not a spinner
+- The reveal names the plan after their goal, shows week 1 as a visual schedule, has one highlighted stat that speaks to their why
+- Primary CTA at reveal: "Start today →" — goes straight into session 1 — zero friction
+- Skip is always available on steps 2–5, never on step 1 (the emotional opener)
+- Splash / Landing: single strong line ("Train smarter. Every session."), two buttons, nothing else
+
+### Onboarding ↔ Goal Planner Shared UI
+- The in-app Goal Planner and the onboarding flow share the same step UI and generation logic
+- The difference is a `returnTarget` parameter: onboarding → "home"; in-app → "builder"
+- This means the Goal Planner also gets the same motivating reveal moment — not just new users
+
+## Smart Replace Design Decisions
+
+### Entry Point
+- Existing ⋮ menu item "Replace exercise" is the entry point — no new UI anchor needed
+- A secondary contextual hint may appear below exercises with 0 logged sets after 5+ minutes
+- Both paths open the same SmartReplaceSheet
+
+### Reason Picker is Not Optional UX
+- The reason picker (machine taken / no equipment / too difficult / pain / preference) is not a nice-to-have — it drives the equipment filter and therefore the quality of suggestions
+- "Machine taken" → exclude machines from results
+- "No equipment" → bodyweight only
+- "Too difficult" → exclude advanced exercises if user is beginner/intermediate
+- The reason is also logged as a ReplacementEvent for V2 learning
+
+### Suggestions Sheet Principles
+- Maximum 5 suggestions — if fewer than 3 score above threshold, show "no great matches" + "Browse all" fallback
+- The top suggestion gets a ✦ badge — the user should tap it without reading the others
+- Each card shows a 1-line match reason chip in plain language: "Same movement, different equipment" / "Targets same muscle" / "Bodyweight alternative"
+- No numeric scores shown to the user. Ever.
+- "Browse all →" opens the Add Exercise sheet pre-filtered to the same primary muscle
+
+### Session Balance Preservation
+- Smart Replace is aware of what's already been done in the session
+- A candidate exercise is penalised if its primary muscle already has 6+ sets in the session
+- The movement pattern match ensures push stays push, hinge stays hinge — the user doesn't need to understand this
+
+## Exercise Taxonomy Decisions
+
+### Two-Layer Principle
+- Users see and log named exercises: "Incline Dumbbell Press"
+- The analytics engine reads structural metadata: horizontal_push · incline · dumbbell
+- Both needs are served by the same exercise record — name is the label, metadata is the intelligence
+- This is not an either/or — conflating the two layers is the mistake
+
+### Library Size Discipline
+- ~100 well-structured exercises is better than 300 poorly-tagged ones
+- Only include variants that people actually do in real gyms
+- Naming convention: [Angle if not flat] [Equipment] [Base movement]
+- Every exercise needs: movementPattern, angle, equipment, difficultyLevel
+
+### What the Taxonomy Enables
+- Smart Replace precision: same pattern + same angle + different equipment = best possible swap
+- Insights: "Horizontal Push — 18 sets this week" aggregated across all press variants — the user sees insight, not a name list
+- Progression across variants: alternating Barbell Bench and Dumbbell Press = continuous progress on the same movement
+- Progressive overload suggestions that bridge variants: "Ready to try Barbell Bench after 6 weeks of Dumbbell Press?"
+
+## Psychological Data Layer Decisions
+
+### Capture Philosophy
+- Psychological data must be collected from V1 even though the intelligence ships in V2
+- A user who has been logging for 6 months with psych data has 10× more coaching value than one who hasn't
+- All capture is optional, contextual, and under 10 seconds per session
+- Never ask psychological questions in the middle of a workout — only at natural pause points
+
+### Capture Points (V1)
+- Onboarding Step 1: emotional "why" — already planned, zero extra cost
+- Finish Workout (after Report): post-session mood + energy (two 5-point emoji scales, 3 seconds)
+- Home daily card (max once/day, dismissible): sleep quality + stress + energy (three 3-point icon selectors)
+- Passive at save: SessionBehaviorSignals auto-captured — day of week, time of day, completion rate, session source — zero user input
+
+### Privacy Rules (Non-Negotiable)
+- All psych data lives under repiq-psych-* keys, separate from training data
+- Never included in plan shares, shareable cards, or any community feature
+- Any individual capture dimension can be disabled independently
+- On account deletion: psych data destroyed immediately, no archive
+- The derived profile (motivation style, patterns) is never surfaced to the user as a label — it only influences UI behaviour silently
+- Exception: Insights → Analyzer (V2) will show users their own patterns on explicit opt-in
+
+## Community Design Decisions
+
+### Cold-Start Discipline
+- Community is built in full but not given a bottom-nav slot until it has proven density
+- A ghost-town community tab visible every day kills motivation faster than no community
+- Surface from Home card ("Your groups") and Profile until the feature earns its slot
+
+### Social Surface Minimalism
+- RepIQ is a training app, not a fitness influencer platform
+- No public walls, no follower counts, no like counts, no feed scrolling
+- Groups are the container — small, purposeful, invite-based or link-join
+- Reactions are a single emoji per session (🔥 is enough)
+- The re-engagement hook is the leaderboard notification: "Sarah just overtook you" — not content feeds
+
+### Leaderboard Design
+- Weekly resets for streak and sessions — newcomers can always compete, no legacy advantage
+- Monthly resets for volume, PRs, improvement % — rewards sustained effort
+- Default scope is always friends or group — global is deprioritised in UI
+- Improvement % metric is key for retention: a beginner improving 15% beats a veteran improving 2%
+
+## Progress Photo Decisions
+
+### Privacy First
+- Progress photos are private by default, always
+- Sharing requires an explicit tap — never automatic
+- No progress photos visible in community without deliberate share action per photo
+
+### Presentation
+- Full-width cards, most recent first
+- Semi-transparent dark gradient overlay at bottom: date chip + session name + 2–3 stats
+- Overlay never obscures the face/body — gradient only from bottom edge
+- Tap → full-screen lightbox; session detail accessible by scrolling up
+- Compare mode: two photos side by side, one stat-diff line between them
+- No body measurement overlays or composition prompts unless user has entered them

@@ -99,16 +99,33 @@
 - Navigation/source-of-truth docs:
   - page connectivity and bottom-nav rules in `navigation-map.md`
   - psych-data capture/storage direction in `psych-layer.md`
+- Bottom navigation bar (Home / Planner / Insights) implemented with active state
+- New app-level views: WorkoutReportPage, InsightsPage, ProfilePage
+- Home upgraded with profile avatar, latest workout card, contextual Quick Workout state
+- Post-finish flow routes through Report before Share
+- Psychological data layer types and storage helpers stubbed in App.tsx:
+  - UserPsychProfile, PostWorkoutPsych, DailyReadiness, SessionBehaviorSignals, DerivedPsychProfile
+  - Five localStorage keys reserved
+  - Passive session behavior capture wired at save time
+- Smart Replace foundation:
+  - MovementPattern, ExerciseAngle, ExerciseEquipment, ExerciseDifficulty types
+  - scoreReplacement() and getSmartReplacements() scoring engine
+  - ReplacementEvent storage for V2 learning
+  - groupSetsByMovementPattern() for Insights aggregation
+- Exercise taxonomy: two-layer system (named exercises + structural metadata) designed
+- Design docs: navigation-map.md, psych-layer.md, smart-replace.md
 
 ## Phase 4
 
-- Progress dashboard basics
-- Insights / Reports destination integration
+- Smart Replace UI: SmartReplaceSheet component with reason picker + ranked suggestions
+- Exercise library enrichment: populate movementPattern, angle, equipment, difficultyLevel on all ~100 exercises
+- Insights and Reports integration: WorkoutReportPage fully wired, Insights Reports tab shows history
+- Insights → Progress tab: photo timeline, compare mode, Add Photo prompt
 - Goal Planner refinement and onboarding alignment
 - Profile, account, preferences, and import/export wiring
-- Session 3 paywall
-- Referrals and share-card hooks
-- Validation pass on engine accuracy and explanation quality
+- Community foundation: Groups, Friends, Leaderboard (friends/group scope)
+- Post-workout psych capture UI: mood + energy chips on Report screen
+- Home daily readiness card
 
 ## Planned Backlog
 
@@ -139,6 +156,39 @@ These are intentionally captured so they do not get lost while we finish the cor
 3. Goal Planner / generation refinement
 4. Insights and reports integration
 5. Profile / import-export / account wiring
+
+### Smart Replace
+- Populate movementPattern + angle + equipment + difficultyLevel on all exercises in exerciseLibrary
+- SmartReplaceSheet: reason picker (1 tap) → ranked suggestions (top 5 with match reason chip)
+- Wire existing "Replace exercise" ⋮ menu item to the sheet
+- Confirm swap if sets already logged; silent swap if 0 sets
+- Contextual "Having trouble with this one?" hint on zero-progress exercises after 5+ min
+- "Browse all" fallback filtered by primary muscle
+- Log ReplacementEvent per swap for V2 learning
+
+### Exercise Taxonomy Enrichment
+- Each exercise in exerciseLibrary needs: movementPattern, angle, equipment, difficultyLevel
+- Custom exercise creation form needs movementPattern selector
+- ~100 exercises covering all practical gym variants
+
+### Progress Photos (Phase 3)
+- Photo capture at Finish Workout (prompted, never mandatory)
+- Insights → Progress tab: chronological timeline, session data overlay, compare mode
+- Private by default; explicit share action required
+
+### Community (Phase 4)
+- Groups: create, join (invite or link), activity feed (opt-out), leaderboard
+- Friends: search by username, pending requests, friend profile (shared workouts only)
+- Leaderboard: weekly streak/sessions, monthly volume/PRs/improvement%
+- Default scope: friends/group — never global by default
+- Surface from Home card + Profile until feature has density; then promote to bottom nav
+
+### Psychological Intelligence V2
+- Skip prediction: surface lighter alternative on high-risk days
+- Deload recommendation: mood trend declining + high load = deload suggestion
+- Motivation style derivation from adherence patterns
+- Insights → Analyzer: mood/readiness trend overlay on training graphs
+- Goal drift detection: stated goal vs actual session behaviour
 
 ### After Theme System Matures
 
