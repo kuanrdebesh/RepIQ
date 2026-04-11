@@ -8184,7 +8184,7 @@ function OnboardingPage({
   function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
     return (
       <button type="button" className={`ob-chip ${active ? "is-active" : ""}`} onClick={onClick}>
-        {active && <span className="ob-chip-check">✓</span>}
+        <span className="ob-chip-check" style={{ visibility: active ? "visible" : "hidden" }}>✓</span>
         {label}
       </button>
     );
@@ -8454,11 +8454,11 @@ function OnboardingPage({
             <label className="ob-field-label">Biggest challenge right now <span className="ob-optional">(optional — pick all that apply)</span></label>
             <div className="ob-chip-grid">
               {[
-                { value: "time",        label: "Not enough time" },
-                { value: "motivation",  label: "Staying motivated" },
-                { value: "knowledge",   label: "Not sure what to do" },
-                { value: "injury",      label: "Recovery / injury" },
-                { value: "consistency", label: "Staying consistent" },
+                { value: "time",        label: "⏱ Not enough time" },
+                { value: "motivation",  label: "😴 Staying motivated" },
+                { value: "knowledge",   label: "📚 Not sure what to do" },
+                { value: "injury",      label: "🩹 Recovery / injury" },
+                { value: "consistency", label: "🔁 Staying consistent" },
               ].map((o) => (
                 <Chip
                   key={o.value}
@@ -8481,10 +8481,10 @@ function OnboardingPage({
               <label className="ob-field-label">Before a workout, you usually feel <span className="ob-optional">(optional)</span></label>
               <div className="ob-chip-grid">
                 {[
-                  { value: "energised", label: "Energised & ready" },
-                  { value: "neutral",   label: "Neutral" },
-                  { value: "reluctant", label: "Reluctant, but I go" },
-                  { value: "tired",     label: "Usually tired" },
+                  { value: "energised", label: "⚡ Energised & ready" },
+                  { value: "neutral",   label: "😐 Neutral" },
+                  { value: "reluctant", label: "😤 Reluctant, but I go" },
+                  { value: "tired",     label: "😴 Usually tired" },
                 ].map((f) => (
                   <Chip key={f.value} label={f.label} active={preWorkoutFeeling === f.value} onClick={() => {
                     setPreWorkoutFeeling(preWorkoutFeeling === f.value ? null : f.value);
@@ -8507,11 +8507,11 @@ function OnboardingPage({
               <label className="ob-field-label">Preferred workout style <span className="ob-optional">(optional)</span></label>
               <div className="ob-chip-grid">
                 {[
-                  { value: "full_body",   label: "Full Body" },
-                  { value: "upper_lower", label: "Upper / Lower" },
-                  { value: "ppl",         label: "Push · Pull · Legs" },
-                  { value: "body_part",   label: "Body Part Split" },
-                  { value: "any",         label: "No preference" },
+                  { value: "full_body",   label: "🔄 Full Body" },
+                  { value: "upper_lower", label: "↕️ Upper / Lower" },
+                  { value: "ppl",         label: "🔀 Push · Pull · Legs" },
+                  { value: "body_part",   label: "🎯 Body Part Split" },
+                  { value: "any",         label: "🤷 No preference" },
                 ].map((s) => (
                   <Chip key={s.value} label={s.label} active={workoutStyle === s.value} onClick={() => {
                     setWorkoutStyle(workoutStyle === s.value ? null : s.value);
@@ -8534,11 +8534,11 @@ function OnboardingPage({
               <label className="ob-field-label">In 3 months, success means <span className="ob-optional">(optional)</span></label>
               <div className="ob-chip-grid">
                 {[
-                  { value: "look_different", label: "I look noticeably different" },
-                  { value: "stronger",       label: "I'm significantly stronger" },
-                  { value: "consistent",     label: "I've trained consistently" },
-                  { value: "healthier",      label: "I feel healthier overall" },
-                  { value: "habit",          label: "I've built a real habit" },
+                  { value: "look_different", label: "🪞 I look noticeably different" },
+                  { value: "stronger",       label: "💪 I'm significantly stronger" },
+                  { value: "consistent",     label: "📅 I've trained consistently" },
+                  { value: "healthier",      label: "❤️ I feel healthier overall" },
+                  { value: "habit",          label: "🔥 I've built a real habit" },
                 ].map((v) => (
                   <Chip key={v.value} label={v.label} active={successVision === v.value} onClick={() => setSuccessVision(successVision === v.value ? null : v.value)} />
                 ))}
@@ -8583,8 +8583,15 @@ function OnboardingPage({
                       onClick={() => setStep(n)}
                       aria-label={`Go back to ${lbl}`}
                     >✓</button>
+                  ) : active ? (
+                    <button
+                      type="button"
+                      className="ob-dot is-active is-clickable"
+                      onClick={() => setStep(n)}
+                      aria-label={lbl}
+                    >{n}</button>
                   ) : (
-                    <div className={`ob-dot${active ? " is-active" : ""}`}>{n}</div>
+                    <div className="ob-dot">{n}</div>
                   )}
                   {i < TOTAL - 1 && <div className={`ob-connector ${n < step ? "is-filled" : ""}`} />}
                 </Fragment>
