@@ -254,7 +254,7 @@ Living registry of test cases across all built modules. Updated as features are 
 | HD-05 | "Edit Session" → opens logger | Logger opens with session exercises | ✅ |
 | HD-06 | Timer pre-seeded from durationSeconds | Timer starts at original session duration, not 0 | ✅ |
 | HD-07 | Timer pre-seed fallback for older sessions | Parses duration string ("45:30") if durationSeconds = 0 | ✅ |
-| HD-08 | "Share Summary" → opens report | WorkoutReportPage shown with session data | ✅ |
+| HD-08 | "Share Summary" → opens share cards directly | PostSaveShareScreen shown with session data; no intermediate report page | ✅ |
 | HD-09 | Back button → returns to Planner | Planner shown (not Home) | ✅ |
 | HD-10 | Edit session → save → share summary reflects new data | ⚠️ Deferred — currently appends new entry; overwrite pending | ⚠️ |
 
