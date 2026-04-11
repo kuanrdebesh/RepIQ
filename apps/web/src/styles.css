@@ -3261,10 +3261,10 @@ ol {
   top: 6px;
   z-index: 12;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   column-gap: 8px;
-  row-gap: 8px;
+  row-gap: 4px;
   border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
   border-radius: 14px;
   background:
@@ -3297,7 +3297,6 @@ ol {
   display: grid;
   gap: 3px;
   min-width: 0;
-  grid-column: 1;
 }
 
 .guidance-top-helper-copy strong {
@@ -3326,17 +3325,25 @@ ol {
 }
 
 .guidance-top-helper-dismiss {
-  border: 0;
-  background: transparent;
+  border: none;
+  background: none;
+  padding: 2px 0 0;
+  font-size: 0.74rem;
+  font-weight: 600;
   color: var(--muted);
-  width: 24px;
-  height: 24px;
-  padding: 2px 0;
-  font-size: 0.88rem;
-  align-self: start;
-  justify-self: end;
-  grid-column: 2;
-  grid-row: 2;
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.guidance-top-helper-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 11;
+  background: rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
+  pointer-events: none;
 }
 
 .guidance-mode-row {
@@ -3456,13 +3463,18 @@ ol {
   flex-shrink: 0;
 }
 
+.exercise-guidance-inline-wrap {
+  position: relative;
+  margin: 2px 0 8px;
+}
+
 .exercise-guidance-inline {
   width: 100%;
   border: 1px solid color-mix(in srgb, var(--button-gradient-start) 26%, var(--line));
   border-radius: 12px;
   background: color-mix(in srgb, var(--button-gradient-start) 4%, var(--paper));
-  padding: 9px 10px;
-  margin: 2px 0 8px;
+  padding: 9px 36px 9px 10px;
+  margin: 0;
   text-align: left;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -3472,6 +3484,26 @@ ol {
   box-shadow:
     inset 0 2px 0 color-mix(in srgb, var(--button-gradient-start) 60%, transparent),
     0 0 0 1px color-mix(in srgb, var(--button-gradient-end) 14%, transparent);
+}
+
+.exercise-guidance-inline-dismiss {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  opacity: 0.6;
 }
 
 .exercise-guidance-inline-label {
@@ -3773,6 +3805,21 @@ ol {
   padding: 0;
   box-shadow: none;
   margin-top: 0;
+}
+
+.guidance-modal-dismiss {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: center;
 }
 
 .sheet-card {

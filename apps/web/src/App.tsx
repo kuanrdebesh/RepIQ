@@ -11224,6 +11224,9 @@ export function App() {
   const [devBypassGate, setDevBypassGate] = useState(false);
   const [plannerInitialMode, setPlannerInitialMode] = useState<"repiq" | "custom">("repiq");
   const [inlineGuidanceOpen, setInlineGuidanceOpen] = useState(false);
+  // Session-level guidance toggles — initialized from settings at session start, never written back to settings
+  const [sessionGuidanceInline, setSessionGuidanceInline] = useState(() => settings.guidanceInline);
+  const [sessionGuidanceTopStrip, setSessionGuidanceTopStrip] = useState(() => settings.guidanceTopStrip);
   const [showTopGuidance, setShowTopGuidance] = useState(false);
   const [topGuidanceExpanded, setTopGuidanceExpanded] = useState(false);
   const [topGuidancePullDistance, setTopGuidancePullDistance] = useState(0);
@@ -11239,6 +11242,7 @@ export function App() {
   const pullGestureActive = useRef(false);
   const guidancePullStartY = useRef<number | null>(null);
   const guidancePullActive = useRef(false);
+  const topStripClosedRef = useRef(false);
   const [pullDownDistance, setPullDownDistance] = useState(0);
   const topSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -11308,7 +11312,7 @@ export function App() {
   const hasExercises = exercises.length > 0;
   const hasStartedExercise = exercises.some((exercise) => isExerciseStarted(exercise));
   const showTopGuidanceSurface =
-    hasExercises && settings.guidanceTopStrip && showTopGuidance && !allExercisesComplete;
+    hasExercises && sessionGuidanceTopStrip && showTopGuidance && !allExercisesComplete;
 
   const activeRestSeconds =
     activeRestTimer
@@ -11768,7 +11772,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !settings.guidanceTopStrip) {
+    if (typeof window === "undefined" || !sessionGuidanceTopStrip) {
       setShowTopGuidance(false);
       setTopGuidanceExpanded(false);
       setTopGuidancePullDistance(0);
@@ -11777,7 +11781,13 @@ export function App() {
 
     const updateTopGuidanceVisibility = () => {
       const topSectionBottom = topSectionRef.current?.getBoundingClientRect().bottom ?? 0;
-      setShowTopGuidance(topSectionBottom < 0);
+      if (topSectionBottom >= 0) {
+        // Scrolled back up past the top section — reset explicit-close flag
+        topStripClosedRef.current = false;
+      }
+      if (!topStripClosedRef.current) {
+        setShowTopGuidance(topSectionBottom < 0);
+      }
     };
 
     updateTopGuidanceVisibility();
@@ -11788,7 +11798,7 @@ export function App() {
       window.removeEventListener("scroll", updateTopGuidanceVisibility);
       window.removeEventListener("resize", updateTopGuidanceVisibility);
     };
-  }, [hasGuidance, settings.guidanceTopStrip]);
+  }, [hasGuidance, sessionGuidanceTopStrip]);
 
   useEffect(() => {
     if (!showTopGuidance) {
@@ -11796,6 +11806,20 @@ export function App() {
       setTopGuidancePullDistance(0);
     }
   }, [showTopGuidance]);
+
+  useEffect(() => {
+    if (!showTopGuidanceSurface) return;
+    function handleOutsideClick(e: MouseEvent) {
+      const strip = document.querySelector(".guidance-top-helper");
+      if (strip && !strip.contains(e.target as Node)) {
+        topStripClosedRef.current = true;
+        setTopGuidanceExpanded(false);
+        setShowTopGuidance(false);
+      }
+    }
+    document.addEventListener("click", handleOutsideClick, { capture: true });
+    return () => document.removeEventListener("click", handleOutsideClick, { capture: true });
+  }, [showTopGuidanceSurface]);
 
   useEffect(() => {
     const validUserActiveExerciseId =
@@ -14815,16 +14839,16 @@ export function App() {
           <div className="settings-block">
             <p className="settings-section-title">Guidance Defaults</p>
             <label className="toggle-row">
-              <span>Show top strip guidance</span>
+              <span>Start session with top strip guidance</span>
               <input type="checkbox" checked={settings.guidanceTopStrip}
                 onChange={(e) => setSettings((c) => ({ ...c, guidanceTopStrip: e.target.checked }))} />
             </label>
             <label className="toggle-row">
-              <span>Show inline guidance</span>
+              <span>Start session with inline tips</span>
               <input type="checkbox" checked={settings.guidanceInline}
                 onChange={(e) => setSettings((c) => ({ ...c, guidanceInline: e.target.checked }))} />
             </label>
-            <p className="settings-note">New workout sessions start with these guidance defaults. You can still toggle them while logging.</p>
+            <p className="settings-note">These defaults apply when a new session starts. Changes during a session only affect the current session.</p>
           </div>
 
           <div className="settings-block">
@@ -14864,6 +14888,9 @@ export function App() {
     >
       <section className="app-shell">
         {showTopGuidanceSurface && (
+          <div className="guidance-top-helper-backdrop" />
+        )}
+        {showTopGuidanceSurface && (
           <section
             className={`guidance-top-helper ${topGuidanceExpanded ? "is-expanded" : ""}`}
             style={{ transform: `translateY(${topGuidancePullDistance}px)` }}
@@ -14873,25 +14900,23 @@ export function App() {
             onPointerCancel={endGuidancePull}
           >
             <div className="guidance-top-helper-handle" aria-hidden="true" />
-            <button
-              className="guidance-top-helper-dismiss"
-              type="button"
-              aria-label="Disable top helper"
-              onClick={() => {
-                setSettings((current) => ({
-                  ...current,
-                  guidanceTopStrip: false
-                }));
-                setShowTopGuidance(false);
-              }}
-            >
-              ×
-            </button>
             <div className="guidance-top-helper-copy">
               <p className="label">Workout Guidance</p>
               <strong>{guidanceTip}</strong>
               <p className="guidance-top-helper-detail">{guidanceWhy}</p>
             </div>
+            <button
+              className="guidance-top-helper-dismiss"
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSessionGuidanceTopStrip(false);
+                setShowTopGuidance(false);
+              }}
+            >
+              Dismiss
+            </button>
           </section>
         )}
 
@@ -15393,22 +15418,35 @@ export function App() {
                   )}
                 </div>
 
-                {settings.guidanceInline &&
+                {sessionGuidanceInline &&
                   !allExercisesComplete &&
                   !isCollapsed &&
                   exerciseIndex === activeExerciseIndex && (
-                    <button
-                      className="exercise-guidance-inline"
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setInlineGuidanceOpen(true);
-                      }}
-                    >
-                      <span className="exercise-guidance-inline-label">Next Tip</span>
-                      <span className="exercise-guidance-inline-text">{guidanceTip}</span>
-                      <span className="exercise-guidance-inline-arrow" aria-hidden="true">›</span>
-                    </button>
+                    <div className="exercise-guidance-inline-wrap">
+                      <button
+                        className="exercise-guidance-inline"
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setInlineGuidanceOpen(true);
+                        }}
+                      >
+                        <span className="exercise-guidance-inline-label">Next Tip</span>
+                        <span className="exercise-guidance-inline-text">{guidanceTip}</span>
+                        <span className="exercise-guidance-inline-arrow" aria-hidden="true">›</span>
+                      </button>
+                      <button
+                        className="exercise-guidance-inline-dismiss"
+                        type="button"
+                        aria-label="Disable inline tips"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSessionGuidanceInline(false);
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
                   )}
 
                 <div className={`set-grid-header ${settings.showRpe ? "has-rpe" : "no-rpe"}`}>
@@ -15827,32 +15865,19 @@ export function App() {
                 <span className="coach-footer-label">Show in</span>
                 <div className="guidance-mode-row">
                   <button
-                    className={`guidance-mode-button ${settings.guidanceTopStrip ? "is-active" : ""}`}
+                    className={`guidance-mode-button ${sessionGuidanceTopStrip ? "is-active" : ""}`}
                     type="button"
                     onClick={() => {
-                      setSettings((current) => ({
-                        ...current,
-                        guidanceTopStrip: !current.guidanceTopStrip
-                      }));
-                      setShowTopGuidance((current) => {
-                        if (current) {
-                          return false;
-                        }
-                        return current;
-                      });
+                      setSessionGuidanceTopStrip((prev) => !prev);
+                      setShowTopGuidance(false);
                     }}
                   >
                     Top Strip
                   </button>
                   <button
-                    className={`guidance-mode-button ${settings.guidanceInline ? "is-active" : ""}`}
+                    className={`guidance-mode-button ${sessionGuidanceInline ? "is-active" : ""}`}
                     type="button"
-                    onClick={() =>
-                      setSettings((current) => ({
-                        ...current,
-                        guidanceInline: !current.guidanceInline
-                      }))
-                    }
+                    onClick={() => setSessionGuidanceInline((prev) => !prev)}
                   >
                     Inline
                   </button>
@@ -16315,9 +16340,6 @@ export function App() {
                   <p className="label">{allExercisesComplete ? "Overall Guidance" : "Next Guidance"}</p>
                   <h3>{allExercisesComplete ? "Workout" : activeExercise.name}</h3>
                 </div>
-                <button className="icon-button" type="button" onClick={() => setInlineGuidanceOpen(false)}>
-                  ×
-                </button>
               </div>
               <article className={`coach-card ${state.suggestion ? certaintyTone[state.suggestion.certainty] : ""}`}>
                 {state.suggestion && (
@@ -16330,6 +16352,16 @@ export function App() {
                 <h3 className="coach-tip">{guidanceTip}</h3>
                 <p className="coach-why">{guidanceWhy}</p>
               </article>
+              <button
+                className="guidance-modal-dismiss"
+                type="button"
+                onClick={() => {
+                  setSessionGuidanceInline(false);
+                  setInlineGuidanceOpen(false);
+                }}
+              >
+                Dismiss tip
+              </button>
             </div>
           </section>
         )}
