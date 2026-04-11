@@ -8348,27 +8348,6 @@ function OnboardingPage({
             </div>
           )}
 
-          <div className="ob-field">
-            <label className="ob-field-label">Biggest challenge right now <span className="ob-optional">(optional — pick all that apply)</span></label>
-            <div className="ob-chip-grid">
-              {[
-                { value: "time", label: "⏱ Not enough time" },
-                { value: "motivation", label: "😴 Staying motivated" },
-                { value: "knowledge", label: "📚 What to do" },
-                { value: "injury", label: "🩹 Recovery / injury" },
-                { value: "consistency", label: "🔁 Staying consistent" },
-              ].map((o) => (
-                <Chip
-                  key={o.value}
-                  label={o.label}
-                  active={biggestObstacles.includes(o.value)}
-                  onClick={() => setBiggestObstacles((prev) =>
-                    prev.includes(o.value) ? prev.filter((x) => x !== o.value) : [...prev, o.value]
-                  )}
-                />
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     ),
@@ -8476,6 +8455,27 @@ function OnboardingPage({
           </div>
         </div>
         <div className="ob-fields">
+          <div className="ob-field">
+            <label className="ob-field-label">Biggest challenge right now <span className="ob-optional">(optional — pick all that apply)</span></label>
+            <div className="ob-chip-grid">
+              {[
+                { value: "time", label: "⏱ Not enough time" },
+                { value: "motivation", label: "😴 Staying motivated" },
+                { value: "knowledge", label: "📚 What to do" },
+                { value: "injury", label: "🩹 Recovery / injury" },
+                { value: "consistency", label: "🔁 Staying consistent" },
+              ].map((o) => (
+                <Chip
+                  key={o.value}
+                  label={o.label}
+                  active={biggestObstacles.includes(o.value)}
+                  onClick={() => setBiggestObstacles((prev) =>
+                    prev.includes(o.value) ? prev.filter((x) => x !== o.value) : [...prev, o.value]
+                  )}
+                />
+              ))}
+            </div>
+          </div>
           <div className="ob-field">
             <label className="ob-field-label">Before a workout, you usually feel <span className="ob-optional">(optional)</span></label>
             <div className="ob-chip-grid">
