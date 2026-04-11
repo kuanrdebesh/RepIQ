@@ -9275,3 +9275,349 @@ ol {
   border-radius: 4px;
   font-size: 0.76rem;
 }
+
+/* ── Onboarding chip softer text ─────────────────────────────────────────── */
+.ob-chip { color: var(--subtle-text); font-weight: 500; }
+
+/* ── Onboarding field hint ───────────────────────────────────────────────── */
+.ob-field-hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin: 3px 0 8px;
+  line-height: 1.4;
+}
+
+/* ── Plan Reveal Page ────────────────────────────────────────────────────── */
+.pr-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  max-width: 430px;
+  margin: 0 auto;
+  padding: 0 0 env(safe-area-inset-bottom, 0);
+  background: var(--paper);
+  color: var(--ink);
+}
+.pr-hero {
+  padding: 48px 24px 24px;
+  text-align: center;
+}
+.pr-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 20px;
+  padding: 3px 10px;
+  margin-bottom: 16px;
+}
+.pr-title {
+  font-size: 1.55rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0 0 10px;
+  color: var(--ink);
+}
+.pr-sub {
+  font-size: 0.9rem;
+  color: var(--subtle-text);
+  line-height: 1.5;
+  margin: 0;
+}
+.pr-body {
+  flex: 1;
+  padding: 0 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.pr-return-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 0.85rem;
+  color: var(--subtle-text);
+  line-height: 1.4;
+}
+.pr-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pr-meta-chip {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: 20px;
+  padding: 4px 12px;
+}
+.pr-week1-section {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 16px;
+}
+.pr-section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+.pr-day-list { display: flex; flex-direction: column; gap: 10px; }
+.pr-day-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pr-day-num {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 40px;
+}
+.pr-day-info { flex: 1; }
+.pr-day-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+.pr-day-focus {
+  font-size: 0.78rem;
+  color: var(--subtle-text);
+  margin: 1px 0 0;
+}
+.pr-day-sets {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.pr-unlock-note {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 12px 0 0;
+  text-align: center;
+  font-style: italic;
+}
+.pr-footer {
+  padding: 16px 20px calc(16px + env(safe-area-inset-bottom, 0));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pr-cta-primary {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+}
+.pr-cta-secondary {
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  color: var(--subtle-text);
+  font-size: 0.875rem;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ── Home plan card ──────────────────────────────────────────────────────── */
+.home-plan-card { padding: 16px; }
+.home-plan-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 4px 0 4px;
+}
+.home-plan-meta {
+  font-size: 0.8rem;
+  color: var(--subtle-text);
+  margin: 0 0 12px;
+}
+.home-plan-actions {
+  display: flex;
+  gap: 8px;
+}
+.home-plan-actions .primary-button,
+.home-plan-actions .secondary-button {
+  flex: 1;
+  padding: 9px 12px;
+  font-size: 0.875rem;
+}
+
+/* ── Planner mode dropdown ───────────────────────────────────────────────── */
+.planner-mode-dropdown-wrap {
+  position: relative;
+}
+.planner-mode-dropdown-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: var(--ink);
+}
+.planner-mode-dropdown-btn:hover {
+  background: var(--surface);
+}
+.planner-mode-dropdown-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.planner-mode-chevron {
+  color: var(--muted);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.planner-mode-chevron.is-open {
+  transform: rotate(180deg);
+}
+.planner-mode-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  min-width: 200px;
+  z-index: 100;
+  overflow: hidden;
+}
+.planner-mode-option {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--subtle-text);
+}
+.planner-mode-option:hover {
+  background: var(--surface);
+}
+.planner-mode-option.is-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── RepIQ Plan view (planner) ───────────────────────────────────────────── */
+.planner-repiq-section {
+  padding: 16px 16px 24px;
+  overflow-y: auto;
+}
+.repiq-plan-header {
+  margin-bottom: 20px;
+}
+.repiq-plan-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 6px;
+}
+.repiq-plan-meta-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  color: var(--subtle-text);
+}
+.repiq-meta-dot { color: var(--line); }
+.repiq-weeks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.repiq-week-row {
+  background: var(--surface);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.repiq-week-row.is-current {
+  border: 1px solid var(--accent);
+}
+.repiq-week-row.is-locked {
+  opacity: 0.45;
+}
+.repiq-week-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.repiq-week-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+  flex: 1;
+}
+.repiq-week-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 20px;
+  padding: 2px 8px;
+}
+.repiq-week-badge.is-done {
+  color: #16a34a;
+  background: #dcfce7;
+}
+.repiq-week-lock {
+  font-size: 0.85rem;
+}
+.repiq-day-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+.repiq-day-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.repiq-day-row:last-child { border-bottom: none; }
+.repiq-day-num {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 36px;
+}
+.repiq-day-info { flex: 1; }
+.repiq-day-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+.repiq-day-focus {
+  font-size: 0.77rem;
+  color: var(--subtle-text);
+  margin: 1px 0 0;
+}
+.repiq-day-count {
+  font-size: 0.77rem;
+  color: var(--muted);
+}
