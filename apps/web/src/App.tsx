@@ -8122,7 +8122,8 @@ function OnboardingPage({
   const [preWorkoutFeeling, setPreWorkoutFeeling] = useState<string | null>(null);
   const [workoutStyle, setWorkoutStyle] = useState<string | null>(null);
   const [successVision, setSuccessVision] = useState<string | null>(null);
-  const [mindsetReveal, setMindsetReveal] = useState(1);
+  const [optionalOpen, setOptionalOpen] = useState(false);
+  const optionalSectionRef = useRef<HTMLDivElement | null>(null);
 
   const [maxStep, setMaxStep] = useState(1);
 
@@ -8456,9 +8457,9 @@ function OnboardingPage({
     5: (
       <div className="ob-step" key="step-5">
         <div className="ob-fields">
-          {/* Section 1 — Biggest challenge */}
+          {/* Mandatory — Biggest challenge */}
           <div className="ob-field">
-            <label className="ob-field-label">Biggest challenge right now <span className="ob-optional">(optional — pick all that apply)</span></label>
+            <label className="ob-field-label">Biggest challenge right now <span className="ob-optional">(pick all that apply)</span></label>
             <div className="ob-chip-grid">
               {[
                 { value: "time",        label: "⏱ Not enough time" },
@@ -8475,88 +8476,84 @@ function OnboardingPage({
                     setBiggestObstacles((prev) =>
                       prev.includes(o.value) ? prev.filter((x) => x !== o.value) : [...prev, o.value]
                     );
-                    if (mindsetReveal < 2) setMindsetReveal(2);
+                    if (!optionalOpen) {
+                      setOptionalOpen(true);
+                      setTimeout(() => optionalSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+                    }
                   }}
                 />
               ))}
             </div>
           </div>
 
-          {/* Section 2 — Pre-workout feeling */}
-          {mindsetReveal >= 2 ? (
-            <div className="ob-field ob-field-revealed">
-              <label className="ob-field-label">Before a workout, you usually feel <span className="ob-optional">(optional)</span></label>
-              <div className="ob-chip-grid">
-                {[
-                  { value: "energised", label: "⚡ Energised & ready" },
-                  { value: "neutral",   label: "😐 Neutral" },
-                  { value: "reluctant", label: "😤 Reluctant, but I go" },
-                  { value: "tired",     label: "😴 Usually tired" },
-                ].map((f) => (
-                  <Chip key={f.value} label={f.label} active={preWorkoutFeeling === f.value} onClick={() => {
-                    setPreWorkoutFeeling(preWorkoutFeeling === f.value ? null : f.value);
-                    if (mindsetReveal < 3) setMindsetReveal(3);
-                  }} />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <button type="button" className="ob-locked-section" onClick={() => setMindsetReveal(2)}>
-              <span className="ob-locked-dot" />
-              <span className="ob-locked-label">Pre-workout feeling</span>
-              <span className="ob-locked-hint">tap to answer</span>
+          {/* Optional section toggle / expanded */}
+          {!optionalOpen ? (
+            <button
+              type="button"
+              className="ob-optional-toggle"
+              onClick={() => {
+                setOptionalOpen(true);
+                setTimeout(() => optionalSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+              }}
+            >
+              <span className="ob-optional-toggle-label">Optional · 3 more questions</span>
+              <span className="ob-optional-toggle-arrow">›</span>
             </button>
-          )}
+          ) : (
+            <div ref={optionalSectionRef} className="ob-optional-section">
+              {/* Pre-workout feeling */}
+              <div className="ob-field ob-field-revealed">
+                <label className="ob-field-label">Before a workout, you usually feel <span className="ob-optional">(optional)</span></label>
+                <div className="ob-chip-grid">
+                  {[
+                    { value: "energised", label: "⚡ Energised & ready" },
+                    { value: "neutral",   label: "😐 Neutral" },
+                    { value: "reluctant", label: "😤 Reluctant, but I go" },
+                    { value: "tired",     label: "😴 Usually tired" },
+                  ].map((f) => (
+                    <Chip key={f.value} label={f.label} active={preWorkoutFeeling === f.value} onClick={() =>
+                      setPreWorkoutFeeling(preWorkoutFeeling === f.value ? null : f.value)
+                    } />
+                  ))}
+                </div>
+              </div>
 
-          {/* Section 3 — Workout style */}
-          {mindsetReveal >= 3 ? (
-            <div className="ob-field ob-field-revealed">
-              <label className="ob-field-label">Preferred workout style <span className="ob-optional">(optional)</span></label>
-              <div className="ob-chip-grid">
-                {[
-                  { value: "full_body",   label: "🔄 Full Body" },
-                  { value: "upper_lower", label: "↕️ Upper / Lower" },
-                  { value: "ppl",         label: "🔀 Push · Pull · Legs" },
-                  { value: "body_part",   label: "🎯 Body Part Split" },
-                  { value: "any",         label: "🤷 No preference" },
-                ].map((s) => (
-                  <Chip key={s.value} label={s.label} active={workoutStyle === s.value} onClick={() => {
-                    setWorkoutStyle(workoutStyle === s.value ? null : s.value);
-                    if (mindsetReveal < 4) setMindsetReveal(4);
-                  }} />
-                ))}
+              {/* Workout style */}
+              <div className="ob-field ob-field-revealed">
+                <label className="ob-field-label">Preferred workout style <span className="ob-optional">(optional)</span></label>
+                <div className="ob-chip-grid">
+                  {[
+                    { value: "full_body",   label: "🔄 Full Body" },
+                    { value: "upper_lower", label: "↕️ Upper / Lower" },
+                    { value: "ppl",         label: "🔀 Push · Pull · Legs" },
+                    { value: "body_part",   label: "🎯 Body Part Split" },
+                    { value: "any",         label: "🤷 No preference" },
+                  ].map((s) => (
+                    <Chip key={s.value} label={s.label} active={workoutStyle === s.value} onClick={() =>
+                      setWorkoutStyle(workoutStyle === s.value ? null : s.value)
+                    } />
+                  ))}
+                </div>
               </div>
-            </div>
-          ) : (
-            <button type="button" className="ob-locked-section" onClick={() => setMindsetReveal(3)}>
-              <span className="ob-locked-dot" />
-              <span className="ob-locked-label">Preferred workout style</span>
-              <span className="ob-locked-hint">tap to answer</span>
-            </button>
-          )}
 
-          {/* Section 4 — Success vision */}
-          {mindsetReveal >= 4 ? (
-            <div className="ob-field ob-field-revealed">
-              <label className="ob-field-label">In 3 months, success means <span className="ob-optional">(optional)</span></label>
-              <div className="ob-chip-grid">
-                {[
-                  { value: "look_different", label: "🪞 I look noticeably different" },
-                  { value: "stronger",       label: "💪 I'm significantly stronger" },
-                  { value: "consistent",     label: "📅 I've trained consistently" },
-                  { value: "healthier",      label: "❤️ I feel healthier overall" },
-                  { value: "habit",          label: "🔥 I've built a real habit" },
-                ].map((v) => (
-                  <Chip key={v.value} label={v.label} active={successVision === v.value} onClick={() => setSuccessVision(successVision === v.value ? null : v.value)} />
-                ))}
+              {/* Success vision */}
+              <div className="ob-field ob-field-revealed">
+                <label className="ob-field-label">In 3 months, success means <span className="ob-optional">(optional)</span></label>
+                <div className="ob-chip-grid">
+                  {[
+                    { value: "look_different", label: "🪞 I look noticeably different" },
+                    { value: "stronger",       label: "💪 I'm significantly stronger" },
+                    { value: "consistent",     label: "📅 I've trained consistently" },
+                    { value: "healthier",      label: "❤️ I feel healthier overall" },
+                    { value: "habit",          label: "🔥 I've built a real habit" },
+                  ].map((v) => (
+                    <Chip key={v.value} label={v.label} active={successVision === v.value} onClick={() =>
+                      setSuccessVision(successVision === v.value ? null : v.value)
+                    } />
+                  ))}
+                </div>
               </div>
             </div>
-          ) : (
-            <button type="button" className="ob-locked-section" onClick={() => setMindsetReveal(4)}>
-              <span className="ob-locked-dot" />
-              <span className="ob-locked-label">Your vision in 3 months</span>
-              <span className="ob-locked-hint">tap to answer</span>
-            </button>
           )}
         </div>
       </div>
@@ -8583,11 +8580,14 @@ function OnboardingPage({
               const active = n === step;
               return (
                 <Fragment key={n}>
-                  {n <= maxStep ? (
+                  {n <= maxStep || (n === step + 1 && canAdvance) ? (
                     <button
                       type="button"
                       className={`ob-dot is-clickable${done ? " is-done" : active ? " is-active" : " is-visited"}`}
-                      onClick={() => setStep(n)}
+                      onClick={() => {
+                        if (n > maxStep) setMaxStep(n);
+                        setStep(n);
+                      }}
                       aria-label={done ? `Go back to ${lbl}` : lbl}
                     >{done ? "✓" : n}</button>
                   ) : (
