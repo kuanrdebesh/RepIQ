@@ -189,7 +189,7 @@ ol {
 .detail-page {
   max-width: 430px;
   margin: 0 auto;
-  padding: 0 0 56px;
+  padding: 0 0 calc(64px + env(safe-area-inset-bottom, 0px));
 }
 
 .shell {
@@ -214,7 +214,7 @@ ol {
 
 .detail-page {
   min-height: 100vh;
-  padding: 0 0 56px;
+  padding: 0 0 calc(64px + env(safe-area-inset-bottom, 0px));
   gap: 0;
   background: var(--paper);
 }
@@ -244,10 +244,15 @@ ol {
   padding-top: max(44px, calc(env(safe-area-inset-top, 0px) + 20px));
   padding-left: 16px;
   padding-right: 16px;
-  padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 16px);
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 16px);
   background: var(--paper);
   min-height: 100dvh;
   box-sizing: border-box;
+}
+
+/* When the active workout tray is also visible, content needs to clear both nav + tray */
+.selector-shell.has-tray {
+  padding-bottom: calc(148px + env(safe-area-inset-bottom, 0px));
 }
 
 .selector-page,
@@ -340,6 +345,20 @@ ol {
   margin-top: 14px;
   border-radius: 10px;
   text-align: center;
+}
+
+/* Home card dual-button row */
+.session-card-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.session-card-actions .secondary-button,
+.session-card-actions .primary-button {
+  flex: 1;
+  text-align: center;
+  border-radius: 10px;
+  min-height: 44px;
 }
 
 .session-card {
@@ -3615,7 +3634,7 @@ ol {
 .workout-settings-body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 16px 48px;
+  padding: 16px 16px calc(64px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -3994,7 +4013,7 @@ ol {
   min-height: 0;
   align-content: start;
   overflow: auto;
-  padding: 14px 0 96px;
+  padding: 14px 0 calc(200px + env(safe-area-inset-bottom, 0px));
 }
 
 .template-group-list {
@@ -4136,7 +4155,7 @@ ol {
   display: grid;
   gap: 12px;
   padding-top: 4px;
-  padding-bottom: 128px;
+  padding-bottom: calc(200px + env(safe-area-inset-bottom, 0px));
 }
 
 /* ── Two-step stepper ── */
@@ -4482,7 +4501,7 @@ ol {
 .custom-form-actions {
   position: fixed;
   left: 50%;
-  bottom: 0;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   width: min(430px, 100vw);
   display: flex;
@@ -4491,7 +4510,7 @@ ol {
   gap: 8px;
   z-index: 20;
   margin: 0;
-  padding: 14px 16px calc(env(safe-area-inset-bottom, 0px) + 14px);
+  padding: 14px 16px 14px;
   border-top: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
   background: color-mix(in srgb, var(--paper) 97%, #ffffff);
   box-shadow: 0 -6px 18px color-mix(in srgb, var(--shadow) 58%, transparent);
@@ -4653,7 +4672,7 @@ ol {
 .add-exercise-sticky-actions {
   position: fixed;
   left: 50%;
-  bottom: max(16px, calc(env(safe-area-inset-bottom, 0px) + 12px));
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 16px);
   transform: translateX(-50%);
   width: min(398px, calc(100vw - 32px));
   z-index: 12;
@@ -4671,7 +4690,7 @@ ol {
 .add-exercise-create-fab {
   position: fixed;
   left: max(16px, calc(50% - 199px));
-  bottom: max(18px, calc(env(safe-area-inset-bottom, 0px) + 16px));
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 18px);
   width: 52px;
   height: 52px;
   border-radius: 999px;
@@ -4686,7 +4705,7 @@ ol {
 }
 
 .add-exercise-create-fab.is-raised {
-  bottom: max(94px, calc(env(safe-area-inset-bottom, 0px) + 88px));
+  bottom: calc(134px + env(safe-area-inset-bottom, 0px));
 }
 
 .add-exercise-create-fab.is-hidden {
@@ -6098,12 +6117,15 @@ ol {
   max-width: 430px;
   margin: 0 auto;
   min-height: 100vh;
-  padding-bottom: 120px;
+  /* Clear nav (64px) + action bar (~74px) + buffer = ~148px */
+  padding-bottom: calc(148px + env(safe-area-inset-bottom, 0px));
   background: var(--paper);
   display: grid;
   grid-template-rows: auto auto auto 1fr;
   gap: 0;
 }
+
+/* Plan Builder has bottom nav — same padding as other planner pages */
 
 .planner-topbar {
   display: grid;
@@ -6666,9 +6688,32 @@ ol {
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
+/* Plan detail inline action row (top, below header) */
+.plan-detail-actions-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.plan-detail-action-btn {
+  flex: 1;
+  min-height: 44px;
+  border-radius: 10px;
+  justify-content: center;
+}
+
+.plan-detail-active-notice {
+  width: 100%;
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-align: center;
+}
+
 /* Plan detail page */
 .plan-detail-section {
-  padding: 16px 16px 140px;
+  padding: 16px 16px calc(80px + env(safe-area-inset-bottom, 0px));
   display: grid;
   gap: 14px;
 }
@@ -6991,7 +7036,7 @@ ol {
 /* FAB */
 .planner-fab {
   position: fixed;
-  bottom: 24px;
+  bottom: calc(88px + env(safe-area-inset-bottom, 0px));
   right: max(16px, calc(50% - 199px));
   width: 52px;
   height: 52px;
@@ -7006,7 +7051,7 @@ ol {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 30;
+  z-index: 45;
   transition: transform 0.15s ease, bottom 0.2s ease;
 }
 
@@ -7015,7 +7060,7 @@ ol {
 }
 
 .planner-fab.has-tray {
-  bottom: calc(24px + 68px);
+  bottom: calc(156px + env(safe-area-inset-bottom, 0px));
 }
 
 
@@ -7046,7 +7091,7 @@ ol {
 }
 
 .planner-generate-section {
-  padding-bottom: 124px;
+  padding-bottom: calc(152px + env(safe-area-inset-bottom, 0px));
 }
 
 .planner-generate-note {
@@ -7059,21 +7104,21 @@ ol {
 .planner-bottom-actions {
   position: fixed;
   right: 50%;
-  bottom: 0;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   transform: translateX(50%);
   width: min(430px, 100%);
-  padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: 12px 16px 16px;
   background: var(--paper);
   border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   gap: 8px;
   box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.08);
-  z-index: 18;
+  z-index: 45;
 }
 
 .planner-bottom-actions.has-tray {
-  bottom: 68px;
+  bottom: calc(132px + env(safe-area-inset-bottom, 0px));
 }
 
 .planner-bottom-actions > button {
@@ -7094,7 +7139,7 @@ ol {
 }
 
 .planner-builder-section {
-  padding-bottom: 108px;
+  padding-bottom: calc(148px + env(safe-area-inset-bottom, 0px));
   background: var(--paper);
 }
 
@@ -7136,7 +7181,7 @@ ol {
 
 .active-tray {
   position: fixed;
-  bottom: 0;
+  bottom: calc(68px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
@@ -7396,7 +7441,7 @@ ol {
 
 /* Planner bottom padding when tray is visible */
 .planner-page.has-tray {
-  padding-bottom: 160px;
+  padding-bottom: calc(224px + env(safe-area-inset-bottom, 0px));
 }
 
 /* ── Plan tag picker ────────────────────────────────────────────────────── */
@@ -7893,6 +7938,7 @@ ol {
   box-sizing: border-box;
   max-width: 430px;
   margin: 0 auto;
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
 }
 
 .profile-header {
@@ -8021,7 +8067,7 @@ ol {
   flex-direction: column;
   min-height: 100dvh;
   background: var(--paper);
-  padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
 }
 
@@ -8241,7 +8287,7 @@ ol {
 /* ── Planner shell bottom padding for nav bar ────────────────────────────── */
 
 .planner-shell {
-  padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 8px);
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 8px);
 }
 
 /* ── Movement pattern option grid (custom exercise form) ─────────────────────── */

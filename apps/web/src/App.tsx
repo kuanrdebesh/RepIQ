@@ -5230,6 +5230,42 @@ function PlannerHomePage({
           </button>
         </header>
 
+        <div className="plan-detail-actions-top">
+          {hasActiveWorkout ? (
+            <>
+              <p className="plan-detail-active-notice">A workout is already in progress. Finish or discard it to start this one.</p>
+              {detailIsTemplate && (
+                <button
+                  className="primary-button plan-detail-action-btn"
+                  type="button"
+                  onClick={() => { onUseTemplate(detailPlan); setDetailPlan(null); }}
+                >
+                  Save to My Workouts
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              {detailIsTemplate && (
+                <button
+                  className="secondary-button plan-detail-action-btn"
+                  type="button"
+                  onClick={() => { onUseTemplate(detailPlan); setDetailPlan(null); }}
+                >
+                  Save to My Workouts
+                </button>
+              )}
+              <button
+                className="primary-button plan-detail-action-btn"
+                type="button"
+                onClick={() => { onStartPlan(detailPlan); setDetailPlan(null); }}
+              >
+                Start Workout
+              </button>
+            </>
+          )}
+        </div>
+
         <section className="plan-detail-section">
           {detailPlan.note && <p className="plan-detail-note">{detailPlan.note}</p>}
           {((detailPlan.userTags?.length ?? 0) > 0 || detailPlan.tag) && (
@@ -5259,39 +5295,6 @@ function PlannerHomePage({
             })}
           </div>
         </section>
-
-        <div className={`planner-bottom-actions${hasActiveWorkout ? " has-tray" : ""}`}>
-          {hasActiveWorkout ? (
-            detailIsTemplate && (
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() => { onUseTemplate(detailPlan); setDetailPlan(null); }}
-              >
-                Save to My Workouts
-              </button>
-            )
-          ) : (
-            <>
-              {detailIsTemplate && (
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => { onUseTemplate(detailPlan); setDetailPlan(null); }}
-                >
-                  Save to My Workouts
-                </button>
-              )}
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() => { onStartPlan(detailPlan); setDetailPlan(null); }}
-              >
-                Start Workout
-              </button>
-            </>
-          )}
-        </div>
       </main>
     );
   }
@@ -5775,7 +5778,7 @@ function PlanBuilderPage({
   }
 
   return (
-    <main className="planner-page">
+    <main className="planner-page is-builder">
       <header className="planner-topbar">
         <button className="back-nav-button" type="button" onClick={onBack} aria-label="Back">
           ←
@@ -5787,6 +5790,17 @@ function PlanBuilderPage({
           {resolvedTheme === "dark" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
         </button>
       </header>
+
+      <div className="plan-detail-actions-top">
+        <button
+          className="primary-button plan-detail-action-btn"
+          type="button"
+          disabled={!canSave}
+          onClick={() => onSavePlan(draft)}
+        >
+          {mode === "edit" ? "Save Changes" : "Save Workout"}
+        </button>
+      </div>
 
       <section className="planner-section planner-builder-section">
         <div className="builder-form">
@@ -5916,19 +5930,6 @@ function PlanBuilderPage({
           + Add Exercise
         </button>
       </section>
-
-      <div className="planner-bottom-actions">
-        <div className="planner-builder-actions">
-          <button
-            className="primary-button planner-builder-save-btn"
-            type="button"
-            disabled={!canSave}
-            onClick={() => onSavePlan(draft)}
-          >
-            {mode === "edit" ? "Save Changes" : "Save Workout"}
-          </button>
-        </div>
-      </div>
 
     </main>
   );
@@ -12179,6 +12180,7 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
+        <BottomNav activeView={appView} onNavigate={(view) => { setEditingCustomExerciseId(null); setAppView(view); }} />
       </div>
     );
   }
@@ -12210,6 +12212,7 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
+        <BottomNav activeView={appView} onNavigate={(view) => { setDetailsExerciseId(null); setAppView(view); }} />
       </div>
     );
   }
@@ -12226,6 +12229,7 @@ export function App() {
           }}
           onBack={() => setMusclesExerciseId(null)}
         />
+        <BottomNav activeView={appView} onNavigate={(view) => { setMusclesExerciseId(null); setAppView(view); }} />
       </div>
     );
   }
@@ -12255,6 +12259,7 @@ export function App() {
           preFilterMuscle={replaceTarget?.primaryMuscle}
           replaceMode={Boolean(replaceTarget)}
         />
+        <BottomNav activeView={appView} onNavigate={(view) => { setAddExerciseOpen(false); setSmartReplaceExerciseId(null); setAppView(view); }} />
       </div>
     );
   }
@@ -12269,6 +12274,7 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
       </div>
     );
   }
@@ -12295,6 +12301,7 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
       </div>
     );
   }
@@ -12308,6 +12315,7 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
       </div>
     );
   }
@@ -12342,6 +12350,7 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
         {templateApplyPromptImages && (
           <section className="sheet-overlay leave-center-overlay" onClick={() => setTemplateApplyPromptImages(null)}>
             <div className="leave-center-card" onClick={(event) => event.stopPropagation()}>
@@ -12558,6 +12567,15 @@ export function App() {
             resolvedTheme={resolvedTheme}
             onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
           />
+          <BottomNav activeView={appView} onNavigate={(view) => { setBuilderAddExerciseOpen(false); setAppView(view); }} />
+          {hasActiveWorkout && (
+            <ActiveWorkoutTray
+              sessionName={workoutMeta.sessionName}
+              duration={derivedDuration}
+              onResume={openActiveWorkout}
+              onDiscardRequest={() => { setDiscardReturnView("planner"); setTrayDiscardOpen(true); }}
+            />
+          )}
         </div>
       );
     }
@@ -12584,6 +12602,15 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+        {hasActiveWorkout && (
+          <ActiveWorkoutTray
+            sessionName={workoutMeta.sessionName}
+            duration={derivedDuration}
+            onResume={openActiveWorkout}
+            onDiscardRequest={() => { setDiscardReturnView("planner"); setTrayDiscardOpen(true); }}
+          />
+        )}
       </div>
     );
   }
@@ -12672,9 +12699,18 @@ export function App() {
               <p className="settings-note">
                 Browse your saved routines and starter templates.
               </p>
-              <button className="primary-button selector-planner-btn" type="button" onClick={() => setAppView("planner")}>
-                Open Planner
-              </button>
+              <div className="session-card-actions">
+                <button className="secondary-button" type="button" onClick={() => { setPlannerView("library"); setAppView("planner"); }}>
+                  Explore plans
+                </button>
+                <button className="primary-button" type="button" onClick={() => {
+                  setPlanBuilderDraft({ id: crypto.randomUUID(), name: "", exercises: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+                  setPlanBuilderMode("create");
+                  setAppView("plan-builder");
+                }}>
+                  Custom
+                </button>
+              </div>
             </article>
           </section>
         </section>
@@ -12740,6 +12776,7 @@ export function App() {
 
   if (settingsOpen) {
     return (
+      <>
       <main className="detail-page workout-settings-page" data-theme={resolvedTheme}>
         <header className="detail-topbar">
           <button className="back-nav-button detail-back-button" type="button" onClick={() => setSettingsOpen(false)} aria-label="Back">←</button>
@@ -12816,6 +12853,8 @@ export function App() {
           </div>
         </div>
       </main>
+      <BottomNav activeView={appView} onNavigate={(view) => { setSettingsOpen(false); setAppView(view); }} />
+      </>
     );
   }
 
