@@ -3196,7 +3196,19 @@ function getStoredRepIQPlan(): RepIQPlan | null {
   try {
     const raw = window.localStorage.getItem(repiqPlanStorageKey);
     if (!raw) return null;
-    return JSON.parse(raw) as RepIQPlan;
+    const plan = JSON.parse(raw) as RepIQPlan;
+    // Migrate: ensure all days have completedAt field (added in schema v2)
+    const migrated: RepIQPlan = {
+      ...plan,
+      weeks: plan.weeks.map((week) => ({
+        ...week,
+        days: week.days.map((day) => ({
+          ...day,
+          completedAt: day.completedAt ?? null,
+        })),
+      })),
+    };
+    return migrated;
   } catch { return null; }
 }
 
