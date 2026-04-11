@@ -13946,7 +13946,7 @@ export function App() {
           workout={effectiveWorkout}
           onBack={() => setAppView(historyDetailReturnView)}
           onEdit={canEdit ? () => editHistoryWorkout(effectiveWorkout) : undefined}
-          onShare={canEdit ? () => { setReportWorkout(effectiveWorkout); setAppView("report"); } : undefined}
+          onShare={canEdit ? () => { setReportWorkout(effectiveWorkout); setAppView("share"); } : undefined}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
@@ -13984,11 +13984,12 @@ export function App() {
     );
   }
 
-  if (appView === "share" && savedWorkoutData) {
+  if (appView === "share" && (savedWorkoutData || reportWorkout)) {
+    const shareData = savedWorkoutData ?? reportWorkout!;
     return (
       <div data-theme={resolvedTheme}>
         <PostSaveShareScreen
-          data={savedWorkoutData}
+          data={shareData}
           onDone={() => { setSavedWorkoutData(null); setAppView("report"); }}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
