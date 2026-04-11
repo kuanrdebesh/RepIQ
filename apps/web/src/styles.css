@@ -10613,3 +10613,131 @@ ol {
   75%  { opacity: 1; transform: translateX(-50%) translateY(0); }
   100% { opacity: 0; transform: translateX(-50%) translateY(0); }
 }
+
+/* ── Exercise Detail — movement pattern pill + replacements ── */
+.detail-meta-pill--pattern {
+  text-transform: capitalize;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.detail-browse-link {
+  background: none;
+  border: none;
+  padding: 4px 0 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: left;
+}
+
+/* ── Smart Replace Sheet ── */
+.srs-sheet {
+  max-height: min(88vh, 680px);
+  overflow-y: auto;
+}
+
+.srs-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ink);
+}
+
+.srs-step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.srs-section-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+
+.srs-empty {
+  font-size: 0.88rem;
+  color: var(--muted);
+  margin: 0;
+  padding: 8px 0;
+}
+
+.srs-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.srs-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.srs-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.srs-card-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.srs-match-chip {
+  font-size: 0.72rem;
+  color: var(--muted);
+  background: var(--bg);
+  border-radius: 20px;
+  padding: 2px 8px;
+  align-self: flex-start;
+  white-space: nowrap;
+}
+
+.srs-swap-btn {
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--accent);
+  border: 1.5px solid var(--accent);
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.srs-swap-btn:active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.srs-browse-all {
+  background: none;
+  border: none;
+  width: 100%;
+  padding: 12px 0 4px;
+  font-size: 0.88rem;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: center;
+  font-weight: 600;
+}
+

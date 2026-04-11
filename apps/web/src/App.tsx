@@ -1330,6 +1330,7 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     imageSrc: genericExerciseImage,
     primaryMuscle: "Quads",
     secondaryMuscles: ["Glutes"],
+    movementPattern: "cardio", angle: "none", equipment: "bodyweight", difficultyLevel: "beginner",
     howTo: [
       "Set a half-kneeling stance and tuck the pelvis under slightly.",
       "Shift forward until the front of the hip opens up.",
@@ -1358,6 +1359,7 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     imageSrc: genericExerciseImage,
     primaryMuscle: "Chest",
     secondaryMuscles: ["Front Delts"],
+    movementPattern: "cardio", angle: "none", equipment: "bodyweight", difficultyLevel: "beginner",
     howTo: [
       "Place the forearm on the wall slightly below shoulder height.",
       "Turn the torso away gently until the chest opens.",
@@ -6653,6 +6655,7 @@ function ExerciseDetailPage({
   customActions,
   resolvedTheme,
   onToggleTheme,
+  onBrowseExercises,
 }: {
   exercise: ExerciseDraft;
   activeTab: DetailTab;
@@ -6666,6 +6669,7 @@ function ExerciseDetailPage({
   } | null;
   resolvedTheme?: string;
   onToggleTheme?: () => void;
+  onBrowseExercises?: () => void;
 }) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [manageConfirmOpen, setManageConfirmOpen] = useState(false);
@@ -6796,7 +6800,18 @@ function ExerciseDetailPage({
             {exercise.movementSide && (
               <span className="detail-meta-pill">{exercise.movementSide === "unilateral" ? "Unilateral" : "Bilateral"}</span>
             )}
+            {(exercise as ExerciseWithTaxonomy).movementPattern && (
+              <span className="detail-meta-pill detail-meta-pill--pattern">
+                {((exercise as ExerciseWithTaxonomy).movementPattern ?? "").replace(/_/g, " ")}
+              </span>
+            )}
           </div>
+
+          {onBrowseExercises && (
+            <button type="button" className="detail-browse-link" onClick={onBrowseExercises}>
+              Browse all exercises →
+            </button>
+          )}
 
           <div className="chart-card">
             <div className="chart-copy">
@@ -12410,6 +12425,7 @@ export function App() {
     setFinishWorkoutDraft(null);
     setSupersetSheetExerciseId(null);
     setSupersetSelectionIds([]);
+    setSmartReplaceExerciseId(null);
     setSetTypePickerRowId(null);
     setPullDownDistance(0);
     // Go back to where the session was started from
@@ -12551,7 +12567,7 @@ export function App() {
     );
   }
 
-  function replaceExerciseWithTemplate(originalId: string, templateId: string) {
+  function replaceExerciseWithTemplate(originalId: string, templateId: string, reason: ReplacementReason = "preference", matchScore = 0) {
     const template = availableExerciseTemplates.find(e => e.id === templateId);
     if (!template) return;
     const suffix = `${Date.now()}-1`;
@@ -12571,9 +12587,9 @@ export function App() {
       replacedAt: new Date().toISOString(),
       originalExerciseId: originalId,
       replacementExerciseId: templateId,
-      reason: "preference",
+      reason,
       setsAlreadyLogged,
-      matchScore: 0,
+      matchScore,
     };
     persistReplacementEvent(event);
     setSmartReplaceExerciseId(null);
@@ -12979,6 +12995,7 @@ export function App() {
     setLeavePromptOpen(false);
     setSupersetSheetExerciseId(null);
     setSupersetSelectionIds([]);
+    setSmartReplaceExerciseId(null);
     setRestTimerEditorExerciseId(null);
     setRestTimerEditorValue("");
     setSaveRestTimerToDefault(false);
@@ -13974,6 +13991,7 @@ export function App() {
           initialScrollTarget={detailsScrollTarget}
           onTabChange={setDetailsTab}
           onBack={() => setDetailsExerciseId(null)}
+          onBrowseExercises={() => { setDetailsExerciseId(null); setAddExerciseOpen(true); }}
           customActions={
             detailsCustomExercise
               ? {
