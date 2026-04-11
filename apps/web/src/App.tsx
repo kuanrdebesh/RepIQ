@@ -5043,6 +5043,7 @@ function PlannerHomePage({
   initialPlannerMode,
   onStartRepIQSession,
   onRegeneratePlan,
+  onSaveSessionToLibrary,
 }: {
   plans: WorkoutPlan[];
   library: ExerciseDraft[];
@@ -5071,7 +5072,8 @@ function PlannerHomePage({
   repiqPlan?: RepIQPlan | null;
   initialPlannerMode?: "repiq" | "custom";
   onStartRepIQSession?: (weekIdx: number, dayIdx: number) => void;
-  onRegeneratePlan?: () => void;
+  onRegeneratePlan?: (prefs: { goal: string; experience: string; daysPerWeek: number; sessionLength: number; splitPref: string | null }) => void;
+  onSaveSessionToLibrary?: (day: RepIQPlanDay, sessionLabel: string) => void;
 }) {
   // Generate state
   const [genGoal, setGenGoal] = useState("Hypertrophy");
@@ -5090,6 +5092,16 @@ function PlannerHomePage({
   const [libEquipment, setLibEquipment] = useState<string | null>(defaultEquipment);
   const [plannerMode, setPlannerMode] = useState<"repiq" | "custom">(initialPlannerMode ?? "repiq");
   const [plannerModeOpen, setPlannerModeOpen] = useState(false);
+  const [showPrefsOverlay, setShowPrefsOverlay] = useState(false);
+  const [prefGoal, setPrefGoal] = useState<string>(repiqPlan?.goal ?? "build_muscle");
+  const [prefExp, setPrefExp] = useState<string>(repiqPlan?.experienceLevel ?? "beginner");
+  const [prefDays, setPrefDays] = useState<number>(repiqPlan?.daysPerWeek ?? 3);
+  const [prefLength, setPrefLength] = useState<number>(repiqPlan?.sessionLengthMin ?? 45);
+  const [prefSplit, setPrefSplit] = useState<string | null>(null);
+  const [sessionMenuIdx, setSessionMenuIdx] = useState<string | null>(null);
+  const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
+  const [editingSessionName, setEditingSessionName] = useState("");
+  const [completedExpanded, setCompletedExpanded] = useState(false);
   const [libFilterOpen, setLibFilterOpen] = useState(false);
   const [libFilterFocus, setLibFilterFocus] = useState<string | null>(null);
   const [libDraftCategory, setLibDraftCategory] = useState<string | null>(null);
@@ -5431,79 +5443,305 @@ function PlannerHomePage({
         </button>
       </header>
 
-      {repiqPlan && plannerMode === "repiq" && (
-        <div className="planner-repiq-section">
-          <div className="repiq-plan-header">
-            <div>
-              <h2 className="repiq-plan-title">{repiqPlan.planName}</h2>
-              <div className="repiq-plan-meta-row">
-                <span>{SPLIT_LABEL[repiqPlan.splitType]}</span>
-                <span className="repiq-meta-dot">·</span>
-                <span>{repiqPlan.daysPerWeek} days/week</span>
-                <span className="repiq-meta-dot">·</span>
-                <span>{repiqPlan.mesocycleLengthWeeks} weeks</span>
+      {repiqPlan && plannerMode === "repiq" && (() => {
+        // Build flat sessions list
+        let sessionNum = 0;
+        const allSessions = repiqPlan.weeks.flatMap((week, wi) =>
+          week.days.map((day, di) => {
+            sessionNum++;
+            return {
+              key: `${wi}-${di}`,
+              weekIdx: wi,
+              dayIdx: di,
+              sessionNum,
+              label: day.sessionLabel,
+              focus: day.focus,
+              exercises: day.exercises,
+              isCompleted: week.isCompleted,
+              isCurrent: wi === repiqPlan.currentWeekIndex && !week.isCompleted,
+              isLocked: wi > repiqPlan.currentWeekIndex,
+            };
+          })
+        );
+
+        const completedSessions = allSessions.filter(s => s.isCompleted);
+        const activeSessions = allSessions.filter(s => !s.isCompleted && !s.isLocked);
+        const lockedSessions = allSessions.filter(s => s.isLocked);
+
+        return (
+          <div className="planner-repiq-section">
+            {/* Header */}
+            <div className="repiq-plan-header">
+              <div>
+                <h2 className="repiq-plan-title">{repiqPlan.planName}</h2>
+                <div className="repiq-plan-meta-row">
+                  <span>{SPLIT_LABEL[repiqPlan.splitType]}</span>
+                  <span className="repiq-meta-dot">·</span>
+                  <span>{repiqPlan.daysPerWeek} days/week</span>
+                  <span className="repiq-meta-dot">·</span>
+                  <span>{repiqPlan.mesocycleLengthWeeks} weeks</span>
+                </div>
               </div>
-            </div>
-            {onRegeneratePlan && (
-              <button type="button" className="repiq-regenerate-btn" onClick={onRegeneratePlan}>
-                ↺ Regenerate
-              </button>
-            )}
-          </div>
-          <div className="repiq-weeks-list">
-            {repiqPlan.weeks.map((week, wi) => {
-              const isCurrent = wi === repiqPlan.currentWeekIndex;
-              const isLocked = !week.isCompleted && wi > repiqPlan.currentWeekIndex;
-              return (
-                <div
-                  key={week.weekNumber}
-                  className={`repiq-week-row${isCurrent ? " is-current" : ""}${isLocked ? " is-locked" : ""}`}
+              {onRegeneratePlan && (
+                <button
+                  type="button"
+                  className="repiq-regenerate-btn"
+                  onClick={() => {
+                    setPrefGoal(repiqPlan.goal);
+                    setPrefExp(repiqPlan.experienceLevel);
+                    setPrefDays(repiqPlan.daysPerWeek);
+                    setPrefLength(repiqPlan.sessionLengthMin);
+                    setPrefSplit(null);
+                    setShowPrefsOverlay(true);
+                  }}
                 >
-                  <div className="repiq-week-header">
-                    <span className="repiq-week-label">Week {week.weekNumber}</span>
-                    {week.isCompleted && <span className="repiq-week-badge is-done">✓ Done</span>}
-                    {isCurrent && !week.isCompleted && <span className="repiq-week-badge">Active</span>}
-                    {isLocked && <span className="repiq-week-lock">🔒</span>}
-                  </div>
-                  {!isLocked && (
-                    <div className="repiq-day-list">
-                      {week.days.map((day, di) => (
-                        <div key={di} className="repiq-day-row">
-                          <div className="repiq-day-info">
-                            <div className="repiq-day-header-row">
-                              <span className="repiq-day-num">Day {di + 1}</span>
-                              <p className="repiq-day-name">{day.sessionLabel}</p>
-                            </div>
-                            <ul className="repiq-ex-list">
-                              {day.exercises.map((e) => {
-                                const exName = library.find((ex) => ex.id === e.exerciseId)?.name ?? e.exerciseId;
-                                return (
-                                  <li key={e.exerciseId} className="repiq-ex-item">
-                                    {exName} <span className="repiq-ex-sets">{e.sets}×{e.reps}</span>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          </div>
-                          {onStartRepIQSession && isCurrent && !week.isCompleted && (
+                  ✦ Adjust Preferences
+                </button>
+              )}
+            </div>
+
+            {/* Active / upcoming sessions */}
+            <div className="repiq-sessions-list">
+              {activeSessions.map((s, idx) => {
+                const isNext = idx === 0;
+                const isMenuOpen = sessionMenuIdx === s.key;
+                const isEditing = editingSessionKey === s.key;
+                return (
+                  <div key={s.key} className={`repiq-session-card${isNext ? " is-next" : ""}`}>
+                    <div className="repiq-session-header">
+                      <div className="repiq-session-meta">
+                        <span className="repiq-session-num">Session {s.sessionNum}</span>
+                        {isNext && <span className="repiq-session-badge">Next</span>}
+                      </div>
+                      {isEditing ? (
+                        <div className="repiq-session-rename-row">
+                          <input
+                            className="repiq-session-rename-input"
+                            value={editingSessionName}
+                            onChange={e => setEditingSessionName(e.target.value)}
+                            autoFocus
+                          />
+                          <button type="button" className="repiq-session-rename-save" onClick={() => {
+                            // TODO: persist name change to repiqPlan
+                            setEditingSessionKey(null);
+                          }}>Save</button>
+                          <button type="button" className="repiq-session-rename-cancel" onClick={() => setEditingSessionKey(null)}>✕</button>
+                        </div>
+                      ) : (
+                        <div className="repiq-session-title-row">
+                          <p className="repiq-session-name">{s.label}</p>
+                          <div className="repiq-session-menu-wrap">
                             <button
                               type="button"
-                              className="repiq-day-start-btn"
-                              onClick={() => onStartRepIQSession(wi, di)}
-                            >
-                              Start
-                            </button>
-                          )}
+                              className="repiq-session-menu-btn"
+                              onClick={() => setSessionMenuIdx(isMenuOpen ? null : s.key)}
+                              aria-label="Session options"
+                            >⋯</button>
+                            {isMenuOpen && (
+                              <div className="repiq-session-menu">
+                                <button type="button" onClick={() => {
+                                  setEditingSessionName(s.label);
+                                  setEditingSessionKey(s.key);
+                                  setSessionMenuIdx(null);
+                                }}>Rename session</button>
+                                {onSaveSessionToLibrary && (
+                                  <button type="button" onClick={() => {
+                                    const week = repiqPlan.weeks[s.weekIdx];
+                                    onSaveSessionToLibrary(week.days[s.dayIdx], s.label);
+                                    setSessionMenuIdx(null);
+                                  }}>Save to My Workouts</button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
+                    {isNext && (
+                      <ul className="repiq-ex-list">
+                        {s.exercises.map((e) => {
+                          const exName = library.find((ex) => ex.id === e.exerciseId)?.name ?? e.exerciseId;
+                          return (
+                            <li key={e.exerciseId} className="repiq-ex-item">
+                              {exName} <span className="repiq-ex-sets">{e.sets}×{e.reps}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    {onStartRepIQSession && isNext && (
+                      <button
+                        type="button"
+                        className="repiq-session-start-btn"
+                        onClick={() => onStartRepIQSession(s.weekIdx, s.dayIdx)}
+                      >
+                        Start Session
+                      </button>
+                    )}
+                    {!isNext && (
+                      <p className="repiq-session-focus">{s.focus}</p>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Locked upcoming sessions */}
+              {lockedSessions.slice(0, 4).map((s) => (
+                <div key={s.key} className="repiq-session-card is-locked">
+                  <div className="repiq-session-header">
+                    <span className="repiq-session-num">Session {s.sessionNum}</span>
+                    <span className="repiq-session-lock">🔒</span>
+                  </div>
+                  <p className="repiq-session-name">{s.label}</p>
+                  <p className="repiq-session-focus">{s.focus}</p>
                 </div>
-              );
-            })}
+              ))}
+              {lockedSessions.length > 4 && (
+                <p className="repiq-more-locked">+{lockedSessions.length - 4} more sessions locked</p>
+              )}
+            </div>
+
+            {/* Completed sessions (collapsed) */}
+            {completedSessions.length > 0 && (
+              <div className="repiq-completed-section">
+                <button
+                  type="button"
+                  className="repiq-completed-toggle"
+                  onClick={() => setCompletedExpanded(v => !v)}
+                >
+                  <span>Completed · {completedSessions.length} sessions</span>
+                  <span className={`repiq-completed-chevron${completedExpanded ? " is-open" : ""}`}>›</span>
+                </button>
+                {completedExpanded && (
+                  <div className="repiq-sessions-list">
+                    {completedSessions.slice(-7).map((s) => (
+                      <div key={s.key} className="repiq-session-card is-done">
+                        <div className="repiq-session-header">
+                          <span className="repiq-session-num">Session {s.sessionNum}</span>
+                          <span className="repiq-week-badge is-done">✓ Done</span>
+                        </div>
+                        <p className="repiq-session-name">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Preferences overlay */}
+            {showPrefsOverlay && (
+              <div className="repiq-prefs-overlay" onClick={() => setShowPrefsOverlay(false)}>
+                <div className="repiq-prefs-sheet" onClick={e => e.stopPropagation()}>
+                  <div className="repiq-prefs-header">
+                    <h3 className="repiq-prefs-title">Adjust Plan Preferences</h3>
+                    <button type="button" className="repiq-prefs-close" onClick={() => setShowPrefsOverlay(false)}>✕</button>
+                  </div>
+
+                  <div className="repiq-prefs-body">
+                    {/* Goal */}
+                    <div className="ob-field">
+                      <label className="ob-field-label">Primary Goal</label>
+                      <div className="ob-chip-grid">
+                        {([
+                          { value: "build_muscle", label: "💪 Build Muscle" },
+                          { value: "get_stronger", label: "🏋️ Get Stronger" },
+                          { value: "improve_fitness", label: "🏃 Improve Fitness" },
+                          { value: "fat_loss", label: "🔥 Fat Loss" },
+                          { value: "athletic_performance", label: "⚡ Performance" },
+                          { value: "stay_active", label: "🌿 Stay Active" },
+                        ] as { value: string; label: string }[]).map(o => (
+                          <button
+                            key={o.value}
+                            type="button"
+                            className={`ob-chip${prefGoal === o.value ? " is-active" : ""}`}
+                            onClick={() => setPrefGoal(o.value)}
+                          >
+                            <span className="ob-chip-check" style={{ visibility: prefGoal === o.value ? "visible" : "hidden" }}>✓</span>
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Experience */}
+                    <div className="ob-field">
+                      <label className="ob-field-label">Experience Level</label>
+                      <div className="ob-chip-grid">
+                        {([
+                          { value: "never", label: "🌱 New to training" },
+                          { value: "beginner", label: "🚶 Getting started" },
+                          { value: "intermediate", label: "🏃 Building foundations" },
+                          { value: "advanced", label: "💪 Experienced" },
+                          { value: "veteran", label: "🦅 Veteran" },
+                        ] as { value: string; label: string }[]).map(o => (
+                          <button
+                            key={o.value}
+                            type="button"
+                            className={`ob-chip${prefExp === o.value ? " is-active" : ""}`}
+                            onClick={() => setPrefExp(o.value)}
+                          >
+                            <span className="ob-chip-check" style={{ visibility: prefExp === o.value ? "visible" : "hidden" }}>✓</span>
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Days per week */}
+                    <div className="ob-field">
+                      <label className="ob-field-label">Days per week</label>
+                      <div className="ob-chip-row">
+                        {[1, 2, 3, 4, 5, 6, 7].map(d => (
+                          <button
+                            key={d}
+                            type="button"
+                            className={`ob-chip${prefDays === d ? " is-active" : ""}`}
+                            onClick={() => setPrefDays(d)}
+                          >
+                            <span className="ob-chip-check" style={{ visibility: prefDays === d ? "visible" : "hidden" }}>✓</span>
+                            {d}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Session length */}
+                    <div className="ob-field">
+                      <label className="ob-field-label">Session length</label>
+                      <div className="ob-chip-row">
+                        {([30, 45, 60, 75, 90] as number[]).map(l => (
+                          <button
+                            key={l}
+                            type="button"
+                            className={`ob-chip${prefLength === l ? " is-active" : ""}`}
+                            onClick={() => setPrefLength(l)}
+                          >
+                            <span className="ob-chip-check" style={{ visibility: prefLength === l ? "visible" : "hidden" }}>✓</span>
+                            {l} min
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="repiq-prefs-footer">
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => {
+                        onRegeneratePlan?.({ goal: prefGoal, experience: prefExp, daysPerWeek: prefDays, sessionLength: prefLength, splitPref: prefSplit });
+                        setShowPrefsOverlay(false);
+                      }}
+                    >
+                      Regenerate Plan
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
       <div style={repiqPlan && plannerMode === "repiq" ? { display: "none" } : undefined}>
       <section className="planner-actions-strip">
         <div className="planner-top-actions-row">
@@ -12618,8 +12856,18 @@ export function App() {
     setAppView("logger");
   }
 
-  function regenerateRepIQPlan() {
-    const plan = generateRepIQPlan(psychProfile);
+  function regenerateRepIQPlan(prefs: { goal: string; experience: string; daysPerWeek: number; sessionLength: number; splitPref: string | null }) {
+    const updatedProfile: UserPsychProfile = {
+      ...psychProfile,
+      primaryGoal: prefs.goal as TrainingGoal,
+      experienceLevel: prefs.experience as ExperienceLevel,
+      daysPerWeekPref: prefs.daysPerWeek,
+      sessionLengthPref: prefs.sessionLength,
+      workoutStylePref: prefs.splitPref,
+    };
+    persistPsychProfile(updatedProfile);
+    setPsychProfile(updatedProfile);
+    const plan = generateRepIQPlan(updatedProfile);
     persistRepIQPlan(plan);
     setRepiqPlan(plan);
   }
@@ -12967,6 +13215,21 @@ export function App() {
           initialPlannerMode={plannerInitialMode}
           onStartRepIQSession={startRepIQSession}
           onRegeneratePlan={regenerateRepIQPlan}
+          onSaveSessionToLibrary={(day, label) => {
+            const plan: WorkoutPlan = {
+              id: `plan-${Date.now()}`,
+              name: label,
+              exercises: day.exercises.map((e) => ({
+                exerciseId: e.exerciseId,
+                setCount: e.sets,
+                restTimer: String(e.restSeconds),
+              })),
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            savePlan(plan);
+            setPlannerView("mine");
+          }}
         />
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
 

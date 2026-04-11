@@ -9769,3 +9769,252 @@ ol {
   width: 100%;
   margin-bottom: 10px;
 }
+
+/* ── RepIQ sessions list ── */
+.repiq-sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.repiq-session-card {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 14px;
+  border: 1px solid transparent;
+}
+.repiq-session-card.is-next {
+  border-color: var(--accent);
+}
+.repiq-session-card.is-locked {
+  opacity: 0.45;
+}
+.repiq-session-card.is-done {
+  opacity: 0.6;
+}
+.repiq-session-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.repiq-session-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.repiq-session-num {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.repiq-session-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 20px;
+  padding: 2px 8px;
+}
+.repiq-session-lock {
+  font-size: 0.85rem;
+}
+.repiq-session-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+.repiq-session-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+  flex: 1;
+}
+.repiq-session-focus {
+  font-size: 0.78rem;
+  color: var(--subtle-text);
+  margin: 2px 0 0;
+}
+.repiq-session-menu-wrap {
+  position: relative;
+}
+.repiq-session-menu-btn {
+  font-size: 1.1rem;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.repiq-session-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 100;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  min-width: 170px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  overflow: hidden;
+}
+.repiq-session-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 11px 14px;
+  font-size: 0.85rem;
+  color: var(--ink);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.repiq-session-menu button:last-child { border-bottom: none; }
+.repiq-session-menu button:hover { background: var(--surface); }
+.repiq-session-start-btn {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.repiq-session-start-btn:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.repiq-session-rename-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+.repiq-session-rename-input {
+  flex: 1;
+  font-size: 0.875rem;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.repiq-session-rename-save {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.repiq-session-rename-cancel {
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+}
+.repiq-more-locked {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: center;
+  padding: 8px 0;
+}
+
+/* ── Completed section ── */
+.repiq-completed-section {
+  margin-top: 8px;
+}
+.repiq-completed-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 0;
+  font-size: 0.82rem;
+  color: var(--subtle-text);
+  font-weight: 600;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+}
+.repiq-completed-chevron {
+  font-size: 1.1rem;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+.repiq-completed-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+/* ── Preferences overlay ── */
+.repiq-prefs-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 500;
+  display: flex;
+  align-items: flex-end;
+}
+.repiq-prefs-sheet {
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+  background: var(--paper);
+  border-radius: 20px 20px 0 0;
+  max-height: 90dvh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.repiq-prefs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.repiq-prefs-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+.repiq-prefs-close {
+  font-size: 1rem;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+}
+.repiq-prefs-body {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 1;
+  overflow-y: auto;
+}
+.repiq-prefs-footer {
+  padding: 12px 20px 24px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--line);
+}
+.repiq-prefs-footer .primary-button {
+  width: 100%;
+}
