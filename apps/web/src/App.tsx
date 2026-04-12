@@ -11141,6 +11141,80 @@ function ProfilePage({
   );
 }
 
+// ── Home page helpers ─────────────────────────────────────────────────────────
+
+function computeStreak(workouts: SavedWorkoutData[]): number {
+  if (workouts.length === 0) return 0;
+  const today = new Date();
+  const msPerDay = 86400000;
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const dateMsSet = new Set(
+    workouts.map((w) => {
+      const ds = (w.date ?? w.savedAt).slice(0, 10);
+      const [y, mo, d] = ds.split("-").map(Number);
+      return Date.UTC(y, mo - 1, d);
+    })
+  );
+  const startMs = dateMsSet.has(todayMs)
+    ? todayMs
+    : dateMsSet.has(todayMs - msPerDay)
+      ? todayMs - msPerDay
+      : null;
+  if (startMs === null) return 0;
+  let streak = 0;
+  let cur = startMs;
+  while (dateMsSet.has(cur)) { streak++; cur -= msPerDay; }
+  return streak;
+}
+
+function getThisWeekStats(workouts: SavedWorkoutData[]): {
+  sessions: number; sets: number; volume: number; activeDayNumbers: number[];
+} {
+  const today = new Date();
+  const dow = today.getDay(); // 0=Sun
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  const mondayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate() + mondayOffset);
+  const sundayMs = mondayMs + 6 * 86400000;
+  const msPerDay = 86400000;
+  const thisWeek = workouts.filter((w) => {
+    const ds = (w.date ?? w.savedAt).slice(0, 10);
+    const [y, mo, d] = ds.split("-").map(Number);
+    const wMs = Date.UTC(y, mo - 1, d);
+    return wMs >= mondayMs && wMs <= sundayMs;
+  });
+  const seenDays = new Set<number>();
+  for (const w of thisWeek) {
+    const ds = (w.date ?? w.savedAt).slice(0, 10);
+    const [y, mo, d] = ds.split("-").map(Number);
+    seenDays.add(Math.floor((Date.UTC(y, mo - 1, d) - mondayMs) / msPerDay));
+  }
+  return {
+    sessions: thisWeek.length,
+    sets: thisWeek.reduce((s, w) => s + (w.totalSets ?? 0), 0),
+    volume: thisWeek.reduce((s, w) => s + (w.totalVolume ?? 0), 0),
+    activeDayNumbers: [...seenDays],
+  };
+}
+
+function getRelativeDate(dateStr: string): string {
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const [y, mo, d] = dateStr.slice(0, 10).split("-").map(Number);
+  const diff = Math.round((todayMs - Date.UTC(y, mo - 1, d)) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  if (diff < 7) return `${diff} days ago`;
+  if (diff < 14) return "Last week";
+  return `${Math.round(diff / 7)} weeks ago`;
+}
+
+function getGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
 export function App() {
   const storedPlanBuilderState = getStoredPlanBuilderDraft();
   const [appView, setAppView] = useState<AppView>("home");
@@ -14576,15 +14650,35 @@ export function App() {
   }
 
   if (appView === "home") {
+    const latestWorkout = savedWorkoutsList[0] ?? null;
+    const streak = computeStreak(savedWorkoutsList);
+    const weekStats = getThisWeekStats(savedWorkoutsList);
+    const firstName = psychProfile.name?.split(" ")[0] ?? null;
+    const greeting = getGreeting();
+    const topPR = latestWorkout?.rewards.find((r) => r.category === "pr") ?? null;
+    const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+    // Which day-of-week slot is "today" (0=Mon, 6=Sun)
+    const todayDayNum = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
+
     return (
       <main className={`shell selector-shell${hasActiveWorkout ? " has-tray" : ""}`} data-theme={resolvedTheme}>
         <section className="app-shell selector-page">
-          <header className="selector-header">
-            <div>
-              <p className="label">REPIQ</p>
-              <h1>Ready to train</h1>
+
+          {/* ── Header ── */}
+          <header className="home-header">
+            <div className="home-header-left">
+              <h1 className="home-greeting">
+                {firstName ? `${greeting}, ${firstName}` : greeting}
+              </h1>
+              {streak > 0 && (
+                <div className="home-streak-badge">
+                  <span className="home-streak-fire">🔥</span>
+                  <span className="home-streak-count">{streak}</span>
+                  <span className="home-streak-label">{streak === 1 ? "day" : "days"}</span>
+                </div>
+              )}
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div className="home-header-actions">
               <button
                 type="button"
                 className="profile-avatar-btn"
@@ -14619,7 +14713,16 @@ export function App() {
           </header>
 
           <section className="selector-stack">
-            {/* ── Start section ── */}
+
+            {/* ── PR highlight ── shows only when latest workout had a PR */}
+            {topPR && (
+              <div className="home-pr-banner">
+                <span className="home-pr-icon">🏆</span>
+                <span className="home-pr-text">{topPR.detail}</span>
+              </div>
+            )}
+
+            {/* ── Primary CTA: context-aware ── */}
             {repiqPlan ? (() => {
               const nextSession = getNextRepIQSession(repiqPlan);
               if (!nextSession) return <p className="home-plan-done-note">All sessions complete — great work!</p>;
@@ -14641,9 +14744,75 @@ export function App() {
                   </button>
                 </div>
               );
-            })() : null}
+            })() : (
+              <div className="home-start-section">
+                <button
+                  className="primary-button home-start-primary"
+                  type="button"
+                  disabled={hasActiveWorkout}
+                  onClick={() => openQuickSession("home")}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: 6, verticalAlign: "middle" }}>
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                  </svg>
+                  {savedWorkoutsList.length === 0 ? "Start Your First Workout" : "Start Quick Workout"}
+                </button>
+              </div>
+            )}
 
-            {/* ── Plan card (planning actions only) ── */}
+            {/* ── This week snapshot ── */}
+            <article className="home-week-card">
+              <p className="home-week-title">This Week</p>
+              <div className="home-week-dots">
+                {DAY_LABELS.map((label, i) => (
+                  <div key={i} className={`home-week-dot-col${i === todayDayNum ? " is-today" : ""}`}>
+                    <div className={`home-week-dot${weekStats.activeDayNumbers.includes(i) ? " is-done" : ""}`} />
+                    <span className="home-week-day-label">{label}</span>
+                  </div>
+                ))}
+              </div>
+              {weekStats.sessions > 0 ? (
+                <p className="home-week-meta">
+                  {weekStats.sessions} {weekStats.sessions === 1 ? "session" : "sessions"}
+                  {weekStats.sets > 0 ? ` · ${weekStats.sets} sets` : ""}
+                  {weekStats.volume > 0 ? ` · ${Math.round(weekStats.volume).toLocaleString()} kg` : ""}
+                </p>
+              ) : (
+                <p className="home-week-meta home-week-meta-empty">No workouts yet this week</p>
+              )}
+            </article>
+
+            {/* ── Latest workout card (enhanced) ── */}
+            {latestWorkout ? (
+              <article
+                className="session-card home-latest-card"
+                onClick={() => { setReportWorkout(latestWorkout); setAppView("report"); }}
+                style={{ cursor: "pointer" }}
+              >
+                <div className="home-latest-info">
+                  <p className="home-latest-label">
+                    Last Workout · {getRelativeDate(latestWorkout.date ?? latestWorkout.savedAt)}
+                  </p>
+                  <h2 className="home-latest-name">{latestWorkout.sessionName}</h2>
+                  <p className="home-latest-meta">
+                    {latestWorkout.duration}
+                    {latestWorkout.totalSets > 0 ? ` · ${latestWorkout.totalSets} sets` : ""}
+                    {latestWorkout.totalVolume > 0 ? ` · ${Math.round(latestWorkout.totalVolume).toLocaleString()} kg` : ""}
+                  </p>
+                </div>
+                <span className="home-latest-chevron" aria-hidden="true">›</span>
+              </article>
+            ) : (
+              <article className="session-card home-latest-card home-latest-empty">
+                <div className="home-latest-info">
+                  <p className="home-latest-label">Last Workout</p>
+                  <h2 className="home-latest-name" style={{ color: "var(--muted)" }}>No workouts yet</h2>
+                  <p className="home-latest-meta">Complete a workout to see your stats here.</p>
+                </div>
+              </article>
+            )}
+
+            {/* ── Plan card ── */}
             {repiqPlan && (
               <article className="session-card home-plan-card">
                 <div className="session-card-top">
@@ -14674,40 +14843,21 @@ export function App() {
               </article>
             )}
 
-            {/* Latest workout card */}
-            <article className="session-card home-latest-card" onClick={savedWorkoutData ? () => { setReportWorkout(savedWorkoutData); setAppView("report"); } : undefined} style={savedWorkoutData ? { cursor: "pointer" } : undefined}>
-              <div className="session-card-top">
-                <div>
-                  <p className="label">Latest Workout</p>
-                  {savedWorkoutData ? (
-                    <h2 className="home-latest-name">{savedWorkoutData.sessionName}</h2>
-                  ) : (
-                    <h2>No workouts yet</h2>
-                  )}
-                </div>
-                {savedWorkoutData && <span className="home-latest-chevron" aria-hidden="true">›</span>}
-              </div>
-              {savedWorkoutData ? (
-                <p className="home-latest-meta">{savedWorkoutData.duration} · {savedWorkoutData.totalSets} sets · {savedWorkoutData.exerciseCount} exercises</p>
-              ) : (
-                <p className="settings-note">Complete a workout to see your report here.</p>
-              )}
-            </article>
-
+            {/* ── No plan: planner entry ── */}
             {!repiqPlan && (
               <article className="session-card">
                 <div className="session-card-top">
                   <div>
                     <p className="label">Workout Planner</p>
-                    <h2>Your routines</h2>
+                    <h2>Build a plan</h2>
                   </div>
                 </div>
                 <p className="settings-note">
-                  Browse your saved routines and starter templates.
+                  Structure your training with a personalised programme.
                 </p>
                 <div className="session-card-actions">
                   <button className="secondary-button" type="button" onClick={() => { setPlannerView("library"); setAppView("planner"); }}>
-                    Explore plans
+                    Browse library
                   </button>
                   <button className="primary-button" type="button" onClick={() => {
                     setPlanBuilderDraft({ id: crypto.randomUUID(), name: "", exercises: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
@@ -14719,22 +14869,25 @@ export function App() {
                 </div>
               </article>
             )}
+
           </section>
         </section>
 
-        {/* Quick Workout FAB */}
-        <button
-          className="home-quick-fab"
-          type="button"
-          disabled={hasActiveWorkout}
-          onClick={() => openQuickSession("home")}
-          aria-label="Quick workout"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-          </svg>
-          <span>Quick Workout</span>
-        </button>
+        {/* Quick Workout FAB — only shown when a plan is active (CTA handles no-plan case) */}
+        {repiqPlan && (
+          <button
+            className="home-quick-fab"
+            type="button"
+            disabled={hasActiveWorkout}
+            onClick={() => openQuickSession("home")}
+            aria-label="Quick workout"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+            <span>Quick Workout</span>
+          </button>
+        )}
 
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
 

@@ -304,6 +304,141 @@ ol {
   margin-top: 0;
 }
 
+/* ── Home header ── */
+.home-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 4px;
+}
+.home-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.home-greeting {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0;
+  line-height: 1.2;
+}
+.home-streak-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: 999px;
+  padding: 3px 10px 3px 7px;
+  width: fit-content;
+}
+.home-streak-fire { font-size: 0.9rem; line-height: 1; }
+.home-streak-count {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+}
+.home-streak-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  opacity: 0.8;
+  line-height: 1;
+}
+.home-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* ── PR banner ── */
+.home-pr-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: color-mix(in srgb, #f59e0b 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+.home-pr-icon { font-size: 1rem; flex-shrink: 0; }
+.home-pr-text {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+/* ── This week card ── */
+.home-week-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px 16px 12px;
+}
+.home-week-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+.home-week-dots {
+  display: flex;
+  gap: 0;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.home-week-dot-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+}
+.home-week-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  transition: background 0.15s, border-color 0.15s;
+}
+.home-week-dot.is-done {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.home-week-dot-col.is-today .home-week-dot:not(.is-done) {
+  border-color: var(--accent);
+  border-style: dashed;
+}
+.home-week-day-label {
+  font-size: 0.67rem;
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1;
+}
+.home-week-dot-col.is-today .home-week-day-label {
+  color: var(--accent);
+  font-weight: 700;
+}
+.home-week-meta {
+  font-size: 0.8rem;
+  color: var(--ink);
+  font-weight: 600;
+  margin: 0;
+}
+.home-week-meta-empty {
+  color: var(--muted);
+  font-weight: 400;
+}
+
 /* ── Home start section ── */
 .home-start-section {
   display: flex;
@@ -8324,6 +8459,7 @@ ol {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 14px 16px;
   background: var(--surface);
   border-radius: 14px;
@@ -8338,11 +8474,19 @@ ol {
   background: color-mix(in srgb, var(--accent) 6%, var(--surface));
 }
 
+.home-latest-empty {
+  cursor: default;
+}
+.home-latest-empty:hover {
+  background: var(--surface);
+}
+
 .home-latest-info {
   display: flex;
   flex-direction: column;
   gap: 3px;
   min-width: 0;
+  flex: 1;
 }
 
 .home-latest-label {
@@ -8351,26 +8495,30 @@ ol {
   letter-spacing: 0.07em;
   color: var(--muted);
   text-transform: uppercase;
+  margin: 0;
 }
 
 .home-latest-name {
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin: 0;
 }
 
 .home-latest-meta {
   font-size: 0.78rem;
   color: var(--muted);
+  margin: 0;
 }
 
 .home-latest-chevron {
+  font-size: 1.3rem;
   color: var(--muted);
   flex-shrink: 0;
-  margin-left: 8px;
+  line-height: 1;
 }
 
 /* ── Profile page ────────────────────────────────────────────────────────── */
