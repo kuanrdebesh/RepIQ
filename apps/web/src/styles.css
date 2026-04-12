@@ -10035,6 +10035,21 @@ ol {
 
 .ob-checkbox { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
 .ob-checkbox-label { font-size: 0.84rem; font-weight: 600; color: var(--fg); }
+.ob-rotating-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.ob-rotating-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
 
 .ob-break-stepper {
   display: flex;

@@ -122,6 +122,7 @@ interface UserPsychProfile {
   bodyFatBracket: string | null;
   // ── Schedule preferences ──
   daysPerWeekPref: number | null;
+  cycleDays: number | null;    // null = 7 (weekly); set if user follows N-day rotating cycle
   sessionLengthPref: number | null;
   bestTimePref: string | null;
   workoutStylePref: string | null;
@@ -274,6 +275,7 @@ const DEFAULT_PSYCH_PROFILE: UserPsychProfile = {
   age: null,
   bodyFatBracket: null,
   daysPerWeekPref: null,
+  cycleDays: null,
   sessionLengthPref: null,
   bestTimePref: null,
   workoutStylePref: null,
@@ -8798,6 +8800,8 @@ function OnboardingPage({
   const [isReturning, setIsReturning] = useState(false);
   const [breakMonths, setBreakMonths] = useState(3);
   const [daysPerWeek, setDaysPerWeek] = useState(3);
+  const [useRotatingCycle, setUseRotatingCycle] = useState(false);
+  const [cycleDays, setCycleDays] = useState(7);
   const [sessionLength, setSessionLength] = useState<number>(60);
   const [bestTime, setBestTime] = useState<string | null>(null);
 
@@ -8839,6 +8843,7 @@ function OnboardingPage({
       experienceLevel: experience,
       scheduleCommitment: (Math.max(2, Math.min(6, daysPerWeek))) as ScheduleCommitment,
       daysPerWeekPref: daysPerWeek,
+      cycleDays: useRotatingCycle ? cycleDays : null,
       sessionLengthPref: sessionLength,
       bestTimePref: bestTime,
       workoutStylePref: workoutStyle,
@@ -9098,7 +9103,7 @@ function OnboardingPage({
             )}
           </div>
           <div className="ob-field">
-            <label className="ob-field-label">Days per week</label>
+            <label className="ob-field-label">{useRotatingCycle ? "Sessions per cycle" : "Days per week"}</label>
             <div className="ob-days-strip">
               {[1, 2, 3, 4, 5, 6, 7].map((d) => (
                 <button
@@ -9111,6 +9116,20 @@ function OnboardingPage({
                 </button>
               ))}
             </div>
+            <label className="ob-rotating-toggle">
+              <input
+                type="checkbox"
+                checked={useRotatingCycle}
+                onChange={(e) => setUseRotatingCycle(e.target.checked)}
+              />
+              <span className="ob-checkbox-label">I follow a rotating cycle (not a fixed weekly schedule)</span>
+            </label>
+            {useRotatingCycle && (
+              <div className="ob-break-stepper" style={{ marginTop: 8 }}>
+                <span className="ob-break-label">Cycle length (days)</span>
+                <Stepper value={cycleDays} onChange={setCycleDays} min={3} max={21} unit="days" />
+              </div>
+            )}
           </div>
           <div className="ob-field">
             <label className="ob-field-label">Session length</label>
@@ -10794,7 +10813,7 @@ const HEATMAP_MUSCLES = [
   "Biceps", "Triceps", "Quads", "Hamstrings", "Glutes", "Calves",
 ] as const;
 
-function computeMuscleCoverage(workouts: SavedWorkoutData[]): Record<string, MuscleStatus> {
+function computeMuscleCoverage(workouts: SavedWorkoutData[], cycleDays: number = 7): Record<string, MuscleStatus> {
   const today = new Date();
   const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
   const lastTrained: Record<string, number> = {};
@@ -10814,7 +10833,9 @@ function computeMuscleCoverage(workouts: SavedWorkoutData[]): Record<string, Mus
     const last = lastTrained[muscle];
     if (!last) { result[muscle] = "none"; continue; }
     const days = Math.round((todayMs - last) / 86400000);
-    result[muscle] = days <= 2 ? "fresh" : days <= 5 ? "fading" : "due";
+    const freshDays = Math.max(2, Math.round(cycleDays * 0.3));
+    const fadingDays = Math.max(freshDays + 1, Math.round(cycleDays * 0.75));
+    result[muscle] = days <= freshDays ? "fresh" : days <= fadingDays ? "fading" : "due";
   }
   return result;
 }
@@ -11784,8 +11805,45 @@ function isPartialWeek(sessions: number, muscles: Set<string>): boolean {
   return sessions === 1 && muscles.size < 3;
 }
 
-function computeWeekStreak(workouts: SavedWorkoutData[], targetPerWeek: number): number {
+function computeWeekStreak(workouts: SavedWorkoutData[], targetPerWeek: number, cycleDays: number = 7): number {
   if (workouts.length === 0) return 0;
+
+  const today = new Date();
+
+  if (cycleDays !== 7) {
+    // Rolling cycle mode: count consecutive cycleDays-length windows with quality sessions
+    const todayMs2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const cycleMs2 = cycleDays * 86400000;
+
+    // Map each workout to its cycle offset (0 = current, 1 = one cycle ago, etc.)
+    const cycleMap = new Map<number, { sessions: number; muscles: Set<string> }>();
+    for (const w of workouts) {
+      const ds = (w.date ?? w.savedAt).slice(0, 10);
+      const [y, mo, d] = ds.split("-").map(Number);
+      const wMs = Date.UTC(y, mo - 1, d);
+      const offset = Math.floor((todayMs2 - wMs) / cycleMs2);
+      if (!cycleMap.has(offset)) cycleMap.set(offset, { sessions: 0, muscles: new Set() });
+      const entry = cycleMap.get(offset)!;
+      entry.sessions += 1;
+      for (const ex of w.exercises) {
+        const canonical = getCanonicalMuscle(ex.primaryMuscle);
+        if (canonical !== "Other") entry.muscles.add(canonical);
+      }
+    }
+    let streak = 0;
+    // Start checking from offset 0 (current cycle)
+    for (let off = 0; off < 52; off++) {
+      const entry = cycleMap.get(off);
+      if (!entry) break;
+      if (isQualityWeek(entry.sessions, entry.muscles, targetPerWeek)) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }
+
   const msPerWeek = 7 * 86400000;
 
   const getMondayUtc = (d: Date): number => {
@@ -11815,7 +11873,6 @@ function computeWeekStreak(workouts: SavedWorkoutData[], targetPerWeek: number):
     return isQualityWeek(entry.sessions, entry.muscles, targetPerWeek);
   };
 
-  const today = new Date();
   const currentMon = getMondayUtc(today);
 
   // Start from current week if already quality, else previous week
@@ -11843,147 +11900,187 @@ function getISOWeekNumber(mondayMs: number): number {
   return weekNum;
 }
 
-function computeTrainingTrend(workouts: SavedWorkoutData[]): {
-  weekZones: TrainingZone[];   // last 4 weeks, oldest → newest
-  recentWeeks: { label: string; zone: TrainingZone; isCurrent: boolean; isPartial: boolean }[]; // last 3 for boxes
+function pickMessage(workouts: SavedWorkoutData[], missedCount: number, progressCount: number, plateauCount: number, currentZone: TrainingZone): { insight: string; zoneLabel: string; tapHint: string } {
+  if (workouts.length === 0 || missedCount === 4) {
+    return { zoneLabel: "No data yet", insight: "Log your first session and your volume trend will appear here.", tapHint: "Explore Analyzer →" };
+  } else if (missedCount >= 2 && currentZone === "missed") {
+    return { zoneLabel: "On a break", insight: "A few weeks off. Let's ease back in — even one session restarts the engine.", tapHint: "Let's get back on it →" };
+  } else if (currentZone === "missed") {
+    return { zoneLabel: "Week missed", insight: "You had good momentum — one session this week will keep it alive.", tapHint: "Let's get back on it →" };
+  } else if (missedCount >= 2) {
+    return { zoneLabel: "↑ Resuming", insight: "Back in the gym after some missed weeks — rebuild gradually to avoid injury.", tapHint: "Track your rebuild in Analyzer →" };
+  } else if (progressCount >= 3) {
+    return { zoneLabel: "↑ Progressing", insight: "Volume up 3+ weeks in a row. Check which muscles are carrying the load.", tapHint: "Muscle breakdown in Analyzer →" };
+  } else if (progressCount >= 2 && plateauCount === 0) {
+    return { zoneLabel: "↑ Progressing", insight: "Solid upward trend. Push progressive overload on your main lifts.", tapHint: "Muscle breakdown in Analyzer →" };
+  } else if (plateauCount >= 2) {
+    return { zoneLabel: "↓ Plateauing", insight: "Overall volume has stalled for 2+ weeks. Something needs to change.", tapHint: "See which lifts need a reset →" };
+  } else if (currentZone === "plateau") {
+    return { zoneLabel: "↓ Plateauing", insight: "Volume dipped this week. Deload intentionally or push back next session.", tapHint: "See which lifts need a reset →" };
+  } else if (currentZone === "progress") {
+    return { zoneLabel: "↑ Progressing", insight: "Volume up this week. Check the Analyzer to see which muscles are leading.", tapHint: "Muscle breakdown in Analyzer →" };
+  } else {
+    return { zoneLabel: "→ Maintaining", insight: "Load is steady. A small overload nudge could push you into a progress phase.", tapHint: "Muscle breakdown in Analyzer →" };
+  }
+}
+
+function computeTrainingTrend(workouts: SavedWorkoutData[], cycleDays: number = 7): {
+  weekZones: TrainingZone[];
+  recentWeeks: { label: string; zone: TrainingZone; isCurrent: boolean; isPartial: boolean }[];
   currentZone: TrainingZone;
   insight: string;
   zoneLabel: string;
   tapHint: string;
 } {
-  const getMondayUtc = (d: Date): number => {
-    const day = d.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() + diff);
-  };
-
-  const today = new Date();
-  const currentMon = getMondayUtc(today);
-  const msPerWeek = 7 * 86400000;
-
-  // Build map: weekMondayMs → total volume
-  const weekVolMap = new Map<number, number>();
-  // Build map: weekMondayMs → { sessions, muscles } for partial detection
-  const weekSessMap = new Map<number, { sessions: number; muscles: Set<string> }>();
-  for (const w of workouts) {
-    const ds = (w.date ?? w.savedAt).slice(0, 10);
-    const [y, mo, d] = ds.split("-").map(Number);
-    const mon = getMondayUtc(new Date(y, mo - 1, d));
-    weekVolMap.set(mon, (weekVolMap.get(mon) ?? 0) + (w.totalVolume ?? 0));
-    if (!weekSessMap.has(mon)) weekSessMap.set(mon, { sessions: 0, muscles: new Set() });
-    const entry = weekSessMap.get(mon)!;
-    entry.sessions += 1;
-    for (const ex of w.exercises) {
-      const canonical = getCanonicalMuscle(ex.primaryMuscle);
-      if (canonical !== "Other") entry.muscles.add(canonical);
-    }
-  }
-
-  // Volumes for last 5 weeks (oldest first) to compute 4 zone deltas
-  const vols: number[] = [];
-  for (let i = 4; i >= 0; i--) {
-    vols.push(weekVolMap.get(currentMon - i * msPerWeek) ?? 0);
-  }
-
   const classify = (vol: number, prev: number): TrainingZone => {
     if (vol === 0) return "missed";
-    if (prev === 0) return "maintenance";   // no prior baseline
+    if (prev === 0) return "maintenance";
     const delta = (vol - prev) / prev;
     if (delta > 0.05) return "progress";
     if (delta < -0.10) return "plateau";
     return "maintenance";
   };
 
-  // weekZones[0..3]: weeks at offsets -3, -2, -1, 0 (current)
-  const weekZones: TrainingZone[] = vols.slice(1).map((vol, i) => classify(vol, vols[i]));
-  const currentZone = weekZones[3];
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
 
-  // Last 3 weeks for the box display (indices 1, 2, 3 = offsets -2, -1, 0)
-  const recentWeeks = [1, 2, 3].map((idx) => {
-    const offset = 3 - idx; // 2, 1, 0
-    const monMs = currentMon - offset * msPerWeek;
-    const zone = weekZones[idx];
-    const sessEntry = weekSessMap.get(monMs);
-    const partial = sessEntry
-      ? isPartialWeek(sessEntry.sessions, sessEntry.muscles) && zone !== "missed"
-      : false;
-    return {
-      label: `W${getISOWeekNumber(monMs)}`,
-      zone,
-      isCurrent: offset === 0,
-      isPartial: partial,
+  if (cycleDays === 7) {
+    // ── Calendar-week mode ─────────────────────────────────────────────────
+    const getMondayUtc = (d: Date): number => {
+      const day = d.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() + diff);
     };
-  });
+    const todayDow = today.getDay() === 0 ? 6 : today.getDay() - 1; // Mon=0 Sun=6
+    const currentMon = getMondayUtc(today);
+    const msPerWeek = 7 * 86400000;
 
-  const progressCount = weekZones.filter(z => z === "progress").length;
-  const plateauCount  = weekZones.filter(z => z === "plateau").length;
-  const missedCount   = weekZones.filter(z => z === "missed").length;
+    // Full week volumes and TTD (to-date) volumes per week
+    const weekVolMap = new Map<number, number>();
+    const weekVolTTDMap = new Map<number, number>();
+    const weekSessMap = new Map<number, { sessions: number; muscles: Set<string> }>();
 
-  let zoneLabel: string;
-  let insight: string;
-  let tapHint: string;
+    for (const w of workouts) {
+      const ds = (w.date ?? w.savedAt).slice(0, 10);
+      const [y, mo, d] = ds.split("-").map(Number);
+      const date = new Date(y, mo - 1, d);
+      const dow = date.getDay() === 0 ? 6 : date.getDay() - 1;
+      const mon = getMondayUtc(date);
+      weekVolMap.set(mon, (weekVolMap.get(mon) ?? 0) + (w.totalVolume ?? 0));
+      if (dow <= todayDow) {
+        weekVolTTDMap.set(mon, (weekVolTTDMap.get(mon) ?? 0) + (w.totalVolume ?? 0));
+      }
+      if (!weekSessMap.has(mon)) weekSessMap.set(mon, { sessions: 0, muscles: new Set() });
+      const entry = weekSessMap.get(mon)!;
+      entry.sessions += 1;
+      for (const ex of w.exercises) {
+        const canonical = getCanonicalMuscle(ex.primaryMuscle);
+        if (canonical !== "Other") entry.muscles.add(canonical);
+      }
+    }
 
-  if (workouts.length === 0 || missedCount === 4) {
-    zoneLabel = "No data yet";
-    insight = "Log your first session and your volume trend will appear here.";
-    tapHint = "Explore Analyzer →";
+    // Volumes for complete weeks (W-4 through W-1) — full week
+    // For W0 (current) vs W-1 baseline: use TTD for fair comparison
+    const vols: number[] = [];
+    for (let i = 4; i >= 1; i--) {
+      vols.push(weekVolMap.get(currentMon - i * msPerWeek) ?? 0);
+    }
+    vols.push(weekVolMap.get(currentMon) ?? 0); // W0 full (not used in zone calc below)
 
-  } else if (missedCount >= 2 && currentZone === "missed") {
-    // [M2] Multiple missed + current week also missed
-    zoneLabel = "On a break";
-    insight = "A few weeks off. Let's ease back in — even one session restarts the engine.";
-    tapHint = "Let's get back on it →";
+    // Zones for W-3, W-2, W-1 use full-week comparison
+    const weekZones: TrainingZone[] = vols.slice(1).map((vol, i) => classify(vol, vols[i]));
 
-  } else if (currentZone === "missed") {
-    // [M1] Single missed current week (had good prior weeks)
-    zoneLabel = "Week missed";
-    insight = "You had good momentum — one session this week will keep it alive.";
-    tapHint = "Let's get back on it →";
+    // Override W0 zone with TTD comparison (fair: same days-of-week elapsed)
+    const currentTTD = weekVolTTDMap.get(currentMon) ?? 0;
+    const lastWeekTTD = weekVolTTDMap.get(currentMon - msPerWeek) ?? 0;
+    weekZones[3] = classify(currentTTD, lastWeekTTD);
 
-  } else if (missedCount >= 2) {
-    // [M3] Two missed weeks in recent history but current week back
-    zoneLabel = "↑ Resuming";
-    insight = "Back in the gym after some missed weeks — rebuild gradually to avoid injury.";
-    tapHint = "Track your rebuild in Analyzer →";
+    const currentZone = weekZones[3];
 
-  } else if (progressCount >= 3) {
-    // [P3] Strong multi-week progress streak
-    zoneLabel = "↑ Progressing";
-    insight = "Volume up 3+ weeks in a row. Check which muscles are carrying the load.";
-    tapHint = "Muscle breakdown in Analyzer →";
+    const recentWeeks = [1, 2, 3].map((idx) => {
+      const offset = 3 - idx;
+      const monMs = currentMon - offset * msPerWeek;
+      const zone = weekZones[idx];
+      const sessEntry = weekSessMap.get(monMs);
+      const partial = sessEntry
+        ? isPartialWeek(sessEntry.sessions, sessEntry.muscles) && zone !== "missed"
+        : false;
+      return {
+        label: `W${getISOWeekNumber(monMs)}`,
+        zone,
+        isCurrent: offset === 0,
+        isPartial: partial,
+      };
+    });
 
-  } else if (progressCount >= 2 && plateauCount === 0) {
-    // [P2] Two progress weeks, no plateau
-    zoneLabel = "↑ Progressing";
-    insight = "Solid upward trend. Push progressive overload on your main lifts.";
-    tapHint = "Muscle breakdown in Analyzer →";
-
-  } else if (plateauCount >= 2) {
-    // [PL2] Multi-week plateau
-    zoneLabel = "↓ Plateauing";
-    insight = "Overall volume has stalled for 2+ weeks. Something needs to change.";
-    tapHint = "See which lifts need a reset →";
-
-  } else if (currentZone === "plateau") {
-    // [PL1] Single-week volume dip
-    zoneLabel = "↓ Plateauing";
-    insight = "Volume dipped this week. Deload intentionally or push back next session.";
-    tapHint = "See which lifts need a reset →";
-
-  } else if (currentZone === "progress") {
-    // [PR1] Progress this week (mixed recent history)
-    zoneLabel = "↑ Progressing";
-    insight = "Volume up this week. Check the Analyzer to see which muscles are leading.";
-    tapHint = "Muscle breakdown in Analyzer →";
+    const progressCount = weekZones.filter(z => z === "progress").length;
+    const plateauCount  = weekZones.filter(z => z === "plateau").length;
+    const missedCount   = weekZones.filter(z => z === "missed").length;
+    return { weekZones, recentWeeks, currentZone, ...pickMessage(workouts, missedCount, progressCount, plateauCount, currentZone) };
 
   } else {
-    // [MT] Maintaining
-    zoneLabel = "→ Maintaining";
-    insight = "Load is steady. A small overload nudge could push you into a progress phase.";
-    tapHint = "Muscle breakdown in Analyzer →";
-  }
+    // ── Rolling-cycle mode ─────────────────────────────────────────────────
+    const cycleMs = cycleDays * 86400000;
 
-  return { weekZones, recentWeeks, currentZone, insight, zoneLabel, tapHint };
+    // Build per-cycle volumes (rolling windows from today, going back 4 cycles)
+    // Cycle 0: [today - cycleDays + 1 day, today]
+    // Cycle -1: [today - 2*cycleDays + 1 day, today - cycleDays + ... ]
+    const cycleStart = (offset: number) => todayMs - (offset + 1) * cycleMs + 86400000;
+    const cycleEnd   = (offset: number) => todayMs - offset * cycleMs;
+
+    const cycleVol  = new Map<number, number>(); // offset → volume
+    const cycleSess = new Map<number, { sessions: number; muscles: Set<string> }>(); // offset → sessions
+
+    for (const w of workouts) {
+      const ds = (w.date ?? w.savedAt).slice(0, 10);
+      const [y, mo, d] = ds.split("-").map(Number);
+      const wMs = Date.UTC(y, mo - 1, d);
+      for (let off = 0; off <= 4; off++) {
+        if (wMs >= cycleStart(off) && wMs <= cycleEnd(off)) {
+          cycleVol.set(off, (cycleVol.get(off) ?? 0) + (w.totalVolume ?? 0));
+          if (!cycleSess.has(off)) cycleSess.set(off, { sessions: 0, muscles: new Set() });
+          const entry = cycleSess.get(off)!;
+          entry.sessions += 1;
+          for (const ex of w.exercises) {
+            const canonical = getCanonicalMuscle(ex.primaryMuscle);
+            if (canonical !== "Other") entry.muscles.add(canonical);
+          }
+          break;
+        }
+      }
+    }
+
+    // vols: [C-4, C-3, C-2, C-1, C0] (offset 4 → 0)
+    const vols: number[] = [4, 3, 2, 1, 0].map(off => cycleVol.get(off) ?? 0);
+    const weekZones: TrainingZone[] = vols.slice(1).map((vol, i) => classify(vol, vols[i]));
+    const currentZone = weekZones[3];
+
+    // For week-to-date within current cycle: compare partial current cycle
+    // vs equivalent partial prior cycle
+    const cycleDaysElapsed = Math.max(1, Math.round((todayMs - cycleStart(0)) / 86400000) + 1);
+    const fracElapsed = cycleDaysElapsed / cycleDays;
+    // If still early in cycle (< 50% elapsed), compare proportionally
+    if (fracElapsed < 0.9 && vols[3] > 0) {
+      const priorProrated = vols[3] * fracElapsed;
+      weekZones[3] = classify(vols[4], priorProrated);
+    }
+
+    const recentWeeks = [1, 2, 3].map((idx) => {
+      const offset = 3 - idx;  // 2, 1, 0
+      const zone = weekZones[idx];
+      const sessEntry = cycleSess.get(offset);
+      const partial = sessEntry
+        ? isPartialWeek(sessEntry.sessions, sessEntry.muscles) && zone !== "missed"
+        : false;
+      const label = offset === 0 ? "Now" : `C-${offset}`;
+      return { label, zone, isCurrent: offset === 0, isPartial: partial };
+    });
+
+    const progressCount = weekZones.filter(z => z === "progress").length;
+    const plateauCount  = weekZones.filter(z => z === "plateau").length;
+    const missedCount   = weekZones.filter(z => z === "missed").length;
+    return { weekZones, recentWeeks, currentZone, ...pickMessage(workouts, missedCount, progressCount, plateauCount, currentZone) };
+  }
 }
 
 function getThisWeekStats(workouts: SavedWorkoutData[]): {
@@ -16158,15 +16255,16 @@ export function App() {
   if (appView === "home") {
     const latestWorkout = savedWorkoutsList[0] ?? null;
     const streak = computeStreak(savedWorkoutsList);
-    const weekStreak = computeWeekStreak(savedWorkoutsList, psychProfile.daysPerWeekPref ?? 3);
+    const cycleDays = psychProfile.cycleDays ?? 7;
+    const weekStreak = computeWeekStreak(savedWorkoutsList, psychProfile.daysPerWeekPref ?? 3, cycleDays);
     const weekStats = getThisWeekStats(savedWorkoutsList);
     const firstName = psychProfile.name?.split(" ")[0] ?? null;
     const greeting = getGreeting();
     const topPR = latestWorkout?.rewards.find((r) => r.category === "pr")?.detail ?? null;
     const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
-    const muscleCoverage = computeMuscleCoverage(savedWorkoutsList);
+    const muscleCoverage = computeMuscleCoverage(savedWorkoutsList, cycleDays);
     const goalProgress = computeGoalProgress(savedWorkoutsList, psychProfile);
-    const trainingTrend = computeTrainingTrend(savedWorkoutsList);
+    const trainingTrend = computeTrainingTrend(savedWorkoutsList, cycleDays);
     const todayDayNum = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
     const nextRepIQSession = repiqPlan ? getNextRepIQSession(repiqPlan) : null;
     // Show last workout card only when no plan AND last workout was within 14 days
@@ -16262,7 +16360,9 @@ export function App() {
             />
 
             {/* ── Section divider: action → review ── */}
-            <div className="home-section-label">This Week</div>
+            <div className="home-section-label">
+              {(psychProfile.cycleDays ?? 7) !== 7 ? `This Cycle · ${psychProfile.cycleDays}d` : "This Week"}
+            </div>
 
             {/* ── This week dots ── */}
             <article className="home-week-card">
