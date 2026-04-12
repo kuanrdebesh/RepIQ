@@ -77,7 +77,12 @@ type TrainingGoal =
   | "build_muscle" | "get_stronger" | "improve_fitness" | "athletic_performance" | "stay_active"; // onboarding
 
 type ExperienceLevel = "never" | "beginner" | "intermediate" | "advanced" | "veteran";
-type EquipmentAccess = "full_gym" | "home_gym" | "bodyweight";
+type EquipmentAccess =
+  | "bodyweight"      // No equipment — bodyweight exercises only
+  | "dumbbell_pair"   // A pair of dumbbells (fixed or adjustable)
+  | "home_setup"      // Home gym: full dumbbell rack + barbell with plates
+  | "basic_gym"       // Commercial gym: barbells, dumbbells, some machines/cables
+  | "full_gym";       // Full gym: all equipment, cable stations, full machine selection
 type ScheduleCommitment = 2 | 3 | 4 | 5 | 6;
 
 // 1–5 scales for mood and energy capture
@@ -509,6 +514,15 @@ function getMovementFamily(pattern: MovementPattern): string {
   if (pattern === "carry") return "carry";
   return "cardio";
 }
+
+// Maps user's equipment access level to the exercise types they can perform
+const EQUIPMENT_ALLOWED_TYPES: Record<EquipmentAccess, CustomExerciseType[]> = {
+  bodyweight:    ["bodyweight_only", "freestyle_cardio"],
+  dumbbell_pair: ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "freestyle_cardio"],
+  home_setup:    ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "barbell", "freestyle_cardio"],
+  basic_gym:     ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "barbell", "machine", "freestyle_cardio"],
+  full_gym:      ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "barbell", "machine", "freestyle_cardio"],
+};
 
 // Equipment accessibility — maps exerciseType to what the user needs available
 function getEquipmentAccessibility(type: CustomExerciseType): CustomExerciseType[] {
@@ -8477,6 +8491,7 @@ function pickPlanExercise(
   slot: PlanExerciseSlot,
   exp: ExperienceLevel,
   used: Set<string>,
+  equipment: EquipmentAccess = "full_gym",
 ): string | null {
   const allowedDifficulty: Record<ExperienceLevel, ExerciseDifficulty[]> = {
     never:        ["beginner"],
@@ -8487,10 +8502,12 @@ function pickPlanExercise(
   };
   const allowed = allowedDifficulty[exp] ?? ["beginner", "intermediate"];
 
+  const allowedEquipTypes = EQUIPMENT_ALLOWED_TYPES[equipment];
   let candidates = catalog.filter((ex) =>
     slot.patterns.some((p) => ex.movementPattern === p) &&
     (ex.difficultyLevel == null || allowed.includes(ex.difficultyLevel as ExerciseDifficulty)) &&
-    !used.has(ex.id)
+    !used.has(ex.id) &&
+    (ex.exerciseType == null || allowedEquipTypes.includes(ex.exerciseType as CustomExerciseType))
   );
 
   if (slot.primaryMuscle) {
@@ -8508,6 +8525,7 @@ function generateRepIQPlan(profile: UserPsychProfile): RepIQPlan {
   const goal: TrainingGoal = profile.primaryGoal ?? "improve_fitness";
   const exp: ExperienceLevel = profile.experienceLevel ?? "beginner";
   const days = profile.daysPerWeekPref ?? 3;
+  const equipment: EquipmentAccess = profile.equipmentAccess ?? "full_gym";
   const sessionLen = profile.sessionLengthPref ?? 45;
 
   const splitType = pickSplitType(days, exp, profile.workoutStylePref);
@@ -8525,7 +8543,7 @@ function generateRepIQPlan(profile: UserPsychProfile): RepIQPlan {
       completedAt: null,
       exercises: tmpl.slots
         .map((slot) => {
-          const exerciseId = pickPlanExercise(smartReplaceCatalog, slot, exp, used);
+          const exerciseId = pickPlanExercise(smartReplaceCatalog, slot, exp, used, equipment);
           if (!exerciseId) return null;
           return {
             exerciseId,
@@ -8831,6 +8849,7 @@ function OnboardingPage({
   const [biggestObstacles, setBiggestObstacles] = useState<string[]>([]);
 
   // Step 4 — Experience & Plan
+  const [equipmentAccess, setEquipmentAccess] = useState<EquipmentAccess | null>(null);
   const [experience, setExperience] = useState<ExperienceLevel | null>(null);
   const [isReturning, setIsReturning] = useState(false);
   const [breakMonths, setBreakMonths] = useState(3);
@@ -8852,7 +8871,7 @@ function OnboardingPage({
   const canAdvance =
     step === 1 ? true :
     step === 3 ? goal !== null :
-    step === 4 ? experience !== null :
+    step === 4 ? experience !== null && equipmentAccess !== null :
     true;
 
   function advance() {
@@ -8876,6 +8895,7 @@ function OnboardingPage({
       secondaryGoal,
       biggestObstacles,
       experienceLevel: experience,
+      equipmentAccess,
       scheduleCommitment: (Math.max(2, Math.min(6, daysPerWeek))) as ScheduleCommitment,
       daysPerWeekPref: daysPerWeek,
       cycleDays: useRotatingCycle ? cycleDays : null,
@@ -9094,6 +9114,33 @@ function OnboardingPage({
           </div>
         </div>
         <div className="ob-fields">
+          <div className="ob-field">
+            <label className="ob-field-label">Where do you train? <span className="ob-required">*</span></label>
+            <p className="ob-field-hint">This determines which exercises RepIQ can include in your plan.</p>
+            <div className="ob-equipment-list">
+              {([
+                { value: "bodyweight",    label: "Bodyweight only",     desc: "No equipment — push-ups, pull-ups, planks",            icon: "🧘" },
+                { value: "dumbbell_pair", label: "A pair of dumbbells", desc: "Fixed or adjustable dumbbells at home",                icon: "🏠" },
+                { value: "home_setup",    label: "Home gym",            desc: "Dumbbells + barbell with plates",                      icon: "🏋️" },
+                { value: "basic_gym",     label: "Basic gym",           desc: "Barbells, dumbbells, some machines and cables",        icon: "💪" },
+                { value: "full_gym",      label: "Full gym",            desc: "All equipment — cables, machines, full selection",     icon: "🏟️" },
+              ] as { value: EquipmentAccess; label: string; desc: string; icon: string }[]).map((e) => (
+                <button
+                  key={e.value}
+                  type="button"
+                  className={`ob-equipment-btn${equipmentAccess === e.value ? " is-active" : ""}`}
+                  onClick={() => setEquipmentAccess(e.value)}
+                >
+                  <span className="ob-equipment-icon">{e.icon}</span>
+                  <div className="ob-equipment-text">
+                    <strong>{e.label}</strong>
+                    <span>{e.desc}</span>
+                  </div>
+                  {equipmentAccess === e.value && <span className="ob-exp-check">✓</span>}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="ob-field">
             <label className="ob-field-label">Training background <span className="ob-required">*</span></label>
             <div className="ob-exp-list">

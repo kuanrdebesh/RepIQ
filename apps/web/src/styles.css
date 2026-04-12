@@ -10022,6 +10022,60 @@ ol {
   flex-shrink: 0;
 }
 
+/* ── Equipment selector ── */
+
+.ob-equipment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ob-equipment-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1.5px solid var(--line);
+  background: var(--paper);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  width: 100%;
+}
+
+.ob-equipment-btn.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper));
+}
+
+.ob-equipment-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+}
+
+.ob-equipment-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ob-equipment-text strong {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.ob-equipment-text span {
+  font-size: 0.76rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+
 /* ── Returning checkbox ── */
 
 .ob-returning-field { gap: 10px; }
