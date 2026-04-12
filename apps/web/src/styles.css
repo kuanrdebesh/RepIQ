@@ -8661,56 +8661,6 @@ ol {
   letter-spacing: 0.03em;
 }
 
-/* 3-zone position bar */
-.home-trend-bar-wrap {
-  position: relative;
-  padding-bottom: 18px;  /* space for labels */
-}
-.home-trend-bar {
-  display: flex;
-  height: 6px;
-  border-radius: 999px;
-  overflow: hidden;
-}
-.home-trend-seg {
-  flex: 1;
-  opacity: 0.28;
-  transition: opacity 0.3s;
-}
-.home-trend-seg.is-active { opacity: 1; }
-.home-trend-seg--plateau     { background: #f97316; }
-.home-trend-seg--maintenance { background: var(--accent); }
-.home-trend-seg--progress    { background: #22c55e; }
-
-/* Marker dot sitting above the bar at the current zone */
-.home-trend-marker {
-  position: absolute;
-  top: -4px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid var(--paper);
-  transform: translateX(-50%);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
-  transition: left 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.home-trend-marker--progress    { background: #22c55e; }
-.home-trend-marker--maintenance { background: var(--accent); }
-.home-trend-marker--plateau     { background: #f97316; }
-.home-trend-marker--missed      { background: var(--muted); }
-
-/* Zone bar labels */
-.home-trend-bar-labels {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 5px;
-  font-size: 0.62rem;
-  font-weight: 600;
-  color: var(--muted);
-  opacity: 0.7;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 
 .home-goal-insight {
   font-size: 0.8rem;

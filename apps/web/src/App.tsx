@@ -11704,42 +11704,58 @@ function computeStreak(workouts: SavedWorkoutData[]): number {
   return streak;
 }
 
+// A "quality week" requires BOTH:
+//   1. Sessions ≥ max(2, round(target × 0.6))  — floor of 2 means 1 session never counts
+//   2. Unique canonical muscle groups ≥ 3       — prevents single-muscle-focus weeks
+function isQualityWeek(
+  sessions: number,
+  muscles: Set<string>,
+  targetPerWeek: number,
+): boolean {
+  const sessionGate = Math.max(2, Math.round(targetPerWeek * 0.6));
+  return sessions >= sessionGate && muscles.size >= 3;
+}
+
 function computeWeekStreak(workouts: SavedWorkoutData[], targetPerWeek: number): number {
   if (workouts.length === 0) return 0;
-  const target = Math.max(targetPerWeek, 1);
   const msPerWeek = 7 * 86400000;
 
-  // Return the UTC Monday of a given local date
   const getMondayUtc = (d: Date): number => {
     const day = d.getDay(); // 0 Sun … 6 Sat
     const diffDays = day === 0 ? -6 : 1 - day;
     return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() + diffDays);
   };
 
-  // Build map: weekMondayMs → session count
-  const weekMap = new Map<number, number>();
+  // Build map: weekMondayMs → { sessions, muscles }
+  const weekMap = new Map<number, { sessions: number; muscles: Set<string> }>();
   for (const w of workouts) {
     const ds = (w.date ?? w.savedAt).slice(0, 10);
     const [y, mo, d] = ds.split("-").map(Number);
     const mon = getMondayUtc(new Date(y, mo - 1, d));
-    weekMap.set(mon, (weekMap.get(mon) ?? 0) + 1);
+    if (!weekMap.has(mon)) weekMap.set(mon, { sessions: 0, muscles: new Set() });
+    const entry = weekMap.get(mon)!;
+    entry.sessions += 1;
+    for (const ex of w.exercises) {
+      const canonical = getCanonicalMuscle(ex.primaryMuscle);
+      if (canonical !== "Other") entry.muscles.add(canonical);
+    }
   }
+
+  const isQuality = (mon: number) => {
+    const entry = weekMap.get(mon);
+    if (!entry) return false;
+    return isQualityWeek(entry.sessions, entry.muscles, targetPerWeek);
+  };
 
   const today = new Date();
   const currentMon = getMondayUtc(today);
 
-  // Start from current week if already at target, else previous week
-  const startMon =
-    (weekMap.get(currentMon) ?? 0) >= target
-      ? currentMon
-      : currentMon - msPerWeek;
+  // Start from current week if already quality, else previous week
+  const startMon = isQuality(currentMon) ? currentMon : currentMon - msPerWeek;
 
   let streak = 0;
   let cur = startMon;
-  while ((weekMap.get(cur) ?? 0) >= target) {
-    streak++;
-    cur -= msPerWeek;
-  }
+  while (isQuality(cur)) { streak++; cur -= msPerWeek; }
   return streak;
 }
 
@@ -15906,28 +15922,6 @@ export function App() {
                       </span>
                     </div>
                   ))}
-                </div>
-              </div>
-              {/* 3-zone bar with position marker */}
-              <div className="home-trend-bar-wrap" aria-hidden="true">
-                <div className="home-trend-bar">
-                  <div className={`home-trend-seg home-trend-seg--plateau${trainingTrend.currentZone === "plateau" ? " is-active" : ""}`} />
-                  <div className={`home-trend-seg home-trend-seg--maintenance${trainingTrend.currentZone === "maintenance" ? " is-active" : ""}`} />
-                  <div className={`home-trend-seg home-trend-seg--progress${trainingTrend.currentZone === "progress" ? " is-active" : ""}`} />
-                </div>
-                <div
-                  className={`home-trend-marker home-trend-marker--${trainingTrend.currentZone}`}
-                  style={{
-                    left: trainingTrend.currentZone === "plateau" ? "16.5%"
-                        : trainingTrend.currentZone === "maintenance" ? "50%"
-                        : trainingTrend.currentZone === "progress" ? "83.5%"
-                        : "50%",
-                  }}
-                />
-                <div className="home-trend-bar-labels">
-                  <span>Plateau</span>
-                  <span>Maintaining</span>
-                  <span>Progress</span>
                 </div>
               </div>
               <p className="home-goal-insight">{trainingTrend.insight}</p>
