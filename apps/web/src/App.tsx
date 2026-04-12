@@ -10731,6 +10731,188 @@ function BottomNav({ activeView, onNavigate }: { activeView: AppView; onNavigate
   );
 }
 
+// ── Muscle Heatmap ────────────────────────────────────────────────────────────
+
+type MuscleStatus = "fresh" | "fading" | "due" | "none";
+
+const HEATMAP_MUSCLES = [
+  "Chest", "Back", "Shoulders", "Core",
+  "Biceps", "Triceps", "Quads", "Hamstrings", "Glutes", "Calves",
+] as const;
+
+function computeMuscleCoverage(workouts: SavedWorkoutData[]): Record<string, MuscleStatus> {
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const lastTrained: Record<string, number> = {};
+  for (const workout of workouts) {
+    const ds = (workout.date ?? workout.savedAt).slice(0, 10);
+    const [y, mo, d] = ds.split("-").map(Number);
+    const wMs = Date.UTC(y, mo - 1, d);
+    for (const ex of workout.exercises) {
+      const canonical = getCanonicalMuscle(ex.primaryMuscle);
+      if (canonical && canonical !== "Other" && (!lastTrained[canonical] || wMs > lastTrained[canonical])) {
+        lastTrained[canonical] = wMs;
+      }
+    }
+  }
+  const result: Record<string, MuscleStatus> = {};
+  for (const muscle of HEATMAP_MUSCLES) {
+    const last = lastTrained[muscle];
+    if (!last) { result[muscle] = "none"; continue; }
+    const days = Math.round((todayMs - last) / 86400000);
+    result[muscle] = days <= 2 ? "fresh" : days <= 5 ? "fading" : "due";
+  }
+  return result;
+}
+
+function sessionToMuscleCoverage(exercises: FinishedExerciseSummary[]): Record<string, MuscleStatus> {
+  const trained = new Set(
+    exercises.map((ex) => getCanonicalMuscle(ex.primaryMuscle)).filter((m) => m !== "Other")
+  );
+  const result: Record<string, MuscleStatus> = {};
+  for (const m of HEATMAP_MUSCLES) result[m] = trained.has(m) ? "fresh" : "none";
+  return result;
+}
+
+function MuscleHeatmapSVG({
+  coverage,
+  mode = "history",
+}: {
+  coverage: Record<string, MuscleStatus>;
+  mode?: "history" | "session";
+}) {
+  function fillColor(muscle: string): string {
+    const s = coverage[muscle] ?? "none";
+    if (mode === "session") return s === "fresh" ? "var(--accent)" : "var(--line)";
+    if (s === "fresh") return "#3b82f6";
+    if (s === "fading") return "#93c5fd";
+    return "var(--line)";
+  }
+  function fillOpacity(muscle: string): number {
+    const s = coverage[muscle] ?? "none";
+    if (mode === "session") return s === "fresh" ? 0.88 : 0.22;
+    if (s === "fresh") return 0.88;
+    if (s === "fading") return 0.7;
+    return 0.28;
+  }
+  const g = (muscle: string) => ({ fill: fillColor(muscle), fillOpacity: fillOpacity(muscle) });
+  const bf = "var(--surface)";
+  const bs = "var(--line)";
+
+  return (
+    <svg viewBox="0 0 220 195" xmlns="http://www.w3.org/2000/svg" style={{ width: "100%", display: "block" }} aria-label="Muscle coverage map">
+      {/* ── Labels ── */}
+      <text x="55" y="8" textAnchor="middle" fontSize="6" fill="var(--muted)" fontWeight="700" letterSpacing="0.1em">FRONT</text>
+      <text x="165" y="8" textAnchor="middle" fontSize="6" fill="var(--muted)" fontWeight="700" letterSpacing="0.1em">BACK</text>
+      <line x1="110" y1="4" x2="110" y2="191" stroke="var(--line)" strokeWidth="0.6" strokeDasharray="3,3" />
+
+      {/* ══ FRONT SILHOUETTE (cx=55) ══ */}
+      <ellipse cx="55" cy="21" rx="11" ry="12" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <rect x="51" y="32" width="8" height="6" rx="3" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <path d="M36,37 C29,42 25,62 27,80 L29,88 L81,88 L83,80 C85,62 81,42 74,37 Z" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <rect x="35" y="85" width="40" height="15" rx="7" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <rect x="18" y="37" width="13" height="32" rx="6" fill={bf} stroke={bs} strokeWidth="0.8" transform="rotate(-6,24,53)" />
+      <rect x="79" y="37" width="13" height="32" rx="6" fill={bf} stroke={bs} strokeWidth="0.8" transform="rotate(6,86,53)" />
+      <rect x="15" y="67" width="11" height="25" rx="5" fill={bf} stroke={bs} strokeWidth="0.8" transform="rotate(-3,20,79)" />
+      <rect x="84" y="67" width="11" height="25" rx="5" fill={bf} stroke={bs} strokeWidth="0.8" transform="rotate(3,89,79)" />
+      <rect x="36" y="98" width="17" height="37" rx="8" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <rect x="57" y="98" width="17" height="37" rx="8" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <rect x="37" y="132" width="15" height="36" rx="7" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <rect x="58" y="132" width="15" height="36" rx="7" fill={bf} stroke={bs} strokeWidth="0.8" />
+
+      {/* ── Front muscle regions ── */}
+      <ellipse cx="36" cy="43" rx="10" ry="7" {...g("Shoulders")} />
+      <ellipse cx="74" cy="43" rx="10" ry="7" {...g("Shoulders")} />
+      <ellipse cx="55" cy="57" rx="18" ry="12" {...g("Chest")} />
+      <ellipse cx="22" cy="54" rx="5.5" ry="11" {...g("Biceps")} transform="rotate(-6,22,54)" />
+      <ellipse cx="88" cy="54" rx="5.5" ry="11" {...g("Biceps")} transform="rotate(6,88,54)" />
+      <ellipse cx="55" cy="76" rx="13" ry="11" {...g("Core")} />
+      <ellipse cx="44" cy="112" rx="9" ry="17" {...g("Quads")} />
+      <ellipse cx="66" cy="112" rx="9" ry="17" {...g("Quads")} />
+      <ellipse cx="43" cy="148" rx="6.5" ry="13" {...g("Calves")} />
+      <ellipse cx="67" cy="148" rx="6.5" ry="13" {...g("Calves")} />
+
+      {/* ══ BACK SILHOUETTE (cx=165) ══ */}
+      <ellipse cx="165" cy="21" rx="11" ry="12" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <rect x="161" y="32" width="8" height="6" rx="3" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <path d="M146,37 C139,42 135,62 137,80 L139,88 L191,88 L193,80 C195,62 191,42 184,37 Z" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <rect x="145" y="85" width="40" height="15" rx="7" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <rect x="128" y="37" width="13" height="32" rx="6" fill={bf} stroke={bs} strokeWidth="0.8" transform="rotate(6,134,53)" />
+      <rect x="189" y="37" width="13" height="32" rx="6" fill={bf} stroke={bs} strokeWidth="0.8" transform="rotate(-6,196,53)" />
+      <rect x="125" y="67" width="11" height="25" rx="5" fill={bf} stroke={bs} strokeWidth="0.8" transform="rotate(3,130,79)" />
+      <rect x="194" y="67" width="11" height="25" rx="5" fill={bf} stroke={bs} strokeWidth="0.8" transform="rotate(-3,199,79)" />
+      <rect x="146" y="98" width="17" height="37" rx="8" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <rect x="167" y="98" width="17" height="37" rx="8" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <rect x="147" y="132" width="15" height="36" rx="7" fill={bf} stroke={bs} strokeWidth="0.8" />
+      <rect x="168" y="132" width="15" height="36" rx="7" fill={bf} stroke={bs} strokeWidth="0.8" />
+
+      {/* ── Back muscle regions ── */}
+      <ellipse cx="146" cy="43" rx="10" ry="7" {...g("Shoulders")} />
+      <ellipse cx="184" cy="43" rx="10" ry="7" {...g("Shoulders")} />
+      <ellipse cx="165" cy="57" rx="22" ry="17" {...g("Back")} />
+      <ellipse cx="132" cy="54" rx="5.5" ry="11" {...g("Triceps")} transform="rotate(6,132,54)" />
+      <ellipse cx="198" cy="54" rx="5.5" ry="11" {...g("Triceps")} transform="rotate(-6,198,54)" />
+      <ellipse cx="165" cy="90" rx="20" ry="11" {...g("Glutes")} />
+      <ellipse cx="154" cy="113" rx="9" ry="17" {...g("Hamstrings")} />
+      <ellipse cx="176" cy="113" rx="9" ry="17" {...g("Hamstrings")} />
+      <ellipse cx="153" cy="149" rx="6.5" ry="14" {...g("Calves")} />
+      <ellipse cx="177" cy="149" rx="6.5" ry="14" {...g("Calves")} />
+    </svg>
+  );
+}
+
+function MuscleCoverageCard({
+  coverage,
+  mode,
+}: {
+  coverage: Record<string, MuscleStatus>;
+  mode: "history" | "session";
+}) {
+  const trainNext = HEATMAP_MUSCLES.filter((m) =>
+    coverage[m] === "due" || coverage[m] === "none"
+  );
+
+  return (
+    <div className="muscle-coverage-card">
+      <div className="muscle-coverage-header">
+        <p className="muscle-coverage-title">
+          {mode === "session" ? "Muscles Trained" : "Muscle Coverage"}
+        </p>
+        {mode === "history" && (
+          <div className="muscle-coverage-legend">
+            <span className="muscle-legend-dot" style={{ background: "#3b82f6" }} />
+            <span className="muscle-legend-label">Recent</span>
+            <span className="muscle-legend-dot" style={{ background: "#93c5fd" }} />
+            <span className="muscle-legend-label">Fading</span>
+            <span className="muscle-legend-dot" style={{ background: "var(--line)", opacity: 0.5 }} />
+            <span className="muscle-legend-label">Rest</span>
+          </div>
+        )}
+      </div>
+      <MuscleHeatmapSVG coverage={coverage} mode={mode} />
+      {mode === "history" && trainNext.length > 0 && (
+        <div className="muscle-train-next">
+          <p className="muscle-train-next-label">Train next</p>
+          <div className="muscle-train-next-chips">
+            {trainNext.map((m) => (
+              <span key={m} className="muscle-train-next-chip">{m}</span>
+            ))}
+          </div>
+        </div>
+      )}
+      {mode === "session" && (
+        <div className="muscle-train-next">
+          <div className="muscle-train-next-chips">
+            {HEATMAP_MUSCLES.filter((m) => coverage[m] === "fresh").map((m) => (
+              <span key={m} className="muscle-train-next-chip muscle-chip-trained">{m}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Workout Report Page ───────────────────────────────────────────────────────
 function WorkoutReportPage({
   data,
@@ -10774,6 +10956,8 @@ function WorkoutReportPage({
       </div>
 
       <div className="finish-workout-body">
+        <MuscleCoverageCard coverage={sessionToMuscleCoverage(data.exercises)} mode="session" />
+
         {data.rewards.length > 0 && (
           <section className="finish-workout-card">
             <p className="label" style={{ marginBottom: 8 }}>Rewards</p>
@@ -14657,6 +14841,7 @@ export function App() {
     const greeting = getGreeting();
     const topPR = latestWorkout?.rewards.find((r) => r.category === "pr") ?? null;
     const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+    const muscleCoverage = computeMuscleCoverage(savedWorkoutsList);
     // Which day-of-week slot is "today" (0=Mon, 6=Sun)
     const todayDayNum = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
 
@@ -14781,6 +14966,9 @@ export function App() {
                 <p className="home-week-meta home-week-meta-empty">No workouts yet this week</p>
               )}
             </article>
+
+            {/* ── Muscle coverage card ── */}
+            <MuscleCoverageCard coverage={muscleCoverage} mode="history" />
 
             {/* ── Latest workout card (enhanced) ── */}
             {latestWorkout ? (

@@ -8453,6 +8453,95 @@ ol {
   border-color: var(--accent);
 }
 
+/* ── Muscle coverage card ────────────────────────────────────────────────── */
+
+.muscle-coverage-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.muscle-coverage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.muscle-coverage-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+
+.muscle-coverage-legend {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.muscle-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.muscle-legend-label {
+  font-size: 0.65rem;
+  color: var(--muted);
+  font-weight: 500;
+  margin-right: 4px;
+}
+
+.muscle-train-next {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.muscle-train-next-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+  margin: 0;
+}
+
+.muscle-train-next-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.muscle-train-next-chip {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.muscle-chip-trained {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
 /* ── Home: latest workout card ───────────────────────────────────────────── */
 
 .home-latest-card {
