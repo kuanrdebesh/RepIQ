@@ -10917,49 +10917,7 @@ function MuscleCoverageCard({
           <AnatomyView img={anatomyBackImg} paths={BACK_MUSCLE_PATHS} coverage={coverage} mode={mode} />
         </div>
       </div>
-      {mode === "history" && (() => {
-        const trained = HEATMAP_MUSCLES.filter((m) => coverage[m] === "fresh" || coverage[m] === "fading");
-        const remaining = HEATMAP_MUSCLES.filter((m) => coverage[m] === "due" || coverage[m] === "none");
-        return (
-          <div className="muscle-train-next">
-            {trained.length > 0 && (
-              <div className="muscle-train-next-row">
-                <p className="muscle-train-next-label">Muscles trained</p>
-                <div className="muscle-train-next-chips">
-                  {trained.map((m) => (
-                    <span key={m} className="muscle-train-next-chip muscle-chip-trained">{m}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {remaining.length > 0 && (
-              <div className="muscle-train-next-row">
-                <p className="muscle-train-next-label">Muscles remaining</p>
-                <div className="muscle-train-next-chips">
-                  {remaining.map((m) => (
-                    <span key={m} className="muscle-train-next-chip">{m}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })()}
-      {mode === "session" && (() => {
-        const trained = HEATMAP_MUSCLES.filter((m) => coverage[m] === "fresh");
-        return trained.length > 0 ? (
-          <div className="muscle-train-next">
-            <div className="muscle-train-next-row">
-              <p className="muscle-train-next-label">Muscles trained</p>
-              <div className="muscle-train-next-chips">
-                {trained.map((m) => (
-                  <span key={m} className="muscle-train-next-chip muscle-chip-trained">{m}</span>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : null;
-      })()}
+      {/* Chip rows removed — map communicates visually */}
     </div>
   );
 }
@@ -11379,16 +11337,89 @@ function ProfilePage({
 // ── Home page helpers ─────────────────────────────────────────────────────────
 
 // ── Goal progress algorithm ───────────────────────────────────────────────────
-// Score: 0–100. Driven by last 28 days of workout data vs profile targets.
-// Components:
-//   Consistency (40pts) — sessions logged vs target (scheduleCommitment × 4 weeks)
-//   Volume trend (20pts) — avg weekly volume this month vs prior month
-//   Muscle coverage (20pts) — how many of 10 canonical groups hit ≥ once
-//   Streak quality (20pts) — current streak relative to schedule commitment
+// Score 0–100 from 4 components (last 28 days vs profile targets):
+//   Consistency  40pts — sessions vs target (scheduleCommitment × 4 weeks)
+//   Volume trend 20pts — avg weekly vol this 28d vs prior 28d
+//   Coverage     20pts — unique canonical muscle groups hit ≥ once
+//   Streak       20pts — current streak vs weekly target
+
+type GoalProgressResult = {
+  score: number;
+  label: string;
+  goalName: string;
+  insight: string;
+};
+
+// Pre-defined one-liners: keyed by goal bucket + score tier + dominant signal
+// goal buckets: muscle | strength | fat | endurance | general
+// score tiers:  none(0) | low(1-25) | mid(26-55) | good(56-79) | great(80+)
+type GoalBucket = "muscle" | "strength" | "fat" | "endurance" | "general";
+type ScoreTier = "none" | "low" | "mid" | "good" | "great";
+
+const INSIGHT_LIBRARY: Record<GoalBucket, Record<ScoreTier, string[]>> = {
+  muscle: {
+    none:     ["Start lifting — every rep is a brick in the wall."],
+    low:      ["Consistency beats intensity. Show up a few more times this month.", "The muscle doesn't know your plan — log the work.", "You've started. That's the hardest part. Keep that momentum."],
+    mid:      ["You're in the building phase. Volume is your best friend right now.", "Missing sessions is where gains get left behind — tighten your schedule.", "Good foundation. Hit legs and back more to balance your coverage."],
+    good:     ["You're building real volume. Recovery days are part of the plan too.", "Solid month. Push progressive overload on your main lifts.", "Strong coverage — make sure you're hitting progressive sets each week."],
+    great:    ["You're in the zone. Keep the volume up and deload when needed.", "Muscle-building on track. Next focus: squeeze a bit more on each set.", "Elite consistency this month. Your body is responding — stay the course."],
+  },
+  strength: {
+    none:     ["Log your first session — strength starts with showing up."],
+    low:      ["Every session adds to your base. Prioritise the big lifts.", "Strength is built over months. Get the sessions in first.", "Few sessions logged — consistency is what drives strength gains."],
+    mid:      ["You're training, but gaps in your schedule slow strength progress.", "Hit your compound lifts 3x this week — the numbers will follow.", "Coverage looks thin. Squat, press, pull — those are your pillars."],
+    good:     ["Good month. Aim to add small weight to your main lifts each week.", "Solid frequency. Track your top sets — that's where PRs live.", "Strong pattern. Make sure your volume supports the intensity."],
+    great:    ["Excellent load this month. You're in the adaptation window.", "Strength is compounding. Keep the frequency high and sleep well.", "One of your best months. Don't let a deload derail momentum."],
+  },
+  fat: {
+    none:     ["The first session burns the most mental calories. Start today."],
+    low:      ["More sessions = more output. Aim for at least 3 this week.", "Fat loss is a numbers game — log more sessions to tip the scale.", "Every workout is a calorie deficit you don't have to count."],
+    mid:      ["Good effort. Closing the gap between sessions will accelerate results.", "Mix in some higher-rep sets to keep metabolism elevated.", "Solid start — consistency in the next 2 weeks will show up on you."],
+    good:     ["You're doing the work. Pair this with protein and sleep.", "Strong month. Your body is in active recomposition mode.", "Great session count. Add one more day if you can — the compound effect is real."],
+    great:    ["Outstanding month. This is the kind of consistency that changes physiques.", "You're in full fat-loss mode. Recovery and nutrition are the multiplier now.", "Top tier effort. Results take 6–8 weeks to show — you're already ahead."],
+  },
+  endurance: {
+    none:     ["Endurance is built one session at a time. Log the first one."],
+    low:      ["Frequency is everything for endurance. Get more sessions in.", "Even short sessions count — they build the aerobic base.", "Start small, stay consistent. That's the endurance formula."],
+    mid:      ["You're training. Closing gaps between sessions matters most now.", "Add one more session this week — endurance loves volume.", "Good base. Focus on keeping effort levels steady across sessions."],
+    good:     ["Strong work capacity this month. You're building real endurance.", "Great consistency. Your recovery between sessions is improving.", "Good month — now start layering in progressive effort on your key sessions."],
+    great:    ["Your engine is firing. Keep the sessions flowing and trust the process.", "Elite consistency. Your aerobic base is compounding nicely.", "Exceptional month. Protect your sleep — that's where endurance adapts."],
+  },
+  general: {
+    none:     ["Your first workout is the most important one. Make it today."],
+    low:      ["A little is always better than nothing. Build the habit first.", "Three sessions a week changes everything. Start there.", "You've logged in — now make it a routine."],
+    mid:      ["Good momentum. A couple more sessions will really lock in the habit.", "You're showing up. Now focus on showing up consistently.", "Halfway there. Make the remaining weeks count."],
+    good:     ["Great month overall. You're ahead of most people already.", "Solid work — your body is adapting. Keep feeding it movement.", "Good frequency and coverage. That's a healthy training month."],
+    great:    ["Exceptional month. Your consistency is your superpower.", "You're building something real. Don't stop here.", "Top of your game this month. Set a new target for next month."],
+  },
+};
+
+function getGoalBucket(goal: TrainingGoal | null): GoalBucket {
+  if (!goal) return "general";
+  if (goal === "build_muscle" || goal === "muscle_strength") return "muscle";
+  if (goal === "get_stronger") return "strength";
+  if (goal === "fat_loss") return "fat";
+  if (goal === "endurance" || goal === "athletic_performance") return "endurance";
+  return "general";
+}
+
+function getScoreTier(score: number): ScoreTier {
+  if (score === 0) return "none";
+  if (score <= 25) return "low";
+  if (score <= 55) return "mid";
+  if (score <= 79) return "good";
+  return "great";
+}
+
+function pickInsight(bucket: GoalBucket, tier: ScoreTier, seed: number): string {
+  const options = INSIGHT_LIBRARY[bucket][tier];
+  return options[seed % options.length];
+}
+
 function computeGoalProgress(
   workouts: SavedWorkoutData[],
   profile: UserPsychProfile,
-): { score: number; label: string; insight: string } {
+): GoalProgressResult {
   const msPerDay = 86400000;
   const today = new Date();
   const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
@@ -11417,15 +11448,15 @@ function computeGoalProgress(
   // 2. Volume trend (20pts)
   const recentVol = recent.reduce((s, w) => s + (w.totalVolume ?? 0), 0) / 4;
   const priorVol = prior.reduce((s, w) => s + (w.totalVolume ?? 0), 0) / 4;
-  let volScore = 10; // neutral
+  let volScore = 10;
   if (priorVol > 0) {
     const trend = (recentVol - priorVol) / priorVol;
     volScore = Math.round(Math.min(Math.max((trend + 0.5) * 20, 0), 20));
   } else if (recentVol > 0) {
-    volScore = 14; // started training, give partial credit
+    volScore = 14;
   }
 
-  // 3. Muscle coverage (20pts) — unique canonical groups hit in last 28 days
+  // 3. Muscle coverage (20pts)
   const hitMuscles = new Set<string>();
   for (const w of recent) {
     for (const ex of w.exercises) {
@@ -11441,26 +11472,23 @@ function computeGoalProgress(
 
   const total = Math.min(consistencyScore + volScore + coverageScore + streakScore, 100);
 
-  // Label
   const label =
-    total >= 80 ? "Excellent" :
-    total >= 60 ? "Good" :
+    total >= 80 ? "On Fire 🔥" :
+    total >= 60 ? "Strong" :
     total >= 40 ? "Building" :
-    total >= 20 ? "Getting Started" : "Just Beginning";
+    total >= 20 ? "Getting Started" : "Day One";
 
-  // Contextual insight
-  const insight =
-    consistencyRaw < 0.5 && recent.length === 0
-      ? "Log your first workout to start tracking progress."
-      : consistencyRaw < 0.5
-        ? `${recent.length} of ${targetSessions} target sessions this month — keep going!`
-        : hitMuscles.size < 5
-          ? `Good consistency! Try adding ${["Legs", "Core", "Back", "Shoulders"].find(m => !hitMuscles.has(m)) ?? "more muscle groups"} to balance your training.`
-          : volScore < 10
-            ? "Volume dipped this month — push a bit harder on your sets."
-            : "Great work — consistent training and strong coverage!";
+  const goalName = profile.primaryGoal
+    ? profile.primaryGoal.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+    : "Stay Active";
 
-  return { score: total, label, insight };
+  const bucket = getGoalBucket(profile.primaryGoal);
+  const tier = getScoreTier(total);
+  // Seed with session count so insight rotates each month but is stable within a day
+  const seed = recent.length + today.getMonth();
+  const insight = pickInsight(bucket, tier, seed);
+
+  return { score: total, label, goalName, insight };
 }
 
 function computeStreak(workouts: SavedWorkoutData[]): number {
@@ -15109,11 +15137,7 @@ export function App() {
               <div className="home-goal-top">
                 <div className="home-goal-meta">
                   <p className="home-goal-label">Monthly Progress</p>
-                  {psychProfile.primaryGoal && (
-                    <p className="home-goal-name">
-                      {psychProfile.primaryGoal.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
-                    </p>
-                  )}
+                  <p className="home-goal-name">{goalProgress.goalName}</p>
                 </div>
                 <div className="home-goal-score-wrap">
                   <span className="home-goal-score">{goalProgress.score}</span>
