@@ -10995,23 +10995,27 @@ function NextSessionCard({
   // ── State 3: no plan, has some history ──
   if (!repiqPlan && savedWorkoutsCount > 0) {
     return (
-      <div className="nsc-card nsc-card-noplan">
+      <div className="nsc-card">
         <span className="nsc-eyebrow">READY TO TRAIN?</span>
-        <p className="nsc-focus" style={{ marginTop: 4 }}>No programme yet — jump in or build one.</p>
+        <p className="nsc-focus" style={{ marginTop: 4, marginBottom: 14 }}>Pick up where you left off or let RepIQ plan your next session.</p>
         <div className="nsc-actions">
           <button
             type="button"
             className="primary-button nsc-start-btn"
             disabled={hasActiveWorkout}
-            onClick={onGoToGenerate}
+            onClick={onOpenQuick}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: 6, flexShrink: 0 }}>
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
             </svg>
-            Generate Session
+            Quick Workout
           </button>
-          <button type="button" className="secondary-button nsc-quick-btn" disabled={hasActiveWorkout} onClick={onGoToCustom}>
-            Custom
+          <button
+            type="button"
+            className="secondary-button nsc-quick-btn"
+            onClick={onGoToGenerate}
+          >
+            Generate Session
           </button>
         </div>
         <button type="button" className="nsc-plan-link" onClick={onGoToBrowse}>
@@ -11021,11 +11025,11 @@ function NextSessionCard({
     );
   }
 
-  // ── State 4: no plan, no workouts (brand new user) ──
+  // ── State 4: brand new user, no history, no plan ──
   return (
-    <div className="nsc-card nsc-card-fresh">
+    <div className="nsc-card">
       <span className="nsc-eyebrow">LET'S GET STARTED</span>
-      <p className="nsc-focus" style={{ marginTop: 4 }}>Log your first workout or build a programme.</p>
+      <p className="nsc-focus" style={{ marginTop: 4, marginBottom: 14 }}>Log your first workout or generate a session plan.</p>
       <div className="nsc-actions">
         <button
           type="button"
@@ -11037,6 +11041,13 @@ function NextSessionCard({
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
           </svg>
           Start First Workout
+        </button>
+        <button
+          type="button"
+          className="secondary-button nsc-quick-btn"
+          onClick={onGoToGenerate}
+        >
+          Generate Session
         </button>
       </div>
       <button type="button" className="nsc-plan-link" onClick={onGoToBrowse}>
@@ -15400,22 +15411,20 @@ export function App() {
               </div>
             )}
 
-            {/* ── WITH PLAN: Next Session Card leads ── */}
-            {repiqPlan && (
-              <NextSessionCard
-                repiqPlan={repiqPlan}
-                savedWorkoutsCount={savedWorkoutsList.length}
-                hasActiveWorkout={hasActiveWorkout}
-                nextSession={nextRepIQSession}
-                onStartRepIQ={startRepIQSession}
-                onOpenQuick={() => openQuickSession("home")}
-                onGoToRepIQPlan={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}
-                onGoToGenerate={() => { setPlannerView("generate"); setAppView("planner"); }}
-                onGoToCustom={() => openQuickSession("home")}
-                onGoToBrowse={() => { setPlannerView("library"); setAppView("planner"); }}
-                onReviewPlan={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}
-              />
-            )}
+            {/* ── Next Session Card — top of Home for all users ── */}
+            <NextSessionCard
+              repiqPlan={repiqPlan}
+              savedWorkoutsCount={savedWorkoutsList.length}
+              hasActiveWorkout={hasActiveWorkout}
+              nextSession={nextRepIQSession}
+              onStartRepIQ={startRepIQSession}
+              onOpenQuick={() => openQuickSession("home")}
+              onGoToRepIQPlan={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}
+              onGoToGenerate={() => { setPlannerView("generate"); setAppView("planner"); }}
+              onGoToCustom={() => openQuickSession("home")}
+              onGoToBrowse={() => { setPlannerView("library"); setAppView("planner"); }}
+              onReviewPlan={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}
+            />
 
             {/* ── This week snapshot ── */}
             <article className="home-week-card">
@@ -15503,42 +15512,6 @@ export function App() {
               </article>
             )}
 
-            {/* ── NO PLAN: action row at the bottom, after progress ── */}
-            {!repiqPlan && (
-              <div className="home-action-row">
-                <button
-                  type="button"
-                  className="home-action-btn"
-                  disabled={hasActiveWorkout}
-                  onClick={() => openQuickSession("home")}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                  </svg>
-                  Quick Workout
-                </button>
-                <button
-                  type="button"
-                  className="home-action-btn home-action-btn-accent"
-                  onClick={() => { setPlannerView("generate"); setAppView("planner"); }}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
-                  </svg>
-                  Generate
-                </button>
-                <button
-                  type="button"
-                  className="home-action-btn"
-                  onClick={() => { setPlannerView("mine"); setAppView("planner"); }}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                  </svg>
-                  Custom
-                </button>
-              </div>
-            )}
 
           </section>
         </section>
