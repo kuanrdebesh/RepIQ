@@ -10879,6 +10879,169 @@ function AnatomyView({
   );
 }
 
+// ── Next Session Card (Home primary CTA) ─────────────────────────────────────
+function NextSessionCard({
+  repiqPlan,
+  savedWorkoutsCount,
+  hasActiveWorkout,
+  nextSession,
+  onStartRepIQ,
+  onOpenQuick,
+  onGoToRepIQPlan,
+  onGoToGenerate,
+  onGoToCustom,
+  onGoToBrowse,
+  onReviewPlan,
+  latestPR,
+}: {
+  repiqPlan: RepIQPlan | null;
+  savedWorkoutsCount: number;
+  hasActiveWorkout: boolean;
+  nextSession: { weekIdx: number; dayIdx: number } | null;
+  onStartRepIQ: (weekIdx: number, dayIdx: number) => void;
+  onOpenQuick: () => void;
+  onGoToRepIQPlan: () => void;
+  onGoToGenerate: () => void;
+  onGoToCustom: () => void;
+  onGoToBrowse: () => void;
+  onReviewPlan: () => void;
+  latestPR: string | null;
+}) {
+  // ── State 1: active plan with a next session ──
+  if (repiqPlan && nextSession) {
+    const nextDay = repiqPlan.weeks[nextSession.weekIdx]?.days[nextSession.dayIdx];
+    const exCount = nextDay?.exercises.length ?? 0;
+    const approxMin = Math.round((exCount * 3 * 2.5) / 5) * 5; // rough: sets × rest+set time
+    return (
+      <div className="nsc-card">
+        {latestPR && (
+          <div className="nsc-pr-bar">
+            <span className="nsc-pr-icon">🏆</span>
+            <span className="nsc-pr-text">{latestPR}</span>
+          </div>
+        )}
+        <div className="nsc-eyebrow-row">
+          <span className="nsc-eyebrow">NEXT UP</span>
+          <span className="nsc-eyebrow nsc-eyebrow-dim">Week {nextSession.weekIdx + 1}</span>
+        </div>
+        <h2 className="nsc-title">{nextDay?.sessionLabel ?? "Next Session"}</h2>
+        {nextDay?.focus && <p className="nsc-focus">{nextDay.focus}</p>}
+        <p className="nsc-meta">{exCount} exercise{exCount !== 1 ? "s" : ""}{approxMin > 0 ? ` · ~${approxMin} min` : ""}</p>
+        {repiqPlan.needsReview && (
+          <div className="nsc-review-notice">
+            <span className="nsc-review-text">
+              {repiqPlan.extraVolumeCount ?? 1} extra session{(repiqPlan.extraVolumeCount ?? 1) !== 1 ? "s" : ""} logged outside your plan — sessions may need a refresh.
+            </span>
+            <button type="button" className="nsc-review-btn" onClick={onReviewPlan}>Review →</button>
+          </div>
+        )}
+        <div className="nsc-actions">
+          <button
+            type="button"
+            className="primary-button nsc-start-btn"
+            disabled={hasActiveWorkout}
+            onClick={() => onStartRepIQ(nextSession.weekIdx, nextSession.dayIdx)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true" style={{ marginRight: 6, flexShrink: 0 }}>
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            Start Session
+          </button>
+          <button
+            type="button"
+            className="secondary-button nsc-quick-btn"
+            disabled={hasActiveWorkout}
+            onClick={onOpenQuick}
+          >
+            Quick Workout
+          </button>
+        </div>
+        <button type="button" className="nsc-plan-link" onClick={onGoToRepIQPlan}>
+          View full plan →
+        </button>
+      </div>
+    );
+  }
+
+  // ── State 2: active plan, all sessions complete ──
+  if (repiqPlan && !nextSession) {
+    return (
+      <div className="nsc-card nsc-card-complete">
+        <div className="nsc-complete-icon">✅</div>
+        <h2 className="nsc-title">Plan Complete!</h2>
+        <p className="nsc-focus">All sessions done — great work this cycle.</p>
+        <div className="nsc-actions">
+          <button type="button" className="primary-button nsc-start-btn" onClick={onGoToRepIQPlan}>
+            Start New Cycle
+          </button>
+          <button type="button" className="secondary-button nsc-quick-btn" disabled={hasActiveWorkout} onClick={onOpenQuick}>
+            Quick Workout
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── State 3: no plan, has some history ──
+  if (!repiqPlan && savedWorkoutsCount > 0) {
+    return (
+      <div className="nsc-card nsc-card-noplan">
+        {latestPR && (
+          <div className="nsc-pr-bar">
+            <span className="nsc-pr-icon">🏆</span>
+            <span className="nsc-pr-text">{latestPR}</span>
+          </div>
+        )}
+        <span className="nsc-eyebrow">READY TO TRAIN?</span>
+        <p className="nsc-focus" style={{ marginTop: 4 }}>No programme yet — jump in or build one.</p>
+        <div className="nsc-actions">
+          <button
+            type="button"
+            className="primary-button nsc-start-btn"
+            disabled={hasActiveWorkout}
+            onClick={onGoToGenerate}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: 6, flexShrink: 0 }}>
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+            Generate Session
+          </button>
+          <button type="button" className="secondary-button nsc-quick-btn" disabled={hasActiveWorkout} onClick={onGoToCustom}>
+            Custom
+          </button>
+        </div>
+        <button type="button" className="nsc-plan-link" onClick={onGoToBrowse}>
+          Browse plans →
+        </button>
+      </div>
+    );
+  }
+
+  // ── State 4: no plan, no workouts (brand new user) ──
+  return (
+    <div className="nsc-card nsc-card-fresh">
+      <span className="nsc-eyebrow">LET'S GET STARTED</span>
+      <p className="nsc-focus" style={{ marginTop: 4 }}>Log your first workout or build a programme.</p>
+      <div className="nsc-actions">
+        <button
+          type="button"
+          className="primary-button nsc-start-btn"
+          disabled={hasActiveWorkout}
+          onClick={onOpenQuick}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: 6, flexShrink: 0 }}>
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+          Start First Workout
+        </button>
+      </div>
+      <button type="button" className="nsc-plan-link" onClick={onGoToBrowse}>
+        Build a plan →
+      </button>
+    </div>
+  );
+}
+
 function MuscleCoverageCard({
   coverage,
   mode,
@@ -15159,15 +15322,20 @@ export function App() {
     const weekStats = getThisWeekStats(savedWorkoutsList);
     const firstName = psychProfile.name?.split(" ")[0] ?? null;
     const greeting = getGreeting();
-    const topPR = latestWorkout?.rewards.find((r) => r.category === "pr") ?? null;
+    const topPR = latestWorkout?.rewards.find((r) => r.category === "pr")?.detail ?? null;
     const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
     const muscleCoverage = computeMuscleCoverage(savedWorkoutsList);
     const goalProgress = computeGoalProgress(savedWorkoutsList, psychProfile);
-    // Which day-of-week slot is "today" (0=Mon, 6=Sun)
     const todayDayNum = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
+    const nextRepIQSession = repiqPlan ? getNextRepIQSession(repiqPlan) : null;
+    // Show last workout card only when no plan AND last workout was within 14 days
+    const lastWorkoutDaysAgo = latestWorkout
+      ? Math.floor((Date.now() - new Date(latestWorkout.savedAt).getTime()) / 86_400_000)
+      : Infinity;
+    const showLastWorkout = !repiqPlan && latestWorkout && lastWorkoutDaysAgo <= 14;
 
     return (
-      <main className={`shell selector-shell${hasActiveWorkout ? " has-tray" : ""}${repiqPlan ? " has-fab" : ""}`} data-theme={resolvedTheme}>
+      <main className={`shell selector-shell${hasActiveWorkout ? " has-tray" : ""}`} data-theme={resolvedTheme}>
         <section className="app-shell selector-page">
 
           {/* ── Header ── */}
@@ -15220,51 +15388,21 @@ export function App() {
 
           <section className="selector-stack">
 
-            {/* ── PR highlight ── shows only when latest workout had a PR */}
-            {topPR && (
-              <div className="home-pr-banner">
-                <span className="home-pr-icon">🏆</span>
-                <span className="home-pr-text">{topPR.detail}</span>
-              </div>
-            )}
-
-            {/* ── Primary CTA: context-aware ── */}
-            {repiqPlan ? (() => {
-              const nextSession = getNextRepIQSession(repiqPlan);
-              if (!nextSession) return <p className="home-plan-done-note">All sessions complete — great work!</p>;
-              const nextDay = repiqPlan.weeks[nextSession.weekIdx]?.days[nextSession.dayIdx];
-              return (
-                <div className="home-start-section">
-                  <div className="home-next-preview">
-                    <p className="home-next-label">Next up</p>
-                    <p className="home-next-name">{nextDay?.sessionLabel ?? "Next Session"}</p>
-                    <p className="home-next-meta">{nextDay?.exercises.length ?? 0} exercises · Week {nextSession.weekIdx + 1}</p>
-                  </div>
-                  <button
-                    className="primary-button home-start-primary"
-                    type="button"
-                    disabled={hasActiveWorkout}
-                    onClick={() => startRepIQSession(nextSession.weekIdx, nextSession.dayIdx)}
-                  >
-                    Start Next Workout
-                  </button>
-                </div>
-              );
-            })() : (
-              <div className="home-start-section">
-                <button
-                  className="primary-button home-start-primary"
-                  type="button"
-                  disabled={hasActiveWorkout}
-                  onClick={() => openQuickSession("home")}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: 6, verticalAlign: "middle" }}>
-                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                  </svg>
-                  {savedWorkoutsList.length === 0 ? "Start Your First Workout" : "Start Quick Workout"}
-                </button>
-              </div>
-            )}
+            {/* ── Next Session Card (primary CTA) ── */}
+            <NextSessionCard
+              repiqPlan={repiqPlan}
+              savedWorkoutsCount={savedWorkoutsList.length}
+              hasActiveWorkout={hasActiveWorkout}
+              nextSession={nextRepIQSession}
+              onStartRepIQ={startRepIQSession}
+              onOpenQuick={() => openQuickSession("home")}
+              onGoToRepIQPlan={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}
+              onGoToGenerate={() => { setPlannerView("generate"); setAppView("planner"); }}
+              onGoToCustom={() => openQuickSession("home")}
+              onGoToBrowse={() => { setPlannerView("library"); setAppView("planner"); }}
+              onReviewPlan={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}
+              latestPR={topPR}
+            />
 
             {/* ── This week snapshot ── */}
             <article className="home-week-card">
@@ -15330,112 +15468,30 @@ export function App() {
               <MuscleCoverageCard coverage={muscleCoverage} mode="history" tapHint="View in Analyzer →" />
             </div>
 
-            {/* ── Latest workout card (enhanced) ── */}
-            {latestWorkout ? (
+            {/* ── Last workout — only for no-plan users with recent history ── */}
+            {showLastWorkout && (
               <article
                 className="session-card home-latest-card"
-                onClick={() => { setReportWorkout(latestWorkout); setAppView("report"); }}
+                onClick={() => { setReportWorkout(latestWorkout!); setAppView("report"); }}
                 style={{ cursor: "pointer" }}
               >
                 <div className="home-latest-info">
                   <p className="home-latest-label">
-                    Last Workout · {getRelativeDate(latestWorkout.date ?? latestWorkout.savedAt)}
+                    Last Workout · {getRelativeDate(latestWorkout!.date ?? latestWorkout!.savedAt)}
                   </p>
-                  <h2 className="home-latest-name">{latestWorkout.sessionName}</h2>
+                  <h2 className="home-latest-name">{latestWorkout!.sessionName}</h2>
                   <p className="home-latest-meta">
-                    {latestWorkout.duration}
-                    {latestWorkout.totalSets > 0 ? ` · ${latestWorkout.totalSets} sets` : ""}
-                    {latestWorkout.totalVolume > 0 ? ` · ${Math.round(latestWorkout.totalVolume).toLocaleString()} kg` : ""}
+                    {latestWorkout!.duration}
+                    {latestWorkout!.totalSets > 0 ? ` · ${latestWorkout!.totalSets} sets` : ""}
+                    {latestWorkout!.totalVolume > 0 ? ` · ${Math.round(latestWorkout!.totalVolume).toLocaleString()} kg` : ""}
                   </p>
                 </div>
                 <span className="home-latest-chevron" aria-hidden="true">›</span>
-              </article>
-            ) : (
-              <article className="session-card home-latest-card home-latest-empty">
-                <div className="home-latest-info">
-                  <p className="home-latest-label">Last Workout</p>
-                  <h2 className="home-latest-name" style={{ color: "var(--muted)" }}>No workouts yet</h2>
-                  <p className="home-latest-meta">Complete a workout to see your stats here.</p>
-                </div>
-              </article>
-            )}
-
-            {/* ── Plan card ── */}
-            {repiqPlan && (
-              <article className="session-card home-plan-card">
-                <div className="session-card-top">
-                  <div>
-                    <p className="label">Your Plan</p>
-                    <h2 className="home-plan-name">{repiqPlan.planName}</h2>
-                  </div>
-                </div>
-                <p className="home-plan-meta">{SPLIT_LABEL[repiqPlan.splitType]} · {repiqPlan.daysPerWeek} days/week · {repiqPlan.mesocycleLengthWeeks} weeks</p>
-                {repiqPlan.needsReview && (
-                  <div className="repiq-needs-review-notice">
-                    <span className="repiq-needs-review-text">
-                      {repiqPlan.extraVolumeCount ?? 1} extra session{(repiqPlan.extraVolumeCount ?? 1) !== 1 ? "s" : ""} logged outside your plan — your remaining sessions may need a refresh.
-                    </span>
-                    <button
-                      type="button"
-                      className="repiq-needs-review-btn"
-                      onClick={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}
-                    >
-                      Review →
-                    </button>
-                  </div>
-                )}
-                <div className="home-plan-actions">
-                  <button className="secondary-button" type="button" onClick={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}>Explore Plan</button>
-                  <button className="secondary-button" type="button" onClick={() => { setPlannerInitialMode("custom"); setAppView("planner"); }}>Custom</button>
-                </div>
-              </article>
-            )}
-
-            {/* ── No plan: planner entry ── */}
-            {!repiqPlan && (
-              <article className="session-card">
-                <div className="session-card-top">
-                  <div>
-                    <p className="label">Workout Planner</p>
-                    <h2>Build a plan</h2>
-                  </div>
-                </div>
-                <p className="settings-note">
-                  Structure your training with a personalised programme.
-                </p>
-                <div className="session-card-actions">
-                  <button className="secondary-button" type="button" onClick={() => { setPlannerView("library"); setAppView("planner"); }}>
-                    Browse library
-                  </button>
-                  <button className="primary-button" type="button" onClick={() => {
-                    setPlanBuilderDraft({ id: crypto.randomUUID(), name: "", exercises: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-                    setPlanBuilderMode("create");
-                    setAppView("plan-builder");
-                  }}>
-                    Custom
-                  </button>
-                </div>
               </article>
             )}
 
           </section>
         </section>
-
-        {/* Quick Workout FAB — only shown when a plan is active (CTA handles no-plan case) */}
-        {repiqPlan && (
-          <button
-            className="home-quick-fab"
-            type="button"
-            disabled={hasActiveWorkout}
-            onClick={() => openQuickSession("home")}
-            aria-label="Quick workout"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-            </svg>
-            <span>Quick Workout</span>
-          </button>
-        )}
 
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
 
