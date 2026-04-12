@@ -8669,6 +8669,7 @@ function DevLandingPage({
   onShowPostOnboarding,
   onSeedHistoryData,
   onSeedRepIQData,
+  onSeedMuscleGap,
   onClearHistoryData,
 }: {
   resolvedTheme: string;
@@ -8678,6 +8679,7 @@ function DevLandingPage({
   onShowPostOnboarding: () => void;
   onSeedHistoryData: () => void;
   onSeedRepIQData: () => void;
+  onSeedMuscleGap: () => void;
   onClearHistoryData: () => void;
 }) {
   const views: { view: AppView; label: string; emoji: string }[] = [
@@ -8739,6 +8741,10 @@ function DevLandingPage({
             <button type="button" className="dev-btn dev-btn-accent" onClick={onSeedRepIQData}>
               <span className="dev-btn-icon">📋</span>
               <span>5-Day Plan (midway, wk 3)</span>
+            </button>
+            <button type="button" className="dev-btn dev-btn-accent" onClick={onSeedMuscleGap}>
+              <span className="dev-btn-icon">🦵</span>
+              <span>Muscle Gap (legs+core overdue)</span>
             </button>
             <button type="button" className="dev-btn dev-btn-warn" onClick={onClearHistoryData}>
               <span className="dev-btn-icon">🗑️</span>
@@ -12256,6 +12262,68 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
 }
 
 // ── Seed midway RepIQ plan (5-day body-part split, week 3 in progress) ─────────
+// Muscle gap seed — upper-body only for the last 7 days; legs + core last trained 8+ days ago
+// → Quads, Hamstrings, Glutes, Calves, Core show as "due" in HomeMuscleNudge
+function buildMuscleGapSeed(): SavedWorkoutData[] {
+  const D = (y: number, m: number, d: number) =>
+    new Date(y, m - 1, d, 12, 0, 0).toISOString();
+  const ex = (
+    id: string, name: string, primaryMuscle: string,
+    sets: { weight: number; reps: number; rpe: number | null }[]
+  ): FinishedExerciseSummary => ({
+    id, name, primaryMuscle,
+    loggedSets: sets.length,
+    loggedVolume: sets.reduce((s, r) => s + r.weight * r.reps, 0),
+    sets: sets.map(s => ({ ...s, setType: "normal" as const })),
+  });
+  const mk = (
+    date: string, sessionName: string, duration: string, durationSeconds: number,
+    exercises: FinishedExerciseSummary[]
+  ): SavedWorkoutData => ({
+    sessionName, note: "", date: date.slice(0, 10), duration, durationSeconds,
+    totalVolume: exercises.reduce((s, e) => s + e.loggedVolume, 0),
+    totalSets: exercises.reduce((s, e) => s + e.loggedSets, 0),
+    exerciseCount: exercises.length, loggedExerciseCount: exercises.length,
+    ignoredIncompleteSets: 0, exercises,
+    rewards: [], rewardSummary: { set: 0, exercise: 0, session: 0, total: 0 },
+    takeawayTitle: "", takeawayBody: "", images: [], savedAt: date,
+  });
+
+  return [
+    // 8 days ago — Legs + Core (will be "due" today)
+    mk(D(2026,4,4), "Legs + Core", "58 min", 3480, [
+      ex("squat",    "Barbell Squat",          "Quads",      [{weight:90,reps:8,rpe:8},{weight:90,reps:7,rpe:8.5},{weight:90,reps:6,rpe:9}]),
+      ex("legpress", "Leg Press",              "Quads",      [{weight:160,reps:10,rpe:7},{weight:160,reps:9,rpe:8}]),
+      ex("rdl",      "Romanian Deadlift",      "Hamstrings", [{weight:80,reps:10,rpe:7},{weight:80,reps:9,rpe:8}]),
+      ex("legcurl",  "Lying Leg Curl",         "Hamstrings", [{weight:45,reps:12,rpe:8},{weight:45,reps:10,rpe:9}]),
+      ex("calf",     "Standing Calf Raise",    "Calves",     [{weight:60,reps:15,rpe:8},{weight:60,reps:12,rpe:9}]),
+      ex("plank",    "Cable Crunch",           "Core",       [{weight:30,reps:15,rpe:7},{weight:30,reps:15,rpe:8}]),
+    ]),
+    // 5 days ago — Push (will be "fading")
+    mk(D(2026,4,7), "Push Day", "52 min", 3120, [
+      ex("bench",    "Barbell Bench Press",    "Chest",      [{weight:85,reps:8,rpe:8},{weight:85,reps:7,rpe:8.5},{weight:85,reps:6,rpe:9}]),
+      ex("ohp",      "Overhead Press",         "Shoulders",  [{weight:57.5,reps:6,rpe:8},{weight:57.5,reps:5,rpe:9}]),
+      ex("incline",  "Incline DB Press",       "Chest",      [{weight:32,reps:10,rpe:8},{weight:32,reps:8,rpe:9}]),
+      ex("lateral",  "Lateral Raise",          "Shoulders",  [{weight:12,reps:15,rpe:8},{weight:12,reps:12,rpe:8.5}]),
+      ex("tricep",   "Tricep Pushdown",        "Triceps",    [{weight:25,reps:12,rpe:7},{weight:25,reps:10,rpe:8}]),
+    ]),
+    // 3 days ago — Pull (will be "fading")
+    mk(D(2026,4,9), "Pull Day", "50 min", 3000, [
+      ex("row",      "Barbell Row",            "Back",       [{weight:75,reps:8,rpe:8},{weight:75,reps:7,rpe:8.5}]),
+      ex("pullup",   "Pull-Up",                "Back",       [{weight:0,reps:8,rpe:8},{weight:0,reps:7,rpe:8.5}]),
+      ex("cablerow", "Cable Row",              "Back",       [{weight:65,reps:10,rpe:7},{weight:65,reps:9,rpe:8}]),
+      ex("curl",     "Barbell Curl",           "Biceps",     [{weight:40,reps:10,rpe:8},{weight:40,reps:8,rpe:9}]),
+    ]),
+    // 1 day ago — Push again (will be "fresh")
+    mk(D(2026,4,11), "Push Day", "48 min", 2880, [
+      ex("bench2",   "Barbell Bench Press",    "Chest",      [{weight:87.5,reps:7,rpe:8},{weight:87.5,reps:6,rpe:9}]),
+      ex("ohp2",     "Overhead Press",         "Shoulders",  [{weight:60,reps:5,rpe:9},{weight:57.5,reps:5,rpe:8.5}]),
+      ex("fly",      "Dumbbell Fly",           "Chest",      [{weight:22,reps:12,rpe:8},{weight:22,reps:10,rpe:9}]),
+      ex("tricep2",  "Overhead Tricep Ext",    "Triceps",    [{weight:30,reps:12,rpe:8},{weight:30,reps:10,rpe:9}]),
+    ]),
+  ];
+}
+
 function buildSeedRepIQData(): { plan: RepIQPlan; workouts: SavedWorkoutData[] } {
   const D = (y: number, m: number, d: number) =>
     new Date(y, m - 1, d, 12, 0, 0).toISOString();
@@ -15412,6 +15480,15 @@ export function App() {
           persistRepIQPlan(plan);
           persistSavedWorkoutsList(workouts);
           setRepiqPlan(plan);
+          setSavedWorkoutsList(workouts);
+          setAppView("home");
+          setShowDevPage(false);
+        }}
+        onSeedMuscleGap={() => {
+          const workouts = buildMuscleGapSeed();
+          window.localStorage.removeItem(repiqPlanStorageKey);
+          persistSavedWorkoutsList(workouts);
+          setRepiqPlan(null);
           setSavedWorkoutsList(workouts);
           setAppView("home");
           setShowDevPage(false);
