@@ -254,6 +254,11 @@ ol {
   box-sizing: border-box;
 }
 
+/* Extra clearance when the Quick Workout FAB is visible (repiq plan active) */
+.selector-shell.has-fab {
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 72px);
+}
+
 /* When the active workout tray is also visible, content needs to clear both nav + tray */
 .selector-shell.has-tray {
   padding-bottom: calc(148px + env(safe-area-inset-bottom, 0px));
@@ -8453,6 +8458,104 @@ ol {
   border-color: var(--accent);
 }
 
+/* ── Home: goal progress card ────────────────────────────────────────────── */
+
+.home-goal-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.home-goal-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.home-goal-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-goal-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+
+.home-goal-name {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+
+.home-goal-score-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.home-goal-score {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.home-goal-score-max {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.home-goal-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.home-goal-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--surface);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+.home-goal-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #60a5fa));
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.home-goal-status-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.home-goal-insight {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
 /* ── Muscle coverage card ────────────────────────────────────────────────── */
 
 .muscle-coverage-card {
@@ -8526,19 +8629,27 @@ ol {
 
 .muscle-train-next {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  flex-wrap: wrap;
   border-top: 1px solid var(--line);
   padding-top: 10px;
 }
 
+.muscle-train-next-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .muscle-train-next-label {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
   color: var(--muted);
   white-space: nowrap;
   margin: 0;
+  padding-top: 3px;
+  flex-shrink: 0;
 }
 
 .muscle-train-next-chips {

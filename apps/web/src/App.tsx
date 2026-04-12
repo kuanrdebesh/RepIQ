@@ -10917,25 +10917,49 @@ function MuscleCoverageCard({
           <AnatomyView img={anatomyBackImg} paths={BACK_MUSCLE_PATHS} coverage={coverage} mode={mode} />
         </div>
       </div>
-      {mode === "history" && trainNext.length > 0 && (
-        <div className="muscle-train-next">
-          <p className="muscle-train-next-label">Train next</p>
-          <div className="muscle-train-next-chips">
-            {trainNext.map((m) => (
-              <span key={m} className="muscle-train-next-chip">{m}</span>
-            ))}
+      {mode === "history" && (() => {
+        const trained = HEATMAP_MUSCLES.filter((m) => coverage[m] === "fresh" || coverage[m] === "fading");
+        const remaining = HEATMAP_MUSCLES.filter((m) => coverage[m] === "due" || coverage[m] === "none");
+        return (
+          <div className="muscle-train-next">
+            {trained.length > 0 && (
+              <div className="muscle-train-next-row">
+                <p className="muscle-train-next-label">Muscles trained</p>
+                <div className="muscle-train-next-chips">
+                  {trained.map((m) => (
+                    <span key={m} className="muscle-train-next-chip muscle-chip-trained">{m}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {remaining.length > 0 && (
+              <div className="muscle-train-next-row">
+                <p className="muscle-train-next-label">Muscles remaining</p>
+                <div className="muscle-train-next-chips">
+                  {remaining.map((m) => (
+                    <span key={m} className="muscle-train-next-chip">{m}</span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
-      {mode === "session" && (
-        <div className="muscle-train-next">
-          <div className="muscle-train-next-chips">
-            {HEATMAP_MUSCLES.filter((m) => coverage[m] === "fresh").map((m) => (
-              <span key={m} className="muscle-train-next-chip muscle-chip-trained">{m}</span>
-            ))}
+        );
+      })()}
+      {mode === "session" && (() => {
+        const trained = HEATMAP_MUSCLES.filter((m) => coverage[m] === "fresh");
+        return trained.length > 0 ? (
+          <div className="muscle-train-next">
+            <div className="muscle-train-next-row">
+              <p className="muscle-train-next-label">Muscles trained</p>
+              <div className="muscle-train-next-chips">
+                {trained.map((m) => (
+                  <span key={m} className="muscle-train-next-chip muscle-chip-trained">{m}</span>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        ) : null;
+      })()}
     </div>
   );
 }
@@ -11353,6 +11377,91 @@ function ProfilePage({
 }
 
 // ── Home page helpers ─────────────────────────────────────────────────────────
+
+// ── Goal progress algorithm ───────────────────────────────────────────────────
+// Score: 0–100. Driven by last 28 days of workout data vs profile targets.
+// Components:
+//   Consistency (40pts) — sessions logged vs target (scheduleCommitment × 4 weeks)
+//   Volume trend (20pts) — avg weekly volume this month vs prior month
+//   Muscle coverage (20pts) — how many of 10 canonical groups hit ≥ once
+//   Streak quality (20pts) — current streak relative to schedule commitment
+function computeGoalProgress(
+  workouts: SavedWorkoutData[],
+  profile: UserPsychProfile,
+): { score: number; label: string; insight: string } {
+  const msPerDay = 86400000;
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const days28Ms = todayMs - 27 * msPerDay;
+  const days56Ms = todayMs - 55 * msPerDay;
+
+  const recent = workouts.filter((w) => {
+    const ds = (w.date ?? w.savedAt).slice(0, 10);
+    const [y, mo, d] = ds.split("-").map(Number);
+    return Date.UTC(y, mo - 1, d) >= days28Ms;
+  });
+  const prior = workouts.filter((w) => {
+    const ds = (w.date ?? w.savedAt).slice(0, 10);
+    const [y, mo, d] = ds.split("-").map(Number);
+    const wMs = Date.UTC(y, mo - 1, d);
+    return wMs >= days56Ms && wMs < days28Ms;
+  });
+
+  const targetPerWeek = profile.scheduleCommitment ?? profile.daysPerWeekPref ?? 3;
+  const targetSessions = targetPerWeek * 4;
+
+  // 1. Consistency (40pts)
+  const consistencyRaw = Math.min(recent.length / Math.max(targetSessions, 1), 1);
+  const consistencyScore = Math.round(consistencyRaw * 40);
+
+  // 2. Volume trend (20pts)
+  const recentVol = recent.reduce((s, w) => s + (w.totalVolume ?? 0), 0) / 4;
+  const priorVol = prior.reduce((s, w) => s + (w.totalVolume ?? 0), 0) / 4;
+  let volScore = 10; // neutral
+  if (priorVol > 0) {
+    const trend = (recentVol - priorVol) / priorVol;
+    volScore = Math.round(Math.min(Math.max((trend + 0.5) * 20, 0), 20));
+  } else if (recentVol > 0) {
+    volScore = 14; // started training, give partial credit
+  }
+
+  // 3. Muscle coverage (20pts) — unique canonical groups hit in last 28 days
+  const hitMuscles = new Set<string>();
+  for (const w of recent) {
+    for (const ex of w.exercises) {
+      const c = getCanonicalMuscle(ex.primaryMuscle);
+      if (c !== "Other") hitMuscles.add(c);
+    }
+  }
+  const coverageScore = Math.round((hitMuscles.size / 10) * 20);
+
+  // 4. Streak quality (20pts)
+  const streak = computeStreak(workouts);
+  const streakScore = Math.round(Math.min(streak / Math.max(targetPerWeek, 1), 1) * 20);
+
+  const total = Math.min(consistencyScore + volScore + coverageScore + streakScore, 100);
+
+  // Label
+  const label =
+    total >= 80 ? "Excellent" :
+    total >= 60 ? "Good" :
+    total >= 40 ? "Building" :
+    total >= 20 ? "Getting Started" : "Just Beginning";
+
+  // Contextual insight
+  const insight =
+    consistencyRaw < 0.5 && recent.length === 0
+      ? "Log your first workout to start tracking progress."
+      : consistencyRaw < 0.5
+        ? `${recent.length} of ${targetSessions} target sessions this month — keep going!`
+        : hitMuscles.size < 5
+          ? `Good consistency! Try adding ${["Legs", "Core", "Back", "Shoulders"].find(m => !hitMuscles.has(m)) ?? "more muscle groups"} to balance your training.`
+          : volScore < 10
+            ? "Volume dipped this month — push a bit harder on your sets."
+            : "Great work — consistent training and strong coverage!";
+
+  return { score: total, label, insight };
+}
 
 function computeStreak(workouts: SavedWorkoutData[]): number {
   if (workouts.length === 0) return 0;
@@ -14869,11 +14978,12 @@ export function App() {
     const topPR = latestWorkout?.rewards.find((r) => r.category === "pr") ?? null;
     const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
     const muscleCoverage = computeMuscleCoverage(savedWorkoutsList);
+    const goalProgress = computeGoalProgress(savedWorkoutsList, psychProfile);
     // Which day-of-week slot is "today" (0=Mon, 6=Sun)
     const todayDayNum = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
 
     return (
-      <main className={`shell selector-shell${hasActiveWorkout ? " has-tray" : ""}`} data-theme={resolvedTheme}>
+      <main className={`shell selector-shell${hasActiveWorkout ? " has-tray" : ""}${repiqPlan ? " has-fab" : ""}`} data-theme={resolvedTheme}>
         <section className="app-shell selector-page">
 
           {/* ── Header ── */}
@@ -14993,6 +15103,34 @@ export function App() {
                 <p className="home-week-meta home-week-meta-empty">No workouts yet this week</p>
               )}
             </article>
+
+            {/* ── Goal progress card ── */}
+            <div className="home-goal-card">
+              <div className="home-goal-top">
+                <div className="home-goal-meta">
+                  <p className="home-goal-label">Monthly Progress</p>
+                  {psychProfile.primaryGoal && (
+                    <p className="home-goal-name">
+                      {psychProfile.primaryGoal.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+                    </p>
+                  )}
+                </div>
+                <div className="home-goal-score-wrap">
+                  <span className="home-goal-score">{goalProgress.score}</span>
+                  <span className="home-goal-score-max">/100</span>
+                </div>
+              </div>
+              <div className="home-goal-bar-wrap">
+                <div className="home-goal-bar">
+                  <div
+                    className="home-goal-bar-fill"
+                    style={{ width: `${goalProgress.score}%` }}
+                  />
+                </div>
+                <span className="home-goal-status-label">{goalProgress.label}</span>
+              </div>
+              <p className="home-goal-insight">{goalProgress.insight}</p>
+            </div>
 
             {/* ── Muscle coverage card ── */}
             <MuscleCoverageCard coverage={muscleCoverage} mode="history" />
