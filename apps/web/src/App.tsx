@@ -11745,11 +11745,27 @@ function computeWeekStreak(workouts: SavedWorkoutData[], targetPerWeek: number):
 
 type TrainingZone = "progress" | "maintenance" | "plateau" | "missed";
 
+// Returns ISO week number (1–53) for a given Monday timestamp (UTC ms)
+function getISOWeekNumber(mondayMs: number): number {
+  const year = new Date(mondayMs).getUTCFullYear();
+  // Jan 4 is always in ISO week 1
+  const jan4 = Date.UTC(year, 0, 4);
+  const jan4DayOfWeek = new Date(jan4).getUTCDay() || 7; // Mon=1 … Sun=7
+  const week1Mon = jan4 - (jan4DayOfWeek - 1) * 86400000;
+  const weekNum = Math.round((mondayMs - week1Mon) / (7 * 86400000)) + 1;
+  // Handle year-boundary edge cases
+  if (weekNum < 1) return 52;
+  if (weekNum > 53) return 1;
+  return weekNum;
+}
+
 function computeTrainingTrend(workouts: SavedWorkoutData[]): {
   weekZones: TrainingZone[];   // last 4 weeks, oldest → newest
+  recentWeeks: { label: string; zone: TrainingZone; isCurrent: boolean }[]; // last 3 for boxes
   currentZone: TrainingZone;
   insight: string;
   zoneLabel: string;
+  tapHint: string;
 } {
   const getMondayUtc = (d: Date): number => {
     const day = d.getDay();
@@ -11763,16 +11779,14 @@ function computeTrainingTrend(workouts: SavedWorkoutData[]): {
 
   // Build map: weekMondayMs → total volume
   const weekVolMap = new Map<number, number>();
-  const weekSessMap = new Map<number, number>();
   for (const w of workouts) {
     const ds = (w.date ?? w.savedAt).slice(0, 10);
     const [y, mo, d] = ds.split("-").map(Number);
     const mon = getMondayUtc(new Date(y, mo - 1, d));
     weekVolMap.set(mon, (weekVolMap.get(mon) ?? 0) + (w.totalVolume ?? 0));
-    weekSessMap.set(mon, (weekSessMap.get(mon) ?? 0) + 1);
   }
 
-  // Volumes for last 5 weeks (oldest first) to compute 4 deltas
+  // Volumes for last 5 weeks (oldest first) to compute 4 zone deltas
   const vols: number[] = [];
   for (let i = 4; i >= 0; i--) {
     vols.push(weekVolMap.get(currentMon - i * msPerWeek) ?? 0);
@@ -11780,15 +11794,27 @@ function computeTrainingTrend(workouts: SavedWorkoutData[]): {
 
   const classify = (vol: number, prev: number): TrainingZone => {
     if (vol === 0) return "missed";
-    if (prev === 0) return "maintenance";   // no baseline to compare
+    if (prev === 0) return "maintenance";   // no prior baseline
     const delta = (vol - prev) / prev;
     if (delta > 0.05) return "progress";
     if (delta < -0.10) return "plateau";
     return "maintenance";
   };
 
+  // weekZones[0..3]: weeks at offsets -3, -2, -1, 0 (current)
   const weekZones: TrainingZone[] = vols.slice(1).map((vol, i) => classify(vol, vols[i]));
-  const currentZone = weekZones[weekZones.length - 1];
+  const currentZone = weekZones[3];
+
+  // Last 3 weeks for the box display (indices 1, 2, 3 = offsets -2, -1, 0)
+  const recentWeeks = [1, 2, 3].map((idx) => {
+    const offset = 3 - idx; // 2, 1, 0
+    const monMs = currentMon - offset * msPerWeek;
+    return {
+      label: `W${getISOWeekNumber(monMs)}`,
+      zone: weekZones[idx],
+      isCurrent: offset === 0,
+    };
+  });
 
   const progressCount = weekZones.filter(z => z === "progress").length;
   const plateauCount  = weekZones.filter(z => z === "plateau").length;
@@ -11796,36 +11822,69 @@ function computeTrainingTrend(workouts: SavedWorkoutData[]): {
 
   let zoneLabel: string;
   let insight: string;
+  let tapHint: string;
 
   if (workouts.length === 0 || missedCount === 4) {
     zoneLabel = "No data yet";
-    insight = "Log your first session to start tracking your trend.";
+    insight = "Log your first session and your volume trend will appear here.";
+    tapHint = "Explore Analyzer →";
+
+  } else if (missedCount >= 2 && currentZone === "missed") {
+    // [M2] Multiple missed + current week also missed
+    zoneLabel = "On a break";
+    insight = "A few weeks off. Let's ease back in — even one session restarts the engine.";
+    tapHint = "Let's get back on it →";
+
   } else if (currentZone === "missed") {
+    // [M1] Single missed current week (had good prior weeks)
     zoneLabel = "Week missed";
-    insight = missedCount >= 2
-      ? "Two weeks with no sessions — consistency is the unlock."
-      : "Missed this week. Pick it up before the streak breaks.";
+    insight = "You had good momentum — one session this week will keep it alive.";
+    tapHint = "Let's get back on it →";
+
+  } else if (missedCount >= 2) {
+    // [M3] Two missed weeks in recent history but current week back
+    zoneLabel = "↑ Resuming";
+    insight = "Back in the gym after some missed weeks — rebuild gradually to avoid injury.";
+    tapHint = "Track your rebuild in Analyzer →";
+
   } else if (progressCount >= 3) {
+    // [P3] Strong multi-week progress streak
     zoneLabel = "↑ Progressing";
-    insight = "Volume climbing 3+ weeks straight — stay ahead of recovery.";
+    insight = "Volume up 3+ weeks in a row. Check which muscles are carrying the load.";
+    tapHint = "Muscle breakdown in Analyzer →";
+
   } else if (progressCount >= 2 && plateauCount === 0) {
+    // [P2] Two progress weeks, no plateau
     zoneLabel = "↑ Progressing";
-    insight = "Solid upward trend. Push progressive overload on your key lifts.";
+    insight = "Solid upward trend. Push progressive overload on your main lifts.";
+    tapHint = "Muscle breakdown in Analyzer →";
+
   } else if (plateauCount >= 2) {
+    // [PL2] Multi-week plateau
     zoneLabel = "↓ Plateauing";
-    insight = "Load has stalled for 2+ weeks. See which lifts need a reset.";
+    insight = "Overall volume has stalled for 2+ weeks. Something needs to change.";
+    tapHint = "See which lifts need a reset →";
+
   } else if (currentZone === "plateau") {
+    // [PL1] Single-week volume dip
     zoneLabel = "↓ Plateauing";
-    insight = "This week's volume dipped. Check if you need a deload or a new stimulus.";
+    insight = "Volume dipped this week. Deload intentionally or push back next session.";
+    tapHint = "See which lifts need a reset →";
+
   } else if (currentZone === "progress") {
+    // [PR1] Progress this week (mixed recent history)
     zoneLabel = "↑ Progressing";
-    insight = "Volume up this week. Check the Analyzer for which muscles are leading.";
+    insight = "Volume up this week. Check the Analyzer to see which muscles are leading.";
+    tapHint = "Muscle breakdown in Analyzer →";
+
   } else {
+    // [MT] Maintaining
     zoneLabel = "→ Maintaining";
-    insight = "Load is steady. A small overload nudge could break you into a progress phase.";
+    insight = "Load is steady. A small overload nudge could push you into a progress phase.";
+    tapHint = "Muscle breakdown in Analyzer →";
   }
 
-  return { weekZones, currentZone, insight, zoneLabel };
+  return { weekZones, recentWeeks, currentZone, insight, zoneLabel, tapHint };
 }
 
 function getThisWeekStats(workouts: SavedWorkoutData[]): {
@@ -15826,18 +15885,26 @@ export function App() {
             >
               <div className="home-trend-top">
                 <div className="home-goal-meta">
-                  <p className="home-goal-label">Training Trend</p>
+                  <p className="home-goal-label">Training Trend · Overall Volume</p>
                   <p className={`home-trend-zone-label home-trend-zone-label--${trainingTrend.currentZone}`}>
                     {trainingTrend.zoneLabel}
                   </p>
                 </div>
-                {/* 4-week dot trail — oldest left, current right (larger) */}
-                <div className="home-trend-dots" aria-hidden="true">
-                  {trainingTrend.weekZones.map((zone, i) => (
+                {/* 3 week boxes — W-2, W-1, W-0 (current) */}
+                <div className="home-trend-weeks" aria-hidden="true">
+                  {trainingTrend.recentWeeks.map((wk) => (
                     <div
-                      key={i}
-                      className={`home-trend-dot home-trend-dot--${zone}${i === 3 ? " home-trend-dot--current" : ""}`}
-                    />
+                      key={wk.label}
+                      className={`home-trend-wk home-trend-wk--${wk.zone}${wk.isCurrent ? " home-trend-wk--current" : ""}`}
+                    >
+                      <span className="home-trend-wk-label">{wk.label}</span>
+                      <span className="home-trend-wk-zone">
+                        {wk.zone === "progress" ? "Progress"
+                          : wk.zone === "plateau" ? "Plateau"
+                          : wk.zone === "missed" ? "Missed"
+                          : "Maintain"}
+                      </span>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -15864,7 +15931,7 @@ export function App() {
                 </div>
               </div>
               <p className="home-goal-insight">{trainingTrend.insight}</p>
-              <p className="home-card-tap-hint">See what's driving it →</p>
+              <p className="home-card-tap-hint">{trainingTrend.tapHint}</p>
             </div>
 
             {/* ── Muscle coverage card ── */}

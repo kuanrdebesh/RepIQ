@@ -8616,27 +8616,50 @@ ol {
 .home-trend-zone-label--missed      { color: var(--muted); }
 
 /* 4-week dot trail */
-.home-trend-dots {
+/* 3 week boxes (W-2, W-1, W-0) */
+.home-trend-weeks {
   display: flex;
+  align-items: stretch;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.home-trend-wk {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding-top: 2px;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 7px;
+  border-radius: 8px;
+  min-width: 44px;
+  border: 1px solid transparent;
+  opacity: 0.6;
+  transition: opacity 0.15s;
 }
-.home-trend-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  opacity: 0.55;
-  transition: transform 0.15s;
-}
-.home-trend-dot--current {
-  transform: scale(1.35);
+.home-trend-wk--current {
   opacity: 1;
+  border-color: currentColor;
 }
-.home-trend-dot--progress    { background: #22c55e; }
-.home-trend-dot--maintenance { background: var(--accent); }
-.home-trend-dot--plateau     { background: #f97316; }
-.home-trend-dot--missed      { background: color-mix(in srgb, var(--text) 25%, transparent); }
+/* Zone background tints */
+.home-trend-wk--progress    { background: color-mix(in srgb, #22c55e 14%, var(--surface)); color: #22c55e; }
+.home-trend-wk--maintenance { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); }
+.home-trend-wk--plateau     { background: color-mix(in srgb, #f97316 14%, var(--surface)); color: #f97316; }
+.home-trend-wk--missed      { background: color-mix(in srgb, var(--text) 8%, var(--surface)); color: var(--muted); }
+
+.home-trend-wk-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+.home-trend-wk-zone {
+  font-size: 0.58rem;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 
 /* 3-zone position bar */
 .home-trend-bar-wrap {
