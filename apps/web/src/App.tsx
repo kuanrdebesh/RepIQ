@@ -11704,6 +11704,45 @@ function computeStreak(workouts: SavedWorkoutData[]): number {
   return streak;
 }
 
+function computeWeekStreak(workouts: SavedWorkoutData[], targetPerWeek: number): number {
+  if (workouts.length === 0) return 0;
+  const target = Math.max(targetPerWeek, 1);
+  const msPerWeek = 7 * 86400000;
+
+  // Return the UTC Monday of a given local date
+  const getMondayUtc = (d: Date): number => {
+    const day = d.getDay(); // 0 Sun … 6 Sat
+    const diffDays = day === 0 ? -6 : 1 - day;
+    return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() + diffDays);
+  };
+
+  // Build map: weekMondayMs → session count
+  const weekMap = new Map<number, number>();
+  for (const w of workouts) {
+    const ds = (w.date ?? w.savedAt).slice(0, 10);
+    const [y, mo, d] = ds.split("-").map(Number);
+    const mon = getMondayUtc(new Date(y, mo - 1, d));
+    weekMap.set(mon, (weekMap.get(mon) ?? 0) + 1);
+  }
+
+  const today = new Date();
+  const currentMon = getMondayUtc(today);
+
+  // Start from current week if already at target, else previous week
+  const startMon =
+    (weekMap.get(currentMon) ?? 0) >= target
+      ? currentMon
+      : currentMon - msPerWeek;
+
+  let streak = 0;
+  let cur = startMon;
+  while ((weekMap.get(cur) ?? 0) >= target) {
+    streak++;
+    cur -= msPerWeek;
+  }
+  return streak;
+}
+
 function getThisWeekStats(workouts: SavedWorkoutData[]): {
   sessions: number; sets: number; volume: number; activeDayNumbers: number[];
 } {
@@ -15560,6 +15599,7 @@ export function App() {
   if (appView === "home") {
     const latestWorkout = savedWorkoutsList[0] ?? null;
     const streak = computeStreak(savedWorkoutsList);
+    const weekStreak = computeWeekStreak(savedWorkoutsList, psychProfile.daysPerWeekPref ?? 3);
     const weekStats = getThisWeekStats(savedWorkoutsList);
     const firstName = psychProfile.name?.split(" ")[0] ?? null;
     const greeting = getGreeting();
@@ -15585,11 +15625,22 @@ export function App() {
               <h1 className="home-greeting">
                 {firstName ? `${greeting}, ${firstName}` : greeting}
               </h1>
-              {streak >= 2 && (
-                <div className="home-streak-badge">
-                  <span className="home-streak-fire">🔥</span>
-                  <span className="home-streak-count">{streak}</span>
-                  <span className="home-streak-label">{streak === 1 ? "day" : "days"}</span>
+              {(streak >= 2 || weekStreak >= 2) && (
+                <div className="home-streak-row">
+                  {streak >= 2 && (
+                    <div className="home-streak-badge">
+                      <span className="home-streak-fire">🔥</span>
+                      <span className="home-streak-count">{streak}</span>
+                      <span className="home-streak-label">day{streak !== 1 ? "s" : ""}</span>
+                    </div>
+                  )}
+                  {weekStreak >= 2 && (
+                    <div className="home-streak-badge home-streak-badge--week">
+                      <span className="home-streak-fire">📅</span>
+                      <span className="home-streak-count">{weekStreak}</span>
+                      <span className="home-streak-label">wk{weekStreak !== 1 ? "s" : ""}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
