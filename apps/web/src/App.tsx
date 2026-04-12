@@ -8714,7 +8714,7 @@ function DevLandingPage({
           <div className="dev-grid">
             <button type="button" className="dev-btn dev-btn-accent" onClick={onSeedHistoryData}>
               <span className="dev-btn-icon">🌱</span>
-              <span>Seed History Workout</span>
+              <span>Seed 6-Week Demo Data</span>
             </button>
             <button type="button" className="dev-btn dev-btn-warn" onClick={onClearHistoryData}>
               <span className="dev-btn-icon">🗑️</span>
@@ -10882,9 +10882,11 @@ function AnatomyView({
 function MuscleCoverageCard({
   coverage,
   mode,
+  tapHint,
 }: {
   coverage: Record<string, MuscleStatus>;
   mode: "history" | "session";
+  tapHint?: string;
 }) {
   const trainNext = HEATMAP_MUSCLES.filter((m) =>
     coverage[m] === "due" || coverage[m] === "none"
@@ -10918,6 +10920,7 @@ function MuscleCoverageCard({
         </div>
       </div>
       {/* Chip rows removed — map communicates visually */}
+      {tapHint && <p className="home-card-tap-hint">{tapHint}</p>}
     </div>
   );
 }
@@ -11167,6 +11170,7 @@ function InsightsPage({
   onDeleteWorkout,
   resolvedTheme,
   onToggleTheme,
+  initialTab,
 }: {
   savedWorkouts: SavedWorkoutData[];
   onOpenReport: (workout: SavedWorkoutData) => void;
@@ -11175,8 +11179,9 @@ function InsightsPage({
   onDeleteWorkout?: (savedAt: string) => void;
   resolvedTheme?: string;
   onToggleTheme?: () => void;
+  initialTab?: "analyzer" | "reports";
 }) {
-  const [tab, setTab] = useState<"analyzer" | "reports">("reports");
+  const [tab, setTab] = useState<"analyzer" | "reports">(initialTab ?? "reports");
   const [savedToast, setSavedToast] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
@@ -11563,9 +11568,237 @@ function getGreeting(): string {
   return "Good evening";
 }
 
+// ── Seed demo data (6-week hypertrophy history) ──────────────────────────────
+function buildSeedWorkouts(): SavedWorkoutData[] {
+  // Local noon on a given date → ISO string
+  const D = (y: number, m: number, d: number) =>
+    new Date(y, m - 1, d, 12, 0, 0).toISOString();
+
+  const ex = (
+    id: string,
+    name: string,
+    primaryMuscle: string,
+    sets: { weight: number; reps: number; rpe: number | null }[]
+  ): FinishedExerciseSummary => ({
+    id,
+    name,
+    primaryMuscle,
+    loggedSets: sets.length,
+    loggedVolume: sets.reduce((s, t) => s + t.weight * t.reps, 0),
+    sets: sets.map(s => ({ ...s, setType: "normal" as const })),
+  });
+
+  const mk = (
+    date: string,
+    sessionName: string,
+    note: string,
+    duration: string,
+    durationSeconds: number,
+    exercises: FinishedExerciseSummary[],
+    takeawayTitle: string
+  ): SavedWorkoutData => ({
+    sessionName, note,
+    date: date.slice(0, 10),
+    duration, durationSeconds,
+    totalVolume: exercises.reduce((s, e) => s + e.loggedVolume, 0),
+    totalSets: exercises.reduce((s, e) => s + e.loggedSets, 0),
+    exerciseCount: exercises.length,
+    loggedExerciseCount: exercises.length,
+    ignoredIncompleteSets: 0,
+    exercises,
+    rewards: [],
+    rewardSummary: { set: 0, exercise: 0, session: 0, total: 0 },
+    takeawayTitle, takeawayBody: "", images: [],
+    savedAt: date,
+  });
+
+  return [
+    // ── Week 1 (Mar 3–8) ───────────────────────────────────────────────────
+    mk(D(2026,3,3), "Push A", "Good energy today.", "58 min", 3480, [
+      ex("bench-press",            "Bench Press",            "Chest",      [{weight:80,reps:8,rpe:7},{weight:80,reps:8,rpe:7.5},{weight:80,reps:7,rpe:8},{weight:77.5,reps:7,rpe:8.5}]),
+      ex("incline-dumbbell-press", "Incline Dumbbell Press", "Upper Chest",[{weight:28,reps:10,rpe:7},{weight:28,reps:10,rpe:7.5},{weight:28,reps:9,rpe:8}]),
+      ex("overhead-press",         "Overhead Press",         "Shoulders",  [{weight:55,reps:8,rpe:7},{weight:55,reps:8,rpe:7.5},{weight:55,reps:7,rpe:8}]),
+      ex("lateral-raise",          "Lateral Raise",          "Side Delts", [{weight:10,reps:15,rpe:6},{weight:10,reps:15,rpe:6},{weight:10,reps:14,rpe:7}]),
+      ex("tricep-pushdown",        "Tricep Pushdown",        "Triceps",    [{weight:45,reps:12,rpe:7},{weight:45,reps:12,rpe:7},{weight:45,reps:11,rpe:7.5}]),
+      ex("skull-crushers",         "Skull Crushers",         "Triceps",    [{weight:30,reps:10,rpe:7},{weight:30,reps:10,rpe:7.5},{weight:30,reps:9,rpe:8}]),
+    ], "Solid push to kick off the week."),
+
+    mk(D(2026,3,5), "Pull A", "", "54 min", 3240, [
+      ex("lat-pulldown",  "Lat Pulldown",     "Lats",      [{weight:70,reps:10,rpe:7},{weight:70,reps:10,rpe:7},{weight:70,reps:9,rpe:7.5},{weight:70,reps:9,rpe:8}]),
+      ex("seated-row",    "Seated Cable Row", "Back",      [{weight:65,reps:10,rpe:7},{weight:65,reps:10,rpe:7.5},{weight:65,reps:9,rpe:8}]),
+      ex("face-pulls",    "Face Pulls",       "Rear Delts",[{weight:20,reps:15,rpe:6},{weight:20,reps:15,rpe:6},{weight:20,reps:15,rpe:6.5}]),
+      ex("barbell-curl",  "Barbell Curl",     "Biceps",    [{weight:40,reps:10,rpe:7},{weight:40,reps:10,rpe:7.5},{weight:40,reps:9,rpe:8}]),
+      ex("hammer-curl",   "Hammer Curl",      "Biceps",    [{weight:20,reps:12,rpe:6},{weight:20,reps:12,rpe:7},{weight:20,reps:11,rpe:7.5}]),
+    ], "Back feels well-worked."),
+
+    mk(D(2026,3,8), "Legs A", "Legs day — going heavy.", "65 min", 3900, [
+      ex("barbell-squat",     "Barbell Squat",       "Quads",      [{weight:80,reps:8,rpe:7},{weight:80,reps:8,rpe:7.5},{weight:80,reps:7,rpe:8},{weight:77.5,reps:7,rpe:8.5}]),
+      ex("romanian-deadlift", "Romanian Deadlift",   "Hamstrings", [{weight:70,reps:10,rpe:7},{weight:70,reps:10,rpe:7.5},{weight:70,reps:9,rpe:8}]),
+      ex("leg-press",         "Leg Press",           "Quads",      [{weight:120,reps:12,rpe:7},{weight:120,reps:12,rpe:7.5},{weight:120,reps:11,rpe:8}]),
+      ex("leg-extension",     "Leg Extension",       "Quads",      [{weight:50,reps:15,rpe:7},{weight:50,reps:15,rpe:7},{weight:50,reps:13,rpe:7.5}]),
+      ex("calf-raise",        "Standing Calf Raise", "Calves",     [{weight:40,reps:20,rpe:6},{weight:40,reps:20,rpe:6},{weight:40,reps:18,rpe:7}]),
+    ], "Legs are always humbling."),
+
+    // ── Week 2 (Mar 10–16) ────────────────────────────────────────────────
+    mk(D(2026,3,10), "Push A", "+2.5 kg on bench today.", "60 min", 3600, [
+      ex("bench-press",            "Bench Press",            "Chest",      [{weight:82.5,reps:8,rpe:7},{weight:82.5,reps:8,rpe:7.5},{weight:82.5,reps:7,rpe:8},{weight:80,reps:7,rpe:8.5}]),
+      ex("incline-dumbbell-press", "Incline Dumbbell Press", "Upper Chest",[{weight:30,reps:10,rpe:7},{weight:30,reps:10,rpe:7.5},{weight:30,reps:9,rpe:8}]),
+      ex("overhead-press",         "Overhead Press",         "Shoulders",  [{weight:57.5,reps:8,rpe:7},{weight:57.5,reps:8,rpe:7.5},{weight:57.5,reps:7,rpe:8}]),
+      ex("lateral-raise",          "Lateral Raise",          "Side Delts", [{weight:10,reps:15,rpe:6},{weight:10,reps:15,rpe:6.5},{weight:10,reps:14,rpe:7}]),
+      ex("tricep-pushdown",        "Tricep Pushdown",        "Triceps",    [{weight:47.5,reps:12,rpe:7},{weight:47.5,reps:12,rpe:7},{weight:47.5,reps:11,rpe:7.5}]),
+      ex("skull-crushers",         "Skull Crushers",         "Triceps",    [{weight:30,reps:10,rpe:7},{weight:30,reps:10,rpe:7.5},{weight:30,reps:9,rpe:8}]),
+    ], "Bench PR. OHP still fighting for a rep."),
+
+    mk(D(2026,3,12), "Pull B", "", "52 min", 3120, [
+      ex("lat-pulldown",  "Lat Pulldown",  "Lats",      [{weight:72.5,reps:10,rpe:7},{weight:72.5,reps:10,rpe:7},{weight:72.5,reps:9,rpe:7.5},{weight:72.5,reps:9,rpe:8}]),
+      ex("cable-row",     "Cable Row",     "Back",      [{weight:67.5,reps:10,rpe:7},{weight:67.5,reps:10,rpe:7.5},{weight:67.5,reps:9,rpe:8}]),
+      ex("rear-delt-fly", "Rear Delt Fly", "Rear Delts",[{weight:15,reps:15,rpe:6},{weight:15,reps:15,rpe:6.5},{weight:15,reps:14,rpe:7}]),
+      ex("barbell-curl",  "Barbell Curl",  "Biceps",    [{weight:42.5,reps:10,rpe:7},{weight:42.5,reps:10,rpe:7.5},{weight:42.5,reps:9,rpe:8}]),
+      ex("preacher-curl", "Preacher Curl", "Biceps",    [{weight:30,reps:10,rpe:7},{weight:30,reps:10,rpe:7.5},{weight:30,reps:9,rpe:8}]),
+    ], "Pull feeling solid."),
+
+    mk(D(2026,3,14), "Legs B", "", "62 min", 3720, [
+      ex("barbell-squat", "Barbell Squat",       "Quads",      [{weight:82.5,reps:8,rpe:7},{weight:82.5,reps:8,rpe:7.5},{weight:82.5,reps:7,rpe:8},{weight:80,reps:7,rpe:8.5}]),
+      ex("leg-press",     "Leg Press",           "Quads",      [{weight:125,reps:12,rpe:7},{weight:125,reps:12,rpe:7.5},{weight:125,reps:11,rpe:8}]),
+      ex("leg-curl",      "Leg Curl",            "Hamstrings", [{weight:40,reps:12,rpe:7},{weight:40,reps:12,rpe:7.5},{weight:40,reps:11,rpe:8}]),
+      ex("leg-extension", "Leg Extension",       "Quads",      [{weight:50,reps:15,rpe:7},{weight:50,reps:15,rpe:7.5},{weight:50,reps:13,rpe:8}]),
+      ex("calf-raise",    "Standing Calf Raise", "Calves",     [{weight:42.5,reps:20,rpe:6},{weight:42.5,reps:20,rpe:6.5},{weight:42.5,reps:18,rpe:7}]),
+    ], "Squat +2.5 kg. Legs programme is inconsistent."),
+
+    mk(D(2026,3,16), "Upper", "Light upper day.", "50 min", 3000, [
+      ex("bench-press",    "Bench Press",    "Chest",     [{weight:82.5,reps:8,rpe:7},{weight:82.5,reps:8,rpe:7.5},{weight:82.5,reps:7,rpe:8},{weight:80,reps:7,rpe:8.5}]),
+      ex("lat-pulldown",   "Lat Pulldown",   "Lats",      [{weight:72.5,reps:10,rpe:7},{weight:72.5,reps:10,rpe:7.5},{weight:72.5,reps:9,rpe:8}]),
+      ex("overhead-press", "Overhead Press", "Shoulders", [{weight:57.5,reps:8,rpe:7},{weight:57.5,reps:8,rpe:7.5},{weight:57.5,reps:7,rpe:8}]),
+      ex("barbell-curl",   "Barbell Curl",   "Biceps",    [{weight:42.5,reps:10,rpe:7},{weight:42.5,reps:10,rpe:7.5},{weight:42.5,reps:9,rpe:8}]),
+      ex("tricep-pushdown","Tricep Pushdown","Triceps",   [{weight:47.5,reps:12,rpe:7},{weight:47.5,reps:12,rpe:7.5},{weight:47.5,reps:11,rpe:8}]),
+    ], "Quick full-body touch-up."),
+
+    // ── Week 3 (Mar 17–23) ────────────────────────────────────────────────
+    mk(D(2026,3,17), "Push A", "Hit 85 kg on bench!", "61 min", 3660, [
+      ex("bench-press",            "Bench Press",            "Chest",      [{weight:85,reps:8,rpe:7},{weight:85,reps:8,rpe:7.5},{weight:85,reps:7,rpe:8},{weight:82.5,reps:7,rpe:8.5}]),
+      ex("incline-dumbbell-press", "Incline Dumbbell Press", "Upper Chest",[{weight:30,reps:10,rpe:7},{weight:30,reps:10,rpe:7.5},{weight:30,reps:9,rpe:8}]),
+      ex("overhead-press",         "Overhead Press",         "Shoulders",  [{weight:60,reps:8,rpe:7},{weight:60,reps:8,rpe:7.5},{weight:60,reps:7,rpe:8}]),
+      ex("lateral-raise",          "Lateral Raise",          "Side Delts", [{weight:12,reps:15,rpe:7},{weight:12,reps:15,rpe:7},{weight:12,reps:13,rpe:7.5}]),
+      ex("tricep-pushdown",        "Tricep Pushdown",        "Triceps",    [{weight:50,reps:12,rpe:7},{weight:50,reps:12,rpe:7.5},{weight:50,reps:11,rpe:8}]),
+      ex("skull-crushers",         "Skull Crushers",         "Triceps",    [{weight:32.5,reps:10,rpe:7},{weight:32.5,reps:10,rpe:7.5},{weight:32.5,reps:9,rpe:8}]),
+    ], "Bench milestone. OHP finally moved up."),
+
+    mk(D(2026,3,19), "Pull A", "", "55 min", 3300, [
+      ex("lat-pulldown",  "Lat Pulldown",     "Lats",      [{weight:75,reps:10,rpe:7},{weight:75,reps:10,rpe:7},{weight:75,reps:9,rpe:7.5},{weight:75,reps:9,rpe:8}]),
+      ex("seated-row",    "Seated Cable Row", "Back",      [{weight:70,reps:10,rpe:7},{weight:70,reps:10,rpe:7.5},{weight:70,reps:9,rpe:8}]),
+      ex("face-pulls",    "Face Pulls",       "Rear Delts",[{weight:20,reps:15,rpe:6},{weight:20,reps:15,rpe:6.5},{weight:20,reps:15,rpe:7}]),
+      ex("barbell-curl",  "Barbell Curl",     "Biceps",    [{weight:42.5,reps:10,rpe:7},{weight:42.5,reps:10,rpe:7.5},{weight:42.5,reps:9,rpe:8}]),
+      ex("hammer-curl",   "Hammer Curl",      "Biceps",    [{weight:22,reps:12,rpe:7},{weight:22,reps:12,rpe:7.5},{weight:22,reps:11,rpe:8}]),
+    ], "Back volume building well."),
+
+    mk(D(2026,3,21), "Legs A", "", "67 min", 4020, [
+      ex("barbell-squat",     "Barbell Squat",       "Quads",      [{weight:85,reps:8,rpe:7},{weight:85,reps:8,rpe:7.5},{weight:85,reps:7,rpe:8},{weight:82.5,reps:7,rpe:8.5}]),
+      ex("romanian-deadlift", "Romanian Deadlift",   "Hamstrings", [{weight:75,reps:10,rpe:7},{weight:75,reps:10,rpe:7.5},{weight:75,reps:9,rpe:8}]),
+      ex("leg-press",         "Leg Press",           "Quads",      [{weight:125,reps:12,rpe:7},{weight:125,reps:12,rpe:7.5},{weight:125,reps:11,rpe:8}]),
+      ex("leg-extension",     "Leg Extension",       "Quads",      [{weight:52.5,reps:15,rpe:7},{weight:52.5,reps:15,rpe:7.5},{weight:52.5,reps:13,rpe:8}]),
+      ex("calf-raise",        "Standing Calf Raise", "Calves",     [{weight:42.5,reps:20,rpe:6},{weight:42.5,reps:20,rpe:6.5},{weight:42.5,reps:18,rpe:7}]),
+    ], "Squat 85 kg for reps. Last legs day for a while..."),
+
+    mk(D(2026,3,23), "Push B", "Chest volume day.", "56 min", 3360, [
+      ex("incline-bench-press","Incline Bench Press","Upper Chest",[{weight:70,reps:10,rpe:7},{weight:70,reps:10,rpe:7.5},{weight:70,reps:9,rpe:8},{weight:67.5,reps:9,rpe:8.5}]),
+      ex("cable-fly",          "Cable Fly",          "Chest",      [{weight:20,reps:12,rpe:7},{weight:20,reps:12,rpe:7.5},{weight:20,reps:11,rpe:8}]),
+      ex("overhead-press",     "Overhead Press",     "Shoulders",  [{weight:60,reps:8,rpe:7},{weight:60,reps:8,rpe:7.5},{weight:60,reps:7,rpe:8}]),
+      ex("lateral-raise",      "Lateral Raise",      "Side Delts", [{weight:12,reps:15,rpe:7},{weight:12,reps:15,rpe:7},{weight:12,reps:13,rpe:7.5}]),
+      ex("tricep-pushdown",    "Tricep Pushdown",    "Triceps",    [{weight:50,reps:12,rpe:7},{weight:50,reps:12,rpe:7.5},{weight:50,reps:11,rpe:8}]),
+    ], "Volume chest day felt great."),
+
+    // ── Week 4 (Mar 24–29) ────────────────────────────────────────────────
+    mk(D(2026,3,24), "Push A", "OHP stuck at 60 again.", "59 min", 3540, [
+      ex("bench-press",            "Bench Press",            "Chest",      [{weight:85,reps:8,rpe:7},{weight:85,reps:8,rpe:7.5},{weight:85,reps:7,rpe:8},{weight:82.5,reps:7,rpe:8.5}]),
+      ex("incline-dumbbell-press", "Incline Dumbbell Press", "Upper Chest",[{weight:32,reps:10,rpe:7},{weight:32,reps:10,rpe:7.5},{weight:32,reps:9,rpe:8}]),
+      ex("overhead-press",         "Overhead Press",         "Shoulders",  [{weight:60,reps:8,rpe:7},{weight:60,reps:7,rpe:8},{weight:60,reps:7,rpe:8.5}]),
+      ex("lateral-raise",          "Lateral Raise",          "Side Delts", [{weight:12,reps:15,rpe:7},{weight:12,reps:15,rpe:7},{weight:12,reps:13,rpe:7.5}]),
+      ex("tricep-pushdown",        "Tricep Pushdown",        "Triceps",    [{weight:52.5,reps:12,rpe:7},{weight:52.5,reps:12,rpe:7.5},{weight:52.5,reps:11,rpe:8}]),
+      ex("skull-crushers",         "Skull Crushers",         "Triceps",    [{weight:32.5,reps:10,rpe:7},{weight:32.5,reps:10,rpe:7.5},{weight:32.5,reps:9,rpe:8}]),
+    ], "Chest and tris moving. OHP stalled at 60."),
+
+    mk(D(2026,3,27), "Pull A", "", "54 min", 3240, [
+      ex("lat-pulldown",  "Lat Pulldown",     "Lats",      [{weight:77.5,reps:10,rpe:7},{weight:77.5,reps:10,rpe:7},{weight:77.5,reps:9,rpe:7.5},{weight:77.5,reps:9,rpe:8}]),
+      ex("seated-row",    "Seated Cable Row", "Back",      [{weight:70,reps:10,rpe:7},{weight:70,reps:10,rpe:7.5},{weight:70,reps:9,rpe:8}]),
+      ex("face-pulls",    "Face Pulls",       "Rear Delts",[{weight:22,reps:15,rpe:6},{weight:22,reps:15,rpe:6.5},{weight:22,reps:15,rpe:7}]),
+      ex("barbell-curl",  "Barbell Curl",     "Biceps",    [{weight:45,reps:10,rpe:7},{weight:45,reps:10,rpe:7.5},{weight:45,reps:9,rpe:8}]),
+      ex("hammer-curl",   "Hammer Curl",      "Biceps",    [{weight:22,reps:12,rpe:7},{weight:22,reps:12,rpe:7.5},{weight:22,reps:11,rpe:8}]),
+    ], "Pull numbers continuing to climb."),
+
+    mk(D(2026,3,29), "Upper", "Missed legs this week.", "51 min", 3060, [
+      ex("bench-press",    "Bench Press",    "Chest",     [{weight:85,reps:8,rpe:7},{weight:85,reps:8,rpe:7.5},{weight:85,reps:7,rpe:8},{weight:82.5,reps:7,rpe:8.5}]),
+      ex("lat-pulldown",   "Lat Pulldown",   "Lats",      [{weight:77.5,reps:10,rpe:7},{weight:77.5,reps:10,rpe:7.5},{weight:77.5,reps:9,rpe:8}]),
+      ex("overhead-press", "Overhead Press", "Shoulders", [{weight:60,reps:8,rpe:7},{weight:60,reps:7,rpe:8},{weight:60,reps:7,rpe:8.5}]),
+      ex("barbell-curl",   "Barbell Curl",   "Biceps",    [{weight:45,reps:10,rpe:7},{weight:45,reps:10,rpe:7.5},{weight:45,reps:9,rpe:8}]),
+      ex("tricep-pushdown","Tricep Pushdown","Triceps",   [{weight:52.5,reps:12,rpe:7},{weight:52.5,reps:12,rpe:7.5},{weight:52.5,reps:11,rpe:8}]),
+    ], "Upper work solid. Need to bring legs back."),
+
+    // ── Week 5 (Mar 31–Apr 6) ─────────────────────────────────────────────
+    mk(D(2026,3,31), "Push A", "87.5 kg bench — feeling strong!", "62 min", 3720, [
+      ex("bench-press",            "Bench Press",            "Chest",      [{weight:87.5,reps:8,rpe:7},{weight:87.5,reps:8,rpe:7.5},{weight:87.5,reps:7,rpe:8},{weight:85,reps:7,rpe:8.5}]),
+      ex("incline-dumbbell-press", "Incline Dumbbell Press", "Upper Chest",[{weight:32,reps:10,rpe:7},{weight:32,reps:10,rpe:7.5},{weight:32,reps:9,rpe:8}]),
+      ex("overhead-press",         "Overhead Press",         "Shoulders",  [{weight:60,reps:8,rpe:7},{weight:60,reps:7,rpe:8},{weight:60,reps:7,rpe:8.5}]),
+      ex("lateral-raise",          "Lateral Raise",          "Side Delts", [{weight:12,reps:15,rpe:7},{weight:12,reps:15,rpe:7},{weight:12,reps:13,rpe:7.5}]),
+      ex("tricep-pushdown",        "Tricep Pushdown",        "Triceps",    [{weight:52.5,reps:12,rpe:7},{weight:52.5,reps:12,rpe:7.5},{weight:52.5,reps:11,rpe:8}]),
+      ex("skull-crushers",         "Skull Crushers",         "Triceps",    [{weight:32.5,reps:10,rpe:7},{weight:32.5,reps:10,rpe:7.5},{weight:32.5,reps:9,rpe:8}]),
+    ], "Bench moving nicely. OHP still stuck at 60 kg."),
+
+    mk(D(2026,4,2), "Pull B", "", "53 min", 3180, [
+      ex("lat-pulldown",  "Lat Pulldown",  "Lats",      [{weight:80,reps:10,rpe:7},{weight:80,reps:10,rpe:7},{weight:80,reps:9,rpe:7.5},{weight:80,reps:9,rpe:8}]),
+      ex("cable-row",     "Cable Row",     "Back",      [{weight:72.5,reps:10,rpe:7},{weight:72.5,reps:10,rpe:7.5},{weight:72.5,reps:9,rpe:8}]),
+      ex("rear-delt-fly", "Rear Delt Fly", "Rear Delts",[{weight:17.5,reps:15,rpe:7},{weight:17.5,reps:15,rpe:7},{weight:17.5,reps:14,rpe:7.5}]),
+      ex("barbell-curl",  "Barbell Curl",  "Biceps",    [{weight:47.5,reps:10,rpe:7},{weight:47.5,reps:10,rpe:7.5},{weight:47.5,reps:9,rpe:8}]),
+      ex("preacher-curl", "Preacher Curl", "Biceps",    [{weight:32.5,reps:10,rpe:7},{weight:32.5,reps:10,rpe:7.5},{weight:32.5,reps:9,rpe:8}]),
+    ], "Biceps feeling bigger every session."),
+
+    mk(D(2026,4,4), "Legs (accessories)", "No squats today — just accessories.", "55 min", 3300, [
+      ex("romanian-deadlift","Romanian Deadlift",   "Hamstrings",[{weight:80,reps:10,rpe:7},{weight:80,reps:10,rpe:7.5},{weight:80,reps:9,rpe:8}]),
+      ex("leg-press",        "Leg Press",           "Quads",     [{weight:130,reps:12,rpe:7},{weight:130,reps:12,rpe:7.5},{weight:130,reps:11,rpe:8}]),
+      ex("leg-extension",    "Leg Extension",       "Quads",     [{weight:55,reps:15,rpe:7},{weight:55,reps:15,rpe:7.5},{weight:55,reps:13,rpe:8}]),
+      ex("leg-curl",         "Leg Curl",            "Hamstrings",[{weight:47.5,reps:12,rpe:7},{weight:47.5,reps:12,rpe:7.5},{weight:47.5,reps:11,rpe:8}]),
+      ex("calf-raise",       "Standing Calf Raise", "Calves",    [{weight:45,reps:20,rpe:6},{weight:45,reps:20,rpe:6.5},{weight:45,reps:18,rpe:7}]),
+    ], "Skipped squats again. Legs need a proper day."),
+
+    mk(D(2026,4,6), "Upper", "", "52 min", 3120, [
+      ex("bench-press",    "Bench Press",    "Chest",     [{weight:87.5,reps:8,rpe:7},{weight:87.5,reps:8,rpe:7.5},{weight:87.5,reps:7,rpe:8},{weight:85,reps:7,rpe:8.5}]),
+      ex("lat-pulldown",   "Lat Pulldown",   "Lats",      [{weight:80,reps:10,rpe:7},{weight:80,reps:10,rpe:7.5},{weight:80,reps:9,rpe:8}]),
+      ex("overhead-press", "Overhead Press", "Shoulders", [{weight:60,reps:8,rpe:7},{weight:60,reps:7,rpe:8},{weight:60,reps:7,rpe:8.5}]),
+      ex("barbell-curl",   "Barbell Curl",   "Biceps",    [{weight:47.5,reps:10,rpe:7},{weight:47.5,reps:10,rpe:7.5},{weight:47.5,reps:9,rpe:8}]),
+      ex("tricep-pushdown","Tricep Pushdown","Triceps",   [{weight:55,reps:12,rpe:7},{weight:55,reps:12,rpe:7.5},{weight:55,reps:11,rpe:8}]),
+    ], "Getting stronger. OHP frustrating — zero movement in 3 weeks."),
+
+    // ── Week 6 (Apr 7–11) ─────────────────────────────────────────────────
+    mk(D(2026,4,7), "Push A", "Bench 90 kg — new all-time PR!", "63 min", 3780, [
+      ex("bench-press",            "Bench Press",            "Chest",      [{weight:90,reps:8,rpe:7},{weight:90,reps:8,rpe:7.5},{weight:90,reps:7,rpe:8},{weight:87.5,reps:7,rpe:8.5}]),
+      ex("incline-dumbbell-press", "Incline Dumbbell Press", "Upper Chest",[{weight:34,reps:10,rpe:7},{weight:34,reps:10,rpe:7.5},{weight:34,reps:9,rpe:8}]),
+      ex("overhead-press",         "Overhead Press",         "Shoulders",  [{weight:60,reps:8,rpe:7},{weight:60,reps:7,rpe:8},{weight:60,reps:7,rpe:8.5}]),
+      ex("lateral-raise",          "Lateral Raise",          "Side Delts", [{weight:12,reps:15,rpe:7},{weight:12,reps:15,rpe:7},{weight:12,reps:13,rpe:7.5}]),
+      ex("tricep-pushdown",        "Tricep Pushdown",        "Triceps",    [{weight:55,reps:12,rpe:7},{weight:55,reps:12,rpe:7.5},{weight:55,reps:11,rpe:8}]),
+      ex("skull-crushers",         "Skull Crushers",         "Triceps",    [{weight:35,reps:10,rpe:7},{weight:35,reps:10,rpe:7.5},{weight:35,reps:9,rpe:8}]),
+    ], "90 kg bench PR! OHP still 60 — needs a reset strategy."),
+
+    mk(D(2026,4,9), "Pull A", "", "57 min", 3420, [
+      ex("lat-pulldown",  "Lat Pulldown",     "Lats",      [{weight:82.5,reps:10,rpe:7},{weight:82.5,reps:10,rpe:7},{weight:82.5,reps:9,rpe:7.5},{weight:82.5,reps:9,rpe:8}]),
+      ex("seated-row",    "Seated Cable Row", "Back",      [{weight:72.5,reps:10,rpe:7},{weight:72.5,reps:10,rpe:7.5},{weight:72.5,reps:9,rpe:8}]),
+      ex("face-pulls",    "Face Pulls",       "Rear Delts",[{weight:22,reps:15,rpe:6},{weight:22,reps:15,rpe:6.5},{weight:22,reps:15,rpe:7}]),
+      ex("barbell-curl",  "Barbell Curl",     "Biceps",    [{weight:47.5,reps:10,rpe:7},{weight:47.5,reps:10,rpe:7.5},{weight:47.5,reps:9,rpe:8}]),
+      ex("hammer-curl",   "Hammer Curl",      "Biceps",    [{weight:24,reps:12,rpe:7},{weight:24,reps:12,rpe:7.5},{weight:24,reps:11,rpe:8}]),
+    ], "Pull numbers at all-time highs."),
+
+    mk(D(2026,4,11), "Push B", "Volume chest day.", "58 min", 3480, [
+      ex("incline-bench-press","Incline Bench Press","Upper Chest",[{weight:75,reps:10,rpe:7},{weight:75,reps:10,rpe:7.5},{weight:75,reps:9,rpe:8},{weight:72.5,reps:9,rpe:8.5}]),
+      ex("cable-fly",          "Cable Fly",          "Chest",      [{weight:22,reps:12,rpe:7},{weight:22,reps:12,rpe:7.5},{weight:22,reps:11,rpe:8}]),
+      ex("overhead-press",     "Overhead Press",     "Shoulders",  [{weight:60,reps:8,rpe:7},{weight:60,reps:7,rpe:8},{weight:60,reps:7,rpe:8.5}]),
+      ex("lateral-raise",      "Lateral Raise",      "Side Delts", [{weight:12,reps:15,rpe:7},{weight:12,reps:15,rpe:7},{weight:12,reps:13,rpe:7.5}]),
+      ex("tricep-pushdown",    "Tricep Pushdown",    "Triceps",    [{weight:55,reps:12,rpe:7},{weight:55,reps:12,rpe:7.5},{weight:55,reps:11,rpe:8}]),
+    ], "Good volume. Chest and tris well pumped."),
+  ];
+}
+
 export function App() {
   const storedPlanBuilderState = getStoredPlanBuilderDraft();
   const [appView, setAppView] = useState<AppView>("home");
+  const [insightsInitialTab, setInsightsInitialTab] = useState<"analyzer" | "reports">("reports");
   const [hasActiveWorkout, setHasActiveWorkout] = useState(false);
   const [clockTick, setClockTick] = useState(() => Date.now());
   const [themePreference, setThemePreference] = useState<ThemePreference>(getStoredThemePreference);
@@ -12104,6 +12337,11 @@ export function App() {
 
     return () => mediaQuery.removeEventListener("change", updateTheme);
   }, []);
+
+  // Reset insights tab to Reports whenever user navigates away from Insights
+  useEffect(() => {
+    if (appView !== "insights") setInsightsInitialTab("reports");
+  }, [appView]);
 
   useEffect(() => {
     setLoggerRewards(recomputeLoggerRewards(exercises, settings.carryForwardDefaults));
@@ -14270,93 +14508,10 @@ export function App() {
           setShowDevPage(false);
         }}
         onSeedHistoryData={() => {
-          const completedAt = new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString();
-          const seedPlan: RepIQPlan = {
-            schemaVersion: 1,
-            id: "dev-seed-plan",
-            generatedAt: completedAt,
-            startDate: completedAt.slice(0, 10),
-            planName: "Push / Pull / Legs",
-            goal: "build_muscle",
-            secondaryGoal: null,
-            experienceLevel: "intermediate",
-            daysPerWeek: 3,
-            sessionLengthMin: 60,
-            splitType: "ppl",
-            mesocycleLengthWeeks: 8,
-            currentWeekIndex: 0,
-            status: "active",
-            weeks: Array.from({ length: 8 }, (_, wi) => ({
-              weekNumber: wi + 1,
-              isCompleted: false,
-              days: [
-                {
-                  sessionLabel: `Upper Push ${String.fromCharCode(65 + wi)}`,
-                  focus: "Chest / Shoulders / Triceps",
-                  completedAt: wi === 0 ? completedAt : null,
-                  exercises: [
-                    { exerciseId: "bench-press",            sets: 4, reps: "6–8",   restSeconds: 120 },
-                    { exerciseId: "incline-dumbbell-press", sets: 3, reps: "8–10",  restSeconds: 90  },
-                    { exerciseId: "shoulder-press",         sets: 3, reps: "8–10",  restSeconds: 90  },
-                    { exerciseId: "cable-lateral-raise",    sets: 3, reps: "12–15", restSeconds: 60  },
-                    { exerciseId: "rope-pushdown",          sets: 3, reps: "10–12", restSeconds: 60  },
-                  ],
-                },
-                {
-                  sessionLabel: `Lower ${String.fromCharCode(65 + wi)}`,
-                  focus: "Quads / Hamstrings / Glutes",
-                  completedAt: null,
-                  exercises: [
-                    { exerciseId: "barbell-squat", sets: 4, reps: "6–8",   restSeconds: 180 },
-                    { exerciseId: "leg-press",     sets: 3, reps: "10–12", restSeconds: 120 },
-                    { exerciseId: "romanian-deadlift", sets: 3, reps: "8–10", restSeconds: 120 },
-                  ],
-                },
-                {
-                  sessionLabel: `Pull ${String.fromCharCode(65 + wi)}`,
-                  focus: "Back / Biceps",
-                  completedAt: null,
-                  exercises: [
-                    { exerciseId: "weighted-pull-up", sets: 4, reps: "6–8",   restSeconds: 120 },
-                    { exerciseId: "chest-supported-row", sets: 3, reps: "8–10", restSeconds: 90  },
-                    { exerciseId: "lat-pulldown",     sets: 3, reps: "10–12", restSeconds: 90  },
-                    { exerciseId: "ez-bar-curl",      sets: 3, reps: "10–12", restSeconds: 60  },
-                  ],
-                },
-              ],
-            })),
-          };
-          const seedWorkout: SavedWorkoutData = {
-            sessionName: "Upper Push A",
-            note: "Felt strong today. Hit a small PR on bench.",
-            date: completedAt.slice(0, 10),
-            duration: "1:02:14",
-            durationSeconds: 3734,
-            totalVolume: 6840,
-            totalSets: 16,
-            exerciseCount: 5,
-            loggedExerciseCount: 5,
-            ignoredIncompleteSets: 0,
-            exercises: [
-              { id: "bench-press",            name: "Bench Press",           primaryMuscle: "Chest",     loggedSets: 4, loggedVolume: 2520, sets: [{ weight: 80, reps: 8, rpe: 7, setType: "normal" }, { weight: 80, reps: 8, rpe: 7.5, setType: "normal" }, { weight: 80, reps: 7, rpe: 8, setType: "normal" }, { weight: 77.5, reps: 7, rpe: 8.5, setType: "normal" }] },
-              { id: "incline-dumbbell-press", name: "Incline Dumbbell Press", primaryMuscle: "Chest",     loggedSets: 3, loggedVolume: 1260, sets: [{ weight: 32.5, reps: 10, rpe: 7, setType: "normal" }, { weight: 32.5, reps: 10, rpe: 7.5, setType: "normal" }, { weight: 32.5, reps: 9, rpe: 8, setType: "normal" }] },
-              { id: "shoulder-press",         name: "Shoulder Press",         primaryMuscle: "Shoulders", loggedSets: 3, loggedVolume: 1260, sets: [{ weight: 40, reps: 10, rpe: 7, setType: "normal" }, { weight: 40, reps: 10, rpe: 7.5, setType: "normal" }, { weight: 40, reps: 9, rpe: 8, setType: "normal" }] },
-              { id: "cable-lateral-raise",    name: "Cable Lateral Raise",    primaryMuscle: "Shoulders", loggedSets: 3, loggedVolume: 600,  sets: [{ weight: 10, reps: 15, rpe: 7, setType: "normal" }, { weight: 10, reps: 14, rpe: 7.5, setType: "normal" }, { weight: 10, reps: 13, rpe: 8, setType: "normal" }] },
-              { id: "rope-pushdown",          name: "Rope Pushdown",          primaryMuscle: "Triceps",   loggedSets: 3, loggedVolume: 1200, sets: [{ weight: 32.5, reps: 12, rpe: 7, setType: "normal" }, { weight: 32.5, reps: 11, rpe: 7.5, setType: "normal" }, { weight: 30, reps: 12, rpe: 8, setType: "normal" }] },
-            ],
-            rewards: [],
-            rewardSummary: { set: 0, exercise: 0, session: 0, total: 0 },
-            takeawayTitle: "Solid push session!",
-            takeawayBody: "16 sets across 5 exercises. Volume up from last week.",
-            images: [],
-            savedAt: completedAt,
-            repiqSourceKey: "0-0",
-          };
-          persistRepIQPlan(seedPlan);
-          persistSavedWorkout(seedWorkout);
-          setRepiqPlan(seedPlan);
-          setSavedWorkoutsList(getStoredSavedWorkouts());
-          setAppView("planner");
+          const workouts = buildSeedWorkouts();
+          persistSavedWorkoutsList(workouts);
+          setSavedWorkoutsList(workouts);
+          setAppView("home");
           setShowDevPage(false);
         }}
         onClearHistoryData={() => {
@@ -14618,6 +14773,7 @@ export function App() {
           onDeleteWorkout={deleteHistoryWorkout}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+          initialTab={insightsInitialTab}
         />
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
       </div>
@@ -15133,7 +15289,13 @@ export function App() {
             </article>
 
             {/* ── Goal progress card ── */}
-            <div className="home-goal-card">
+            <div
+              className="home-goal-card home-card-tappable"
+              role="button"
+              tabIndex={0}
+              onClick={() => { setInsightsInitialTab("analyzer"); setAppView("insights"); }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setInsightsInitialTab("analyzer"); setAppView("insights"); } }}
+            >
               <div className="home-goal-top">
                 <div className="home-goal-meta">
                   <p className="home-goal-label">Monthly Progress</p>
@@ -15154,10 +15316,19 @@ export function App() {
                 <span className="home-goal-status-label">{goalProgress.label}</span>
               </div>
               <p className="home-goal-insight">{goalProgress.insight}</p>
+              <p className="home-card-tap-hint">View full analysis →</p>
             </div>
 
             {/* ── Muscle coverage card ── */}
-            <MuscleCoverageCard coverage={muscleCoverage} mode="history" />
+            <div
+              className="home-card-tappable"
+              role="button"
+              tabIndex={0}
+              onClick={() => { setInsightsInitialTab("analyzer"); setAppView("insights"); }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setInsightsInitialTab("analyzer"); setAppView("insights"); } }}
+            >
+              <MuscleCoverageCard coverage={muscleCoverage} mode="history" tapHint="View in Analyzer →" />
+            </div>
 
             {/* ── Latest workout card (enhanced) ── */}
             {latestWorkout ? (

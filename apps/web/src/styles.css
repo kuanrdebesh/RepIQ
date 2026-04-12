@@ -8556,6 +8556,28 @@ ol {
   line-height: 1.5;
 }
 
+/* Tappable card affordance */
+.home-card-tappable {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s ease;
+  border-radius: 16px;
+}
+.home-card-tappable:active {
+  opacity: 0.75;
+}
+.home-card-tappable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.home-card-tap-hint {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 6px 0 0;
+  letter-spacing: 0.01em;
+}
+
 /* ── Muscle coverage card ────────────────────────────────────────────────── */
 
 .muscle-coverage-card {
