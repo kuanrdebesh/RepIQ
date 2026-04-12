@@ -6006,6 +6006,24 @@ function PlannerHomePage({
         );
       })()}
       <div style={repiqPlan && plannerMode === "repiq" ? { display: "none" } : undefined}>
+
+      {/* ── Try RepIQ strip — only shown when no plan ── */}
+      {!repiqPlan && (
+        <div className="planner-repiq-strip">
+          <div className="planner-repiq-strip-left">
+            <span className="planner-repiq-strip-eyebrow">✦ REPIQ PLAN</span>
+            <p className="planner-repiq-strip-body">Get a personalised programme built around your goal and schedule.</p>
+          </div>
+          <button
+            type="button"
+            className="planner-repiq-strip-btn"
+            onClick={() => onViewChange("generate")}
+          >
+            Try it →
+          </button>
+        </div>
+      )}
+
       <section className="planner-actions-strip">
         <div className="planner-top-actions-row">
           <button
@@ -10892,7 +10910,6 @@ function NextSessionCard({
   onGoToCustom,
   onGoToBrowse,
   onReviewPlan,
-  latestPR,
 }: {
   repiqPlan: RepIQPlan | null;
   savedWorkoutsCount: number;
@@ -10905,7 +10922,6 @@ function NextSessionCard({
   onGoToCustom: () => void;
   onGoToBrowse: () => void;
   onReviewPlan: () => void;
-  latestPR: string | null;
 }) {
   // ── State 1: active plan with a next session ──
   if (repiqPlan && nextSession) {
@@ -10914,12 +10930,6 @@ function NextSessionCard({
     const approxMin = Math.round((exCount * 3 * 2.5) / 5) * 5; // rough: sets × rest+set time
     return (
       <div className="nsc-card">
-        {latestPR && (
-          <div className="nsc-pr-bar">
-            <span className="nsc-pr-icon">🏆</span>
-            <span className="nsc-pr-text">{latestPR}</span>
-          </div>
-        )}
         <div className="nsc-eyebrow-row">
           <span className="nsc-eyebrow">NEXT UP</span>
           <span className="nsc-eyebrow nsc-eyebrow-dim">Week {nextSession.weekIdx + 1}</span>
@@ -10986,12 +10996,6 @@ function NextSessionCard({
   if (!repiqPlan && savedWorkoutsCount > 0) {
     return (
       <div className="nsc-card nsc-card-noplan">
-        {latestPR && (
-          <div className="nsc-pr-bar">
-            <span className="nsc-pr-icon">🏆</span>
-            <span className="nsc-pr-text">{latestPR}</span>
-          </div>
-        )}
         <span className="nsc-eyebrow">READY TO TRAIN?</span>
         <p className="nsc-focus" style={{ marginTop: 4 }}>No programme yet — jump in or build one.</p>
         <div className="nsc-actions">
@@ -15388,21 +15392,30 @@ export function App() {
 
           <section className="selector-stack">
 
-            {/* ── Next Session Card (primary CTA) ── */}
-            <NextSessionCard
-              repiqPlan={repiqPlan}
-              savedWorkoutsCount={savedWorkoutsList.length}
-              hasActiveWorkout={hasActiveWorkout}
-              nextSession={nextRepIQSession}
-              onStartRepIQ={startRepIQSession}
-              onOpenQuick={() => openQuickSession("home")}
-              onGoToRepIQPlan={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}
-              onGoToGenerate={() => { setPlannerView("generate"); setAppView("planner"); }}
-              onGoToCustom={() => openQuickSession("home")}
-              onGoToBrowse={() => { setPlannerView("library"); setAppView("planner"); }}
-              onReviewPlan={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}
-              latestPR={topPR}
-            />
+            {/* ── PR highlight — standalone, above everything ── */}
+            {topPR && (
+              <div className="home-pr-banner">
+                <span className="home-pr-icon">🏆</span>
+                <span className="home-pr-text">{topPR}</span>
+              </div>
+            )}
+
+            {/* ── WITH PLAN: Next Session Card leads ── */}
+            {repiqPlan && (
+              <NextSessionCard
+                repiqPlan={repiqPlan}
+                savedWorkoutsCount={savedWorkoutsList.length}
+                hasActiveWorkout={hasActiveWorkout}
+                nextSession={nextRepIQSession}
+                onStartRepIQ={startRepIQSession}
+                onOpenQuick={() => openQuickSession("home")}
+                onGoToRepIQPlan={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}
+                onGoToGenerate={() => { setPlannerView("generate"); setAppView("planner"); }}
+                onGoToCustom={() => openQuickSession("home")}
+                onGoToBrowse={() => { setPlannerView("library"); setAppView("planner"); }}
+                onReviewPlan={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}
+              />
+            )}
 
             {/* ── This week snapshot ── */}
             <article className="home-week-card">
@@ -15468,7 +15481,7 @@ export function App() {
               <MuscleCoverageCard coverage={muscleCoverage} mode="history" tapHint="View in Analyzer →" />
             </div>
 
-            {/* ── Last workout — only for no-plan users with recent history ── */}
+            {/* ── Last workout — no-plan users, recent session (≤14 days) ── */}
             {showLastWorkout && (
               <article
                 className="session-card home-latest-card"
@@ -15488,6 +15501,43 @@ export function App() {
                 </div>
                 <span className="home-latest-chevron" aria-hidden="true">›</span>
               </article>
+            )}
+
+            {/* ── NO PLAN: action row at the bottom, after progress ── */}
+            {!repiqPlan && (
+              <div className="home-action-row">
+                <button
+                  type="button"
+                  className="home-action-btn"
+                  disabled={hasActiveWorkout}
+                  onClick={() => openQuickSession("home")}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                  </svg>
+                  Quick Workout
+                </button>
+                <button
+                  type="button"
+                  className="home-action-btn home-action-btn-accent"
+                  onClick={() => { setPlannerView("generate"); setAppView("planner"); }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+                  </svg>
+                  Generate
+                </button>
+                <button
+                  type="button"
+                  className="home-action-btn"
+                  onClick={() => { setPlannerView("mine"); setAppView("planner"); }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                  </svg>
+                  Custom
+                </button>
+              </div>
             )}
 
           </section>
