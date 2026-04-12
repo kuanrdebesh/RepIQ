@@ -5127,6 +5127,7 @@ function PlannerHomePage({
   savedWorkouts,
   onOpenHistoryWorkout,
   onSaveHistoryWorkout,
+  onTryRepIQPlan,
 }: {
   plans: WorkoutPlan[];
   library: ExerciseDraft[];
@@ -5164,6 +5165,7 @@ function PlannerHomePage({
   savedWorkouts?: SavedWorkoutData[];
   onOpenHistoryWorkout?: (workout: SavedWorkoutData | null, weekIdx: number, dayIdx: number, label: string, sessionNum: number) => void;
   onSaveHistoryWorkout?: (workout: SavedWorkoutData) => void;
+  onTryRepIQPlan?: () => void;
 }) {
   // Generate state
   const [genGoal, setGenGoal] = useState("Hypertrophy");
@@ -6019,7 +6021,14 @@ function PlannerHomePage({
           <button
             type="button"
             className="planner-repiq-strip-btn"
-            onClick={() => onViewChange("generate")}
+            onClick={() => {
+              if (onTryRepIQPlan) {
+                onTryRepIQPlan();
+                setPlannerMode("repiq");
+              } else {
+                onViewChange("generate");
+              }
+            }}
           >
             Try it →
           </button>
@@ -16064,6 +16073,12 @@ export function App() {
             setAppView("history-detail");
           }}
           onSaveHistoryWorkout={saveHistoryWorkoutToMyWorkouts}
+          onTryRepIQPlan={() => {
+            const plan = generateRepIQPlan(psychProfile);
+            persistRepIQPlan(plan);
+            setRepiqPlan(plan);
+            setPlannerInitialMode("repiq");
+          }}
         />
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
 
