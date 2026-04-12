@@ -8668,6 +8668,7 @@ function DevLandingPage({
   onResetOnboarding,
   onShowPostOnboarding,
   onSeedHistoryData,
+  onSeedRepIQData,
   onClearHistoryData,
 }: {
   resolvedTheme: string;
@@ -8676,6 +8677,7 @@ function DevLandingPage({
   onResetOnboarding: () => void;
   onShowPostOnboarding: () => void;
   onSeedHistoryData: () => void;
+  onSeedRepIQData: () => void;
   onClearHistoryData: () => void;
 }) {
   const views: { view: AppView; label: string; emoji: string }[] = [
@@ -8732,7 +8734,11 @@ function DevLandingPage({
           <div className="dev-grid">
             <button type="button" className="dev-btn dev-btn-accent" onClick={onSeedHistoryData}>
               <span className="dev-btn-icon">🌱</span>
-              <span>Seed 6-Week Demo Data</span>
+              <span>6-Week History (no plan)</span>
+            </button>
+            <button type="button" className="dev-btn dev-btn-accent" onClick={onSeedRepIQData}>
+              <span className="dev-btn-icon">📋</span>
+              <span>5-Day Plan (midway, wk 3)</span>
             </button>
             <button type="button" className="dev-btn dev-btn-warn" onClick={onClearHistoryData}>
               <span className="dev-btn-icon">🗑️</span>
@@ -11973,6 +11979,217 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
   ];
 }
 
+// ── Seed midway RepIQ plan (5-day body-part split, week 3 in progress) ─────────
+function buildSeedRepIQData(): { plan: RepIQPlan; workouts: SavedWorkoutData[] } {
+  const D = (y: number, m: number, d: number) =>
+    new Date(y, m - 1, d, 12, 0, 0).toISOString();
+
+  const ex = (
+    id: string, name: string, primaryMuscle: string,
+    sets: { weight: number; reps: number; rpe: number | null }[]
+  ): FinishedExerciseSummary => ({
+    id, name, primaryMuscle,
+    loggedSets: sets.length,
+    loggedVolume: sets.reduce((s, t) => s + t.weight * t.reps, 0),
+    sets: sets.map(s => ({ ...s, setType: "normal" as const })),
+  });
+
+  const mk = (
+    date: string, sessionName: string, note: string,
+    duration: string, durationSeconds: number,
+    exercises: FinishedExerciseSummary[], takeawayTitle: string
+  ): SavedWorkoutData => ({
+    sessionName, note, date: date.slice(0, 10), duration, durationSeconds,
+    totalVolume: exercises.reduce((s, e) => s + e.loggedVolume, 0),
+    totalSets: exercises.reduce((s, e) => s + e.loggedSets, 0),
+    exerciseCount: exercises.length, loggedExerciseCount: exercises.length,
+    ignoredIncompleteSets: 0, exercises,
+    rewards: [], rewardSummary: { set: 0, exercise: 0, session: 0, total: 0 },
+    takeawayTitle, takeawayBody: "", images: [], savedAt: date,
+  });
+
+  // 5 day plan exercises (plan schema — just IDs + reps)
+  const chestTri  = [
+    { exerciseId: "bench-press",            sets: 4, reps: "6–8",   restSeconds: 120 },
+    { exerciseId: "incline-dumbbell-press", sets: 3, reps: "8–10",  restSeconds: 90  },
+    { exerciseId: "cable-fly",              sets: 3, reps: "12–15", restSeconds: 60  },
+    { exerciseId: "tricep-pushdown",        sets: 3, reps: "10–12", restSeconds: 60  },
+    { exerciseId: "skull-crushers",         sets: 3, reps: "10–12", restSeconds: 60  },
+  ];
+  const backBi    = [
+    { exerciseId: "lat-pulldown",   sets: 4, reps: "8–10",  restSeconds: 90  },
+    { exerciseId: "seated-row",     sets: 3, reps: "8–10",  restSeconds: 90  },
+    { exerciseId: "face-pulls",     sets: 3, reps: "12–15", restSeconds: 60  },
+    { exerciseId: "barbell-curl",   sets: 3, reps: "10–12", restSeconds: 60  },
+    { exerciseId: "hammer-curl",    sets: 3, reps: "10–12", restSeconds: 60  },
+  ];
+  const legs      = [
+    { exerciseId: "barbell-squat",     sets: 4, reps: "6–8",   restSeconds: 180 },
+    { exerciseId: "romanian-deadlift", sets: 3, reps: "8–10",  restSeconds: 120 },
+    { exerciseId: "leg-press",         sets: 3, reps: "10–12", restSeconds: 120 },
+    { exerciseId: "leg-extension",     sets: 3, reps: "12–15", restSeconds: 60  },
+    { exerciseId: "calf-raise",        sets: 3, reps: "15–20", restSeconds: 60  },
+  ];
+  const shoulders = [
+    { exerciseId: "overhead-press",  sets: 4, reps: "6–8",   restSeconds: 120 },
+    { exerciseId: "lateral-raise",   sets: 4, reps: "12–15", restSeconds: 60  },
+    { exerciseId: "face-pulls",      sets: 3, reps: "12–15", restSeconds: 60  },
+    { exerciseId: "rear-delt-fly",   sets: 3, reps: "12–15", restSeconds: 60  },
+  ];
+  const armsCore  = [
+    { exerciseId: "barbell-curl",   sets: 3, reps: "10–12", restSeconds: 60  },
+    { exerciseId: "hammer-curl",    sets: 3, reps: "10–12", restSeconds: 60  },
+    { exerciseId: "tricep-pushdown",sets: 3, reps: "10–12", restSeconds: 60  },
+    { exerciseId: "skull-crushers", sets: 3, reps: "10–12", restSeconds: 60  },
+  ];
+
+  const makeDay = (
+    label: string, focus: string,
+    planEx: typeof chestTri, completedAt: string | null
+  ): RepIQPlanDay => ({ sessionLabel: label, focus, exercises: planEx, completedAt });
+
+  const makeWeek = (
+    n: number, isCompleted: boolean, doneAt: (string | null)[]
+  ): RepIQPlanWeek => ({
+    weekNumber: n, isCompleted,
+    days: [
+      makeDay("Chest & Triceps", "Chest · Triceps",              chestTri,  doneAt[0]),
+      makeDay("Back & Biceps",   "Back · Biceps",                backBi,    doneAt[1]),
+      makeDay("Legs",            "Quads · Hamstrings · Glutes",  legs,      doneAt[2]),
+      makeDay("Shoulders",       "Shoulders · Rear Delts",       shoulders, doneAt[3]),
+      makeDay("Arms",            "Biceps · Triceps",             armsCore,  doneAt[4]),
+    ],
+  });
+
+  // Completed timestamps ─ weeks 1 and 2 full, week 3 days 1–3 done
+  const W1 = [D(2026,3,23), D(2026,3,24), D(2026,3,25), D(2026,3,26), D(2026,3,27)];
+  const W2 = [D(2026,3,30), D(2026,3,31), D(2026,4,1),  D(2026,4,2),  D(2026,4,3) ];
+  const W3 = [D(2026,4,7),  D(2026,4,8),  D(2026,4,9),  null,         null        ];
+  const NONE = [null, null, null, null, null];
+
+  const plan: RepIQPlan = {
+    schemaVersion: 1, id: "dev-midway-plan",
+    generatedAt: D(2026,3,23),
+    startDate: "2026-03-23",
+    planName: "5-Day Hypertrophy",
+    goal: "build_muscle", secondaryGoal: null,
+    experienceLevel: "intermediate",
+    daysPerWeek: 5, sessionLengthMin: 60,
+    splitType: "body_part",
+    mesocycleLengthWeeks: 8,
+    currentWeekIndex: 2, // 0-indexed → week 3
+    status: "active",
+    weeks: [
+      makeWeek(1, true,  W1),
+      makeWeek(2, true,  W2),
+      makeWeek(3, false, W3),
+      makeWeek(4, false, NONE),
+      makeWeek(5, false, NONE),
+      makeWeek(6, false, NONE),
+      makeWeek(7, false, NONE),
+      makeWeek(8, false, NONE),
+    ],
+  };
+
+  // Matching saved workouts for every completed day
+  const workouts: SavedWorkoutData[] = [
+    // ── Week 1 ──────────────────────────────────────────────────────────────
+    mk(W1[0], "Chest & Triceps", "", "57 min", 3420, [
+      ex("bench-press",            "Bench Press",            "Chest",      [{weight:80,reps:8,rpe:7},{weight:80,reps:8,rpe:7.5},{weight:80,reps:7,rpe:8},{weight:77.5,reps:7,rpe:8.5}]),
+      ex("incline-dumbbell-press", "Incline Dumbbell Press", "Upper Chest",[{weight:28,reps:10,rpe:7},{weight:28,reps:10,rpe:7.5},{weight:28,reps:9,rpe:8}]),
+      ex("cable-fly",              "Cable Fly",              "Chest",      [{weight:20,reps:12,rpe:6},{weight:20,reps:12,rpe:6.5},{weight:20,reps:11,rpe:7}]),
+      ex("tricep-pushdown",        "Tricep Pushdown",        "Triceps",    [{weight:45,reps:12,rpe:7},{weight:45,reps:12,rpe:7.5},{weight:45,reps:11,rpe:8}]),
+      ex("skull-crushers",         "Skull Crushers",         "Triceps",    [{weight:30,reps:10,rpe:7},{weight:30,reps:10,rpe:7.5},{weight:30,reps:9,rpe:8}]),
+    ], "Good chest session to start the plan."),
+    mk(W1[1], "Back & Biceps", "", "55 min", 3300, [
+      ex("lat-pulldown",  "Lat Pulldown",     "Lats",      [{weight:70,reps:10,rpe:7},{weight:70,reps:10,rpe:7},{weight:70,reps:9,rpe:7.5},{weight:70,reps:9,rpe:8}]),
+      ex("seated-row",    "Seated Cable Row", "Back",      [{weight:65,reps:10,rpe:7},{weight:65,reps:10,rpe:7.5},{weight:65,reps:9,rpe:8}]),
+      ex("face-pulls",    "Face Pulls",       "Rear Delts",[{weight:20,reps:15,rpe:6},{weight:20,reps:15,rpe:6.5},{weight:20,reps:14,rpe:7}]),
+      ex("barbell-curl",  "Barbell Curl",     "Biceps",    [{weight:40,reps:10,rpe:7},{weight:40,reps:10,rpe:7.5},{weight:40,reps:9,rpe:8}]),
+      ex("hammer-curl",   "Hammer Curl",      "Biceps",    [{weight:20,reps:12,rpe:6},{weight:20,reps:12,rpe:7},{weight:20,reps:11,rpe:7.5}]),
+    ], "Back pumped."),
+    mk(W1[2], "Legs", "First leg day of the plan.", "65 min", 3900, [
+      ex("barbell-squat",     "Barbell Squat",       "Quads",      [{weight:80,reps:8,rpe:7},{weight:80,reps:8,rpe:7.5},{weight:80,reps:7,rpe:8},{weight:77.5,reps:7,rpe:8.5}]),
+      ex("romanian-deadlift", "Romanian Deadlift",   "Hamstrings", [{weight:70,reps:10,rpe:7},{weight:70,reps:10,rpe:7.5},{weight:70,reps:9,rpe:8}]),
+      ex("leg-press",         "Leg Press",           "Quads",      [{weight:120,reps:12,rpe:7},{weight:120,reps:12,rpe:7.5},{weight:120,reps:11,rpe:8}]),
+      ex("leg-extension",     "Leg Extension",       "Quads",      [{weight:50,reps:15,rpe:7},{weight:50,reps:15,rpe:7.5},{weight:50,reps:13,rpe:8}]),
+      ex("calf-raise",        "Standing Calf Raise", "Calves",     [{weight:40,reps:20,rpe:6},{weight:40,reps:20,rpe:6.5},{weight:40,reps:18,rpe:7}]),
+    ], "Legs are brutal."),
+    mk(W1[3], "Shoulders", "", "50 min", 3000, [
+      ex("overhead-press", "Overhead Press",  "Shoulders",  [{weight:55,reps:8,rpe:7},{weight:55,reps:8,rpe:7.5},{weight:55,reps:7,rpe:8},{weight:52.5,reps:7,rpe:8.5}]),
+      ex("lateral-raise",  "Lateral Raise",   "Side Delts", [{weight:10,reps:15,rpe:6},{weight:10,reps:15,rpe:6.5},{weight:10,reps:14,rpe:7},{weight:10,reps:13,rpe:7.5}]),
+      ex("face-pulls",     "Face Pulls",      "Rear Delts", [{weight:20,reps:15,rpe:6},{weight:20,reps:15,rpe:6.5},{weight:20,reps:14,rpe:7}]),
+      ex("rear-delt-fly",  "Rear Delt Fly",   "Rear Delts", [{weight:12,reps:15,rpe:6},{weight:12,reps:15,rpe:6.5},{weight:12,reps:14,rpe:7}]),
+    ], "Shoulders well hit."),
+    mk(W1[4], "Arms", "", "45 min", 2700, [
+      ex("barbell-curl",   "Barbell Curl",   "Biceps",  [{weight:40,reps:10,rpe:7},{weight:40,reps:10,rpe:7.5},{weight:40,reps:9,rpe:8}]),
+      ex("hammer-curl",    "Hammer Curl",    "Biceps",  [{weight:20,reps:12,rpe:6},{weight:20,reps:12,rpe:7},{weight:20,reps:11,rpe:7.5}]),
+      ex("tricep-pushdown","Tricep Pushdown","Triceps", [{weight:45,reps:12,rpe:7},{weight:45,reps:12,rpe:7.5},{weight:45,reps:11,rpe:8}]),
+      ex("skull-crushers", "Skull Crushers", "Triceps", [{weight:30,reps:10,rpe:7},{weight:30,reps:10,rpe:7.5},{weight:30,reps:9,rpe:8}]),
+    ], "Arms session done."),
+
+    // ── Week 2 ──────────────────────────────────────────────────────────────
+    mk(W2[0], "Chest & Triceps", "+2.5 kg on bench.", "58 min", 3480, [
+      ex("bench-press",            "Bench Press",            "Chest",      [{weight:82.5,reps:8,rpe:7},{weight:82.5,reps:8,rpe:7.5},{weight:82.5,reps:7,rpe:8},{weight:80,reps:7,rpe:8.5}]),
+      ex("incline-dumbbell-press", "Incline Dumbbell Press", "Upper Chest",[{weight:30,reps:10,rpe:7},{weight:30,reps:10,rpe:7.5},{weight:30,reps:9,rpe:8}]),
+      ex("cable-fly",              "Cable Fly",              "Chest",      [{weight:20,reps:12,rpe:6},{weight:20,reps:12,rpe:7},{weight:20,reps:11,rpe:7.5}]),
+      ex("tricep-pushdown",        "Tricep Pushdown",        "Triceps",    [{weight:47.5,reps:12,rpe:7},{weight:47.5,reps:12,rpe:7.5},{weight:47.5,reps:11,rpe:8}]),
+      ex("skull-crushers",         "Skull Crushers",         "Triceps",    [{weight:30,reps:10,rpe:7},{weight:30,reps:10,rpe:7.5},{weight:30,reps:9,rpe:8}]),
+    ], "Chest progressing."),
+    mk(W2[1], "Back & Biceps", "", "54 min", 3240, [
+      ex("lat-pulldown",  "Lat Pulldown",     "Lats",      [{weight:72.5,reps:10,rpe:7},{weight:72.5,reps:10,rpe:7},{weight:72.5,reps:9,rpe:7.5},{weight:72.5,reps:9,rpe:8}]),
+      ex("seated-row",    "Seated Cable Row", "Back",      [{weight:67.5,reps:10,rpe:7},{weight:67.5,reps:10,rpe:7.5},{weight:67.5,reps:9,rpe:8}]),
+      ex("face-pulls",    "Face Pulls",       "Rear Delts",[{weight:20,reps:15,rpe:6},{weight:20,reps:15,rpe:6.5},{weight:20,reps:15,rpe:7}]),
+      ex("barbell-curl",  "Barbell Curl",     "Biceps",    [{weight:42.5,reps:10,rpe:7},{weight:42.5,reps:10,rpe:7.5},{weight:42.5,reps:9,rpe:8}]),
+      ex("hammer-curl",   "Hammer Curl",      "Biceps",    [{weight:20,reps:12,rpe:7},{weight:20,reps:12,rpe:7.5},{weight:20,reps:11,rpe:8}]),
+    ], "Back volume building."),
+    mk(W2[2], "Legs", "", "63 min", 3780, [
+      ex("barbell-squat",     "Barbell Squat",       "Quads",      [{weight:82.5,reps:8,rpe:7},{weight:82.5,reps:8,rpe:7.5},{weight:82.5,reps:7,rpe:8},{weight:80,reps:7,rpe:8.5}]),
+      ex("romanian-deadlift", "Romanian Deadlift",   "Hamstrings", [{weight:72.5,reps:10,rpe:7},{weight:72.5,reps:10,rpe:7.5},{weight:72.5,reps:9,rpe:8}]),
+      ex("leg-press",         "Leg Press",           "Quads",      [{weight:125,reps:12,rpe:7},{weight:125,reps:12,rpe:7.5},{weight:125,reps:11,rpe:8}]),
+      ex("leg-extension",     "Leg Extension",       "Quads",      [{weight:52.5,reps:15,rpe:7},{weight:52.5,reps:15,rpe:7.5},{weight:52.5,reps:13,rpe:8}]),
+      ex("calf-raise",        "Standing Calf Raise", "Calves",     [{weight:42.5,reps:20,rpe:6},{weight:42.5,reps:20,rpe:6.5},{weight:42.5,reps:18,rpe:7}]),
+    ], "Legs +2.5 kg on squat."),
+    mk(W2[3], "Shoulders", "", "51 min", 3060, [
+      ex("overhead-press", "Overhead Press",  "Shoulders",  [{weight:57.5,reps:8,rpe:7},{weight:57.5,reps:8,rpe:7.5},{weight:57.5,reps:7,rpe:8},{weight:55,reps:7,rpe:8.5}]),
+      ex("lateral-raise",  "Lateral Raise",   "Side Delts", [{weight:10,reps:15,rpe:6},{weight:10,reps:15,rpe:6.5},{weight:12,reps:12,rpe:7},{weight:12,reps:12,rpe:7.5}]),
+      ex("face-pulls",     "Face Pulls",      "Rear Delts", [{weight:20,reps:15,rpe:6},{weight:20,reps:15,rpe:6.5},{weight:20,reps:15,rpe:7}]),
+      ex("rear-delt-fly",  "Rear Delt Fly",   "Rear Delts", [{weight:12,reps:15,rpe:6},{weight:12,reps:15,rpe:7},{weight:12,reps:14,rpe:7.5}]),
+    ], "OHP up 2.5 kg."),
+    mk(W2[4], "Arms", "", "44 min", 2640, [
+      ex("barbell-curl",   "Barbell Curl",   "Biceps",  [{weight:42.5,reps:10,rpe:7},{weight:42.5,reps:10,rpe:7.5},{weight:42.5,reps:9,rpe:8}]),
+      ex("hammer-curl",    "Hammer Curl",    "Biceps",  [{weight:20,reps:12,rpe:7},{weight:20,reps:12,rpe:7.5},{weight:20,reps:11,rpe:8}]),
+      ex("tricep-pushdown","Tricep Pushdown","Triceps", [{weight:47.5,reps:12,rpe:7},{weight:47.5,reps:12,rpe:7.5},{weight:47.5,reps:11,rpe:8}]),
+      ex("skull-crushers", "Skull Crushers", "Triceps", [{weight:30,reps:10,rpe:7},{weight:30,reps:10,rpe:7.5},{weight:30,reps:9,rpe:8}]),
+    ], "Arm isolation session done."),
+
+    // ── Week 3 (days 1–3 done) ───────────────────────────────────────────────
+    mk(W3[0]!, "Chest & Triceps", "Bench 85 kg!", "59 min", 3540, [
+      ex("bench-press",            "Bench Press",            "Chest",      [{weight:85,reps:8,rpe:7},{weight:85,reps:8,rpe:7.5},{weight:85,reps:7,rpe:8},{weight:82.5,reps:7,rpe:8.5}]),
+      ex("incline-dumbbell-press", "Incline Dumbbell Press", "Upper Chest",[{weight:30,reps:10,rpe:7},{weight:30,reps:10,rpe:7.5},{weight:30,reps:9,rpe:8}]),
+      ex("cable-fly",              "Cable Fly",              "Chest",      [{weight:22,reps:12,rpe:7},{weight:22,reps:12,rpe:7.5},{weight:22,reps:11,rpe:8}]),
+      ex("tricep-pushdown",        "Tricep Pushdown",        "Triceps",    [{weight:50,reps:12,rpe:7},{weight:50,reps:12,rpe:7.5},{weight:50,reps:11,rpe:8}]),
+      ex("skull-crushers",         "Skull Crushers",         "Triceps",    [{weight:32.5,reps:10,rpe:7},{weight:32.5,reps:10,rpe:7.5},{weight:32.5,reps:9,rpe:8}]),
+    ], "Bench milestone — 85 kg."),
+    mk(W3[1]!, "Back & Biceps", "", "55 min", 3300, [
+      ex("lat-pulldown",  "Lat Pulldown",     "Lats",      [{weight:75,reps:10,rpe:7},{weight:75,reps:10,rpe:7},{weight:75,reps:9,rpe:7.5},{weight:75,reps:9,rpe:8}]),
+      ex("seated-row",    "Seated Cable Row", "Back",      [{weight:70,reps:10,rpe:7},{weight:70,reps:10,rpe:7.5},{weight:70,reps:9,rpe:8}]),
+      ex("face-pulls",    "Face Pulls",       "Rear Delts",[{weight:22,reps:15,rpe:6},{weight:22,reps:15,rpe:6.5},{weight:22,reps:15,rpe:7}]),
+      ex("barbell-curl",  "Barbell Curl",     "Biceps",    [{weight:45,reps:10,rpe:7},{weight:45,reps:10,rpe:7.5},{weight:45,reps:9,rpe:8}]),
+      ex("hammer-curl",   "Hammer Curl",      "Biceps",    [{weight:22,reps:12,rpe:7},{weight:22,reps:12,rpe:7.5},{weight:22,reps:11,rpe:8}]),
+    ], "Back volume up again."),
+    mk(W3[2]!, "Legs", "", "64 min", 3840, [
+      ex("barbell-squat",     "Barbell Squat",       "Quads",      [{weight:85,reps:8,rpe:7},{weight:85,reps:8,rpe:7.5},{weight:85,reps:7,rpe:8},{weight:82.5,reps:7,rpe:8.5}]),
+      ex("romanian-deadlift", "Romanian Deadlift",   "Hamstrings", [{weight:75,reps:10,rpe:7},{weight:75,reps:10,rpe:7.5},{weight:75,reps:9,rpe:8}]),
+      ex("leg-press",         "Leg Press",           "Quads",      [{weight:130,reps:12,rpe:7},{weight:130,reps:12,rpe:7.5},{weight:130,reps:11,rpe:8}]),
+      ex("leg-extension",     "Leg Extension",       "Quads",      [{weight:55,reps:15,rpe:7},{weight:55,reps:15,rpe:7.5},{weight:55,reps:13,rpe:8}]),
+      ex("calf-raise",        "Standing Calf Raise", "Calves",     [{weight:42.5,reps:20,rpe:6},{weight:42.5,reps:20,rpe:6.5},{weight:42.5,reps:18,rpe:7}]),
+    ], "Squat 85 kg. Shoulders and Arms still to go this week."),
+  ];
+
+  return { plan, workouts };
+}
+
 export function App() {
   const storedPlanBuilderState = getStoredPlanBuilderDraft();
   const [appView, setAppView] = useState<AppView>("home");
@@ -14692,6 +14909,15 @@ export function App() {
           setAppView("home");
           setShowDevPage(false);
         }}
+        onSeedRepIQData={() => {
+          const { plan, workouts } = buildSeedRepIQData();
+          persistRepIQPlan(plan);
+          persistSavedWorkoutsList(workouts);
+          setRepiqPlan(plan);
+          setSavedWorkoutsList(workouts);
+          setAppView("home");
+          setShowDevPage(false);
+        }}
         onClearHistoryData={() => {
           window.localStorage.removeItem(repiqPlanStorageKey);
           window.localStorage.removeItem(savedWorkoutsStorageKey);
@@ -15359,7 +15585,7 @@ export function App() {
               <h1 className="home-greeting">
                 {firstName ? `${greeting}, ${firstName}` : greeting}
               </h1>
-              {streak > 0 && (
+              {streak >= 2 && (
                 <div className="home-streak-badge">
                   <span className="home-streak-fire">🔥</span>
                   <span className="home-streak-count">{streak}</span>
