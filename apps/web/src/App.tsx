@@ -10822,6 +10822,40 @@ function sessionToMuscleCoverage(exercises: FinishedExerciseSummary[]): Record<s
   return result;
 }
 
+// Compact home-screen muscle nudge — only renders when ≥1 muscle is "due" (5+ days)
+function HomeMuscleNudge({
+  coverage,
+  onTap,
+}: {
+  coverage: Record<string, MuscleStatus>;
+  onTap: () => void;
+}) {
+  const hasHistory = HEATMAP_MUSCLES.some((m) => coverage[m] !== "none");
+  const due = HEATMAP_MUSCLES.filter((m) => coverage[m] === "due");
+  if (!hasHistory || due.length === 0) return null;
+
+  const display =
+    due.length <= 3
+      ? due.join(" · ")
+      : `${due.slice(0, 2).join(", ")} +${due.length - 2} more`;
+
+  return (
+    <button
+      type="button"
+      className="home-muscle-nudge home-card-tappable"
+      onClick={onTap}
+      aria-label="View muscle coverage in Analyzer"
+    >
+      <div className="home-muscle-nudge-left">
+        <p className="home-goal-label">Muscle Coverage</p>
+        <p className="home-muscle-nudge-muscles">{display}</p>
+        <p className="home-muscle-nudge-sub">{due.length === 1 ? "hasn't been trained recently" : "haven't been trained recently"}</p>
+      </div>
+      <span className="home-muscle-nudge-cta">Analyze →</span>
+    </button>
+  );
+}
+
 // Muscle overlay paths in a 100×140 coordinate space aligned to the anatomy PNG.
 // Each path is drawn to roughly match the muscle group's anatomical position.
 // The paths are rendered with mix-blend-mode:multiply over a greyscale PNG base,
@@ -16104,16 +16138,6 @@ export function App() {
             <div className="home-header-actions">
               <button
                 type="button"
-                className="profile-avatar-btn"
-                onClick={() => setAppView("profile")}
-                aria-label="Open profile"
-              >
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-                </svg>
-              </button>
-              <button
-                type="button"
                 className="theme-toggle-btn"
                 aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
                 onClick={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
@@ -16145,7 +16169,7 @@ export function App() {
               </div>
             )}
 
-            {/* ── Next Session Card — top of Home for all users ── */}
+            {/* ── Next Session Card — primary action ── */}
             <NextSessionCard
               repiqPlan={repiqPlan}
               savedWorkoutsCount={savedWorkoutsList.length}
@@ -16160,9 +16184,11 @@ export function App() {
               onReviewPlan={() => { setPlannerInitialMode("repiq"); setAppView("planner"); }}
             />
 
-            {/* ── This week snapshot ── */}
+            {/* ── Section divider: action → review ── */}
+            <div className="home-section-label">This Week</div>
+
+            {/* ── This week dots ── */}
             <article className="home-week-card">
-              <p className="home-week-title">This Week</p>
               <div className="home-week-dots">
                 {DAY_LABELS.map((label, i) => (
                   <div key={i} className={`home-week-dot-col${i === todayDayNum ? " is-today" : ""}`}>
@@ -16181,6 +16207,31 @@ export function App() {
                 <p className="home-week-meta home-week-meta-empty">No workouts yet this week</p>
               )}
             </article>
+
+            {/* ── Last workout — no-plan users, recent session (≤14 days) ── */}
+            {showLastWorkout && (
+              <article
+                className="session-card home-latest-card"
+                onClick={() => { setReportWorkout(latestWorkout!); setAppView("report"); }}
+                style={{ cursor: "pointer" }}
+              >
+                <div className="home-latest-info">
+                  <p className="home-latest-label">
+                    Last Workout · {getRelativeDate(latestWorkout!.date ?? latestWorkout!.savedAt)}
+                  </p>
+                  <h2 className="home-latest-name">{latestWorkout!.sessionName}</h2>
+                  <p className="home-latest-meta">
+                    {latestWorkout!.duration}
+                    {latestWorkout!.totalSets > 0 ? ` · ${latestWorkout!.totalSets} sets` : ""}
+                    {latestWorkout!.totalVolume > 0 ? ` · ${Math.round(latestWorkout!.totalVolume).toLocaleString()} kg` : ""}
+                  </p>
+                </div>
+                <span className="home-latest-chevron" aria-hidden="true">›</span>
+              </article>
+            )}
+
+            {/* ── Section divider: this week → progress ── */}
+            <div className="home-section-label">Progress</div>
 
             {/* ── Training Trend card ── */}
             <div
@@ -16218,38 +16269,11 @@ export function App() {
               <p className="home-card-tap-hint">{trainingTrend.tapHint}</p>
             </div>
 
-            {/* ── Muscle coverage card ── */}
-            <div
-              className="home-card-tappable"
-              role="button"
-              tabIndex={0}
-              onClick={() => { setInsightsInitialTab("analyzer"); setAppView("insights"); }}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setInsightsInitialTab("analyzer"); setAppView("insights"); } }}
-            >
-              <MuscleCoverageCard coverage={muscleCoverage} mode="history" tapHint="View in Analyzer →" />
-            </div>
-
-            {/* ── Last workout — no-plan users, recent session (≤14 days) ── */}
-            {showLastWorkout && (
-              <article
-                className="session-card home-latest-card"
-                onClick={() => { setReportWorkout(latestWorkout!); setAppView("report"); }}
-                style={{ cursor: "pointer" }}
-              >
-                <div className="home-latest-info">
-                  <p className="home-latest-label">
-                    Last Workout · {getRelativeDate(latestWorkout!.date ?? latestWorkout!.savedAt)}
-                  </p>
-                  <h2 className="home-latest-name">{latestWorkout!.sessionName}</h2>
-                  <p className="home-latest-meta">
-                    {latestWorkout!.duration}
-                    {latestWorkout!.totalSets > 0 ? ` · ${latestWorkout!.totalSets} sets` : ""}
-                    {latestWorkout!.totalVolume > 0 ? ` · ${Math.round(latestWorkout!.totalVolume).toLocaleString()} kg` : ""}
-                  </p>
-                </div>
-                <span className="home-latest-chevron" aria-hidden="true">›</span>
-              </article>
-            )}
+            {/* ── Muscle nudge — compact, only shows when muscles are due ── */}
+            <HomeMuscleNudge
+              coverage={muscleCoverage}
+              onTap={() => { setInsightsInitialTab("analyzer"); setAppView("insights"); }}
+            />
 
 
           </section>

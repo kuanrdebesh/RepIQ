@@ -392,13 +392,59 @@ ol {
   border-radius: 16px;
   padding: 14px 16px 12px;
 }
-.home-week-title {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+
+/* Section divider label — "This Week" / "Progress" */
+.home-section-label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 0 0 10px;
+  opacity: 0.7;
+  padding: 4px 2px 0;
+  margin-top: 4px;
+}
+
+/* Compact muscle nudge */
+.home-muscle-nudge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px 16px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+.home-muscle-nudge-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.home-muscle-nudge-muscles {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-muscle-nudge-sub {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin: 0;
+}
+.home-muscle-nudge-cta {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .home-week-dots {
   display: flex;
