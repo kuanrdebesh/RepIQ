@@ -12435,42 +12435,121 @@ function buildSeedRepIQData(): { plan: RepIQPlan; workouts: SavedWorkoutData[] }
 // ── Glossary Page ─────────────────────────────────────────────────────────────
 const GLOSSARY_DATA: { section: string; terms: { name: string; def: string }[] }[] = [
   {
-    section: "Exercises",
+    section: "Effort & Intensity",
     terms: [
-      { name: "Compound", def: "A movement that recruits two or more muscle groups and crosses multiple joints. Examples: squat, deadlift, bench press, pull-up. These should form the core of most training programmes." },
-      { name: "Isolation", def: "A movement that targets a single muscle group with minimal involvement from others. Examples: bicep curl, leg extension, lateral raise. Best used to supplement compound work." },
-      { name: "Unilateral", def: "Training one limb at a time. Examples: single-leg press, dumbbell lunges, single-arm row. Identifies and corrects strength imbalances between sides." },
+      {
+        name: "RPE — Rate of Perceived Exertion",
+        def: "A 1–10 scale that measures how hard a set feels relative to your maximum effort.\n\nRPE 10 = absolutely nothing left, couldn't do one more rep.\nRPE 9 = could have done 1 more rep.\nRPE 8 = could have done 2 more reps.\nRPE 7 = could have done 3 more reps.\nRPE 6 = 4+ reps left — a warm-up effort.\n\nLog RPE per set to track fatigue accumulation over a session and week. The same weight at RPE 8 early in a programme may creep to RPE 9 by week 4 — that's a signal to deload.",
+      },
+      {
+        name: "RIR — Reps In Reserve",
+        def: "The flip side of RPE. RIR counts how many reps you had left in the tank at the end of a set.\n\nRIR 0 = failure (RPE 10). RIR 1 = 1 rep left (RPE 9). RIR 2 = 2 reps left (RPE 8).\n\nRIR is more intuitive for many lifters: instead of rating difficulty, you simply ask 'how many more could I have done?' Both RPE and RIR are useful — use whichever clicks. RepIQ accepts either.",
+      },
+      {
+        name: "1RM — One Rep Max",
+        def: "The maximum weight you can lift for exactly one rep with full control and good form. Used as a reference to set training percentages (e.g. work at 75% of 1RM).\n\nYou can estimate your 1RM without testing it to failure. The Epley formula: 1RM ≈ weight × (1 + reps ÷ 30). Example: 80 kg × 10 reps → estimated 1RM ≈ 107 kg.\n\nRepIQ uses logged sets to estimate 1RM trends over time.",
+      },
+      {
+        name: "Training to Failure",
+        def: "Performing reps until you cannot complete another rep with good form. This is RPE 10 / RIR 0.\n\nTechnical failure = you can't maintain form but muscles aren't fully exhausted.\nAbsolute failure = muscles genuinely cannot contract to complete the movement.\n\nMost evidence suggests training to 1–3 RIR (RPE 7–9) provides nearly identical hypertrophy stimulus with lower injury risk and faster recovery. Reserve true failure training for occasional intensification weeks.",
+      },
     ],
   },
   {
-    section: "Training Methods",
+    section: "Exercise Types",
     terms: [
-      { name: "Progressive Overload", def: "Gradually increasing the demands placed on the body over time — through more weight, reps, sets, or reduced rest. The fundamental driver of all strength and muscle gains." },
-      { name: "Deload", def: "A planned reduction in training volume or intensity (typically 40–60%) for one week, allowing the body to fully recover and adapt before the next training block." },
-      { name: "RPE (Rate of Perceived Exertion)", def: "A 1–10 scale for how hard a set feels. RPE 10 = absolute max effort, nothing left. RPE 8 = could do 2 more reps. RPE 6 = could do 4+ more reps. Log RPE after each set to track fatigue over time." },
+      {
+        name: "Compound",
+        def: "A movement that involves two or more joints and recruits multiple muscle groups simultaneously. Examples: squat (hips + knees), deadlift (hips + spine), bench press (shoulder + elbow), pull-up (shoulder + elbow).\n\nCompounds deliver the most training stimulus per set and should make up the majority of your session. They also have the largest carryover to real-world strength.",
+      },
+      {
+        name: "Isolation",
+        def: "A movement that targets a single muscle group across a single joint, with minimal involvement from other muscles. Examples: bicep curl (elbow flexion only), leg extension (knee extension only), lateral raise (shoulder abduction only).\n\nIsolation work is best used to address weak points or provide additional volume for a muscle that your compound work doesn't fully reach. Not a replacement for compounds.",
+      },
+      {
+        name: "Unilateral",
+        def: "Training one limb at a time — one arm or one leg independently. Examples: single-leg press, Bulgarian split squat, single-arm dumbbell row, single-leg Romanian deadlift.\n\nBenefits: identifies and corrects left-right strength imbalances; improves stability and proprioception; each side gets full range of motion without the dominant side compensating.\n\nIn RepIQ, log the weight per side (not combined). If you used a 20 kg dumbbell per leg, log 20 — RepIQ calculates volume correctly.",
+      },
     ],
   },
   {
     section: "Set Types",
     terms: [
-      { name: "Superset", def: "Two exercises performed back-to-back with no rest between them, followed by rest. Antagonist supersets (e.g. bench + row) are most efficient and minimise strength loss." },
-      { name: "Drop Set", def: "A set taken to (or near) failure, then immediately reducing the weight by 20–30% and continuing for more reps. Maximises metabolic stress. Use sparingly — 1–2 per session." },
-      { name: "1RM (One Rep Max)", def: "The maximum weight you can lift for a single rep with good form. Used to calculate training percentages. You can estimate your 1RM from submaximal sets using the Epley formula." },
+      {
+        name: "Superset",
+        def: "Two exercises performed back-to-back with no rest between them, then rest after both are done.\n\nAntagonist superset (recommended): pair muscles that oppose each other — e.g. bench press + barbell row, or bicep curl + tricep pushdown. One muscle recovers while the other works, so strength loss is minimal and time is halved.\n\nAgonist superset: pair similar muscles — e.g. dumbbell flye + bench press. More fatiguing; used for intensification.\n\nIn RepIQ: tap the superset icon on the first exercise, then select the paired exercise. Both are grouped in your log.",
+      },
+      {
+        name: "Drop Set",
+        def: "A set taken to or near failure, then immediately reducing the weight by 20–30% and continuing for more reps — no rest between the drop.\n\nPurpose: maximises metabolic stress and muscle fibre recruitment beyond what a normal working set reaches. Useful for hypertrophy.\n\nUse sparingly: 1–2 drop sets per session is plenty. Overuse leads to excessive fatigue that degrades quality across the rest of your workout.\n\nIn RepIQ: log your working set, then immediately add a new set row at the reduced weight and tag it as a drop set.",
+      },
+      {
+        name: "AMRAP — As Many Reps As Possible",
+        def: "A set where you perform as many reps as you can with good form, typically at a given weight. Used as a max-effort back-off set or as a testing tool.\n\nCommonly programmed as the final set: 'Do 3×8, then AMRAP at the same weight.' The rep count tells you whether to progress the load next session.\n\nLog the actual reps completed. RepIQ will use this to update your estimated 1RM.",
+      },
     ],
   },
   {
     section: "Programming",
     terms: [
-      { name: "Mesocycle", def: "A structured training block, typically 4–8 weeks, built around a specific goal (e.g. hypertrophy, strength peak). Volume and intensity are progressively increased each week before a deload." },
-      { name: "Split", def: "How your training is divided across the week. Common splits: Full Body (2–3×/wk), Upper/Lower (4×/wk), Push/Pull/Legs (5–6×/wk), Body Part (5–6×/wk, advanced)." },
+      {
+        name: "Progressive Overload",
+        def: "The principle of systematically increasing the stress placed on your body over time so it continues to adapt. You can achieve progressive overload by:\n\n• Adding weight to the bar\n• Increasing reps at the same weight\n• Adding sets (more volume)\n• Reducing rest periods\n• Improving technique (more effective stimulus at the same load)\n\nWithout progressive overload, training becomes maintenance at best. RepIQ's Training Trend card tracks whether your weekly volume is climbing — that is the most direct measurable signal of overload.",
+      },
+      {
+        name: "Volume",
+        def: "The total amount of work done, most commonly measured as sets × reps × weight (kg). Also expressed as 'working sets' — the number of challenging sets per muscle group per week.\n\nResearch consensus: 10–20 working sets per muscle group per week is the effective hypertrophy range for most people. Below 10 is maintenance; above 20 risks overtraining.\n\nRepIQ measures volume as total kg lifted per session and week, and tracks week-over-week volume trends in the Training Trend card.",
+      },
+      {
+        name: "Mesocycle",
+        def: "A structured training block with a defined goal, typically 4–8 weeks. A mesocycle usually follows a pattern of weekly progressive overload followed by a deload at the end.\n\nExample 8-week hypertrophy mesocycle:\nWeeks 1–2: Moderate volume, RPE 7–8\nWeeks 3–4: Higher volume, RPE 8\nWeeks 5–6: Higher volume, RPE 8–9\nWeek 7: Peak week, highest intensity\nWeek 8: Deload — 40–50% volume reduction\n\nRepIQ plan lengths are set in weeks and correspond to mesocycle length.",
+      },
+      {
+        name: "Deload",
+        def: "A planned reduction in training volume or intensity — typically 40–60% less volume for one week — to allow the body to fully recover and supercompensate before the next training block.\n\nWhen to deload: after 4–6 hard weeks; when joints feel beaten up; when motivation is unusually low; when performance is stagnating or declining despite good sleep and nutrition.\n\nA deload is not a week off — you still train, but easier. This is different from a rest week (no training at all), which is valid but less common.",
+      },
+      {
+        name: "Training Split",
+        def: "How your training is divided across the week. Common splits by experience level:\n\nFull Body (2–3×/wk): each session hits all major muscle groups. Best for beginners and time-constrained lifters. High frequency drives faster skill and strength acquisition.\n\nUpper / Lower (4×/wk): two upper days, two lower days. Good balance of frequency and volume. Strong choice for intermediates.\n\nPush / Pull / Legs (5–6×/wk): each muscle group trained ~2× per week. Popular intermediate–advanced split. Requires consistent attendance.\n\nBody Part (5–6×/wk): one or two muscle groups per session. Allows high volume per muscle. Requires 5–6 sessions/week to maintain adequate frequency.",
+      },
+      {
+        name: "Hypertrophy",
+        def: "The physiological process of muscle fibres increasing in size (cross-sectional area) as an adaptation to training stress. The primary goal of bodybuilding and physique training.\n\nKey drivers: sufficient volume (10–20 sets/muscle/week), progressive overload, proximity to failure (RIR 0–3), adequate protein (1.6–2.2 g/kg/day), and sleep.\n\nHypertrophy training typically uses 6–20 rep ranges at moderate loads (60–80% 1RM). It is distinct from pure strength training, which prioritises neural adaptations at heavier loads (1–5 reps).",
+      },
+    ],
+  },
+  {
+    section: "RepIQ Concepts",
+    terms: [
+      {
+        name: "Training Zone",
+        def: "How RepIQ classifies each week's training based on total volume compared to the previous week.\n\nProgress: week's volume is more than 5% higher than the prior week — you're applying progressive overload.\n\nMaintaining: week's volume is within ±5–10% of the prior week — load is steady.\n\nPlateau: week's volume is more than 10% lower than the prior week — stimulus is declining.\n\nMissed: no sessions logged that week.\n\nThe Training Trend card on the Home screen shows your last 3 weeks and current zone. Tap to see the muscle-level breakdown in Analyzer.",
+      },
+      {
+        name: "Quality Week (Streak)",
+        def: "For the weekly streak badge, RepIQ counts a week as 'quality' only if it meets both criteria:\n\n1. Sessions: 2 or more sessions in the week. OR 1 session if it covers 3+ canonical muscle groups.\n2. Muscle coverage: 3 or more distinct muscle groups trained (e.g. Chest + Back + Legs).\n\nA single session hitting only one muscle group (e.g. biceps only) counts as a partial week and does not extend the streak. The streak measures consistent, balanced training — not just showing up.",
+      },
+      {
+        name: "Muscle Coverage",
+        def: "The number of distinct canonical muscle groups trained in a given period. RepIQ uses 10 canonical groups: Chest, Back, Shoulders, Biceps, Triceps, Core, Quads, Hamstrings, Glutes, and Calves.\n\nThe muscle coverage card on the Home screen shows which groups have been trained recently and which are overdue. Coverage of 7–10 groups over a training week indicates a well-balanced programme.",
+      },
     ],
   },
   {
     section: "Logging How-Tos",
     terms: [
-      { name: "Logging a Superset", def: "In the exercise list, tap the ⊕ superset button on the first exercise, then select the paired exercise. Both will appear grouped and log together in your set rows." },
-      { name: "Logging a Drop Set", def: "Log your top set normally, then immediately add another set for the same exercise at reduced weight — no rest logged between them. Tag it as a drop set using the set type selector." },
-      { name: "Logging Unilateral", def: "Log the weight per side (not combined). If you did 20 kg dumbbell lunges per leg, log 20 — not 40. RepIQ calculates volume per side consistently." },
+      {
+        name: "How to log a Superset",
+        def: "1. In the exercise list, find the first exercise of the pair.\n2. Tap the superset (⊕) icon on that exercise card.\n3. Search for and select the paired exercise.\n4. Both exercises now appear grouped — sets for both log together.\n5. Complete one set of exercise A, then immediately one set of exercise B, then rest.",
+      },
+      {
+        name: "How to log a Drop Set",
+        def: "1. Complete and log your normal working set.\n2. Without resting, reduce the weight (typically 20–30%).\n3. Add a new set row for the same exercise at the reduced weight.\n4. Tap the set type selector and mark it as a Drop Set.\n\nRepIQ will show the drop visually and exclude it from your progressive overload comparison (so it doesn't inflate your top-set weight).",
+      },
+      {
+        name: "How to log Unilateral exercises",
+        def: "Always log the weight per side, not the combined total.\n\nExample: Bulgarian split squat with 20 kg dumbbells in each hand → log 20 kg (not 40 kg).\n\nRepIQ calculates volume assuming the logged weight is per-side for exercises tagged as unilateral. This keeps volume comparable to bilateral movements and accurate across sessions.",
+      },
     ],
   },
 ];

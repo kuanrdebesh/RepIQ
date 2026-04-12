@@ -427,7 +427,8 @@ ol {
 }
 .home-week-dot-col.is-today .home-week-dot:not(.is-done) {
   border-color: var(--accent);
-  border-style: dashed;
+  border-width: 2px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
 }
 .home-week-day-label {
   font-size: 0.67rem;
@@ -11551,6 +11552,7 @@ ol {
   color: var(--muted);
   margin: 0;
   line-height: 1.55;
+  white-space: pre-line;   /* respect \n line breaks in definitions */
 }
 
 /* ── More sheet ────────────────────────────────────────────────────────────── */
