@@ -58,7 +58,7 @@ type ExerciseDraft = {
 type DetailTab = "summary" | "history" | "howto";
 type ThemePreference = "light" | "dark" | "system";
 type DraftSetType = "warmup" | "normal" | "drop" | "restpause" | "failure";
-type AppView = "home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "profile" | "history-detail";
+type AppView = "home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "profile" | "history-detail" | "glossary" | "more";
 
 // ── Psychological Data Layer ──────────────────────────────────────────────────
 // V1: types and storage stubs defined now so data is captured from day one.
@@ -10731,8 +10731,22 @@ function MusclesWorkedPage({
   );
 }
 
+// ── Info Icon ─────────────────────────────────────────────────────────────────
+function InfoIcon({ onClick }: { onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void }) {
+  return (
+    <button
+      type="button"
+      className="info-icon"
+      onClick={onClick}
+      aria-label="What does this mean?"
+    >
+      <em>i</em>
+    </button>
+  );
+}
+
 // ── Bottom Navigation Bar ─────────────────────────────────────────────────────
-function BottomNav({ activeView, onNavigate }: { activeView: AppView; onNavigate: (view: "home" | "planner" | "insights") => void }) {
+function BottomNav({ activeView, onNavigate, onMore }: { activeView: AppView; onNavigate: (view: "home" | "planner" | "insights") => void; onMore?: () => void }) {
   return (
     <nav className="bottom-nav" aria-label="Main navigation">
       <button className={`bottom-nav-tab${activeView === "home" ? " is-active" : ""}`} type="button" onClick={() => onNavigate("home")} aria-label="Home">
@@ -10752,6 +10766,14 @@ function BottomNav({ activeView, onNavigate }: { activeView: AppView; onNavigate
           <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
         </svg>
         <span>Insights</span>
+      </button>
+      <button className={`bottom-nav-tab${activeView === "more" ? " is-active" : ""}`} type="button" onClick={onMore} aria-label="More">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+        <span>More</span>
       </button>
     </nav>
   );
@@ -11704,16 +11726,22 @@ function computeStreak(workouts: SavedWorkoutData[]): number {
   return streak;
 }
 
-// A "quality week" requires BOTH:
-//   1. Sessions ≥ max(2, round(target × 0.6))  — floor of 2 means 1 session never counts
-//   2. Unique canonical muscle groups ≥ 3       — prevents single-muscle-focus weeks
+/// A "quality week" requires either:
+//   - sessions >= 2 (regardless of muscle coverage), OR
+//   - sessions === 1 AND muscles.size >= 3 (single thorough session)
+// Anything else (0 sessions, or 1 session with <3 muscle groups) is NOT quality.
 function isQualityWeek(
   sessions: number,
   muscles: Set<string>,
-  targetPerWeek: number,
+  _targetPerWeek: number,
 ): boolean {
-  const sessionGate = Math.max(2, Math.round(targetPerWeek * 0.6));
-  return sessions >= sessionGate && muscles.size >= 3;
+  if (sessions >= 2) return true;
+  if (sessions === 1 && muscles.size >= 3) return true;
+  return false;
+}
+
+function isPartialWeek(sessions: number, muscles: Set<string>): boolean {
+  return sessions === 1 && muscles.size < 3;
 }
 
 function computeWeekStreak(workouts: SavedWorkoutData[], targetPerWeek: number): number {
@@ -11777,7 +11805,7 @@ function getISOWeekNumber(mondayMs: number): number {
 
 function computeTrainingTrend(workouts: SavedWorkoutData[]): {
   weekZones: TrainingZone[];   // last 4 weeks, oldest → newest
-  recentWeeks: { label: string; zone: TrainingZone; isCurrent: boolean }[]; // last 3 for boxes
+  recentWeeks: { label: string; zone: TrainingZone; isCurrent: boolean; isPartial: boolean }[]; // last 3 for boxes
   currentZone: TrainingZone;
   insight: string;
   zoneLabel: string;
@@ -11795,11 +11823,20 @@ function computeTrainingTrend(workouts: SavedWorkoutData[]): {
 
   // Build map: weekMondayMs → total volume
   const weekVolMap = new Map<number, number>();
+  // Build map: weekMondayMs → { sessions, muscles } for partial detection
+  const weekSessMap = new Map<number, { sessions: number; muscles: Set<string> }>();
   for (const w of workouts) {
     const ds = (w.date ?? w.savedAt).slice(0, 10);
     const [y, mo, d] = ds.split("-").map(Number);
     const mon = getMondayUtc(new Date(y, mo - 1, d));
     weekVolMap.set(mon, (weekVolMap.get(mon) ?? 0) + (w.totalVolume ?? 0));
+    if (!weekSessMap.has(mon)) weekSessMap.set(mon, { sessions: 0, muscles: new Set() });
+    const entry = weekSessMap.get(mon)!;
+    entry.sessions += 1;
+    for (const ex of w.exercises) {
+      const canonical = getCanonicalMuscle(ex.primaryMuscle);
+      if (canonical !== "Other") entry.muscles.add(canonical);
+    }
   }
 
   // Volumes for last 5 weeks (oldest first) to compute 4 zone deltas
@@ -11825,10 +11862,16 @@ function computeTrainingTrend(workouts: SavedWorkoutData[]): {
   const recentWeeks = [1, 2, 3].map((idx) => {
     const offset = 3 - idx; // 2, 1, 0
     const monMs = currentMon - offset * msPerWeek;
+    const zone = weekZones[idx];
+    const sessEntry = weekSessMap.get(monMs);
+    const partial = sessEntry
+      ? isPartialWeek(sessEntry.sessions, sessEntry.muscles) && zone !== "missed"
+      : false;
     return {
       label: `W${getISOWeekNumber(monMs)}`,
-      zone: weekZones[idx],
+      zone,
       isCurrent: offset === 0,
+      isPartial: partial,
     };
   });
 
@@ -12389,9 +12432,107 @@ function buildSeedRepIQData(): { plan: RepIQPlan; workouts: SavedWorkoutData[] }
   return { plan, workouts };
 }
 
+// ── Glossary Page ─────────────────────────────────────────────────────────────
+const GLOSSARY_DATA: { section: string; terms: { name: string; def: string }[] }[] = [
+  {
+    section: "Exercises",
+    terms: [
+      { name: "Compound", def: "A movement that recruits two or more muscle groups and crosses multiple joints. Examples: squat, deadlift, bench press, pull-up. These should form the core of most training programmes." },
+      { name: "Isolation", def: "A movement that targets a single muscle group with minimal involvement from others. Examples: bicep curl, leg extension, lateral raise. Best used to supplement compound work." },
+      { name: "Unilateral", def: "Training one limb at a time. Examples: single-leg press, dumbbell lunges, single-arm row. Identifies and corrects strength imbalances between sides." },
+    ],
+  },
+  {
+    section: "Training Methods",
+    terms: [
+      { name: "Progressive Overload", def: "Gradually increasing the demands placed on the body over time — through more weight, reps, sets, or reduced rest. The fundamental driver of all strength and muscle gains." },
+      { name: "Deload", def: "A planned reduction in training volume or intensity (typically 40–60%) for one week, allowing the body to fully recover and adapt before the next training block." },
+      { name: "RPE (Rate of Perceived Exertion)", def: "A 1–10 scale for how hard a set feels. RPE 10 = absolute max effort, nothing left. RPE 8 = could do 2 more reps. RPE 6 = could do 4+ more reps. Log RPE after each set to track fatigue over time." },
+    ],
+  },
+  {
+    section: "Set Types",
+    terms: [
+      { name: "Superset", def: "Two exercises performed back-to-back with no rest between them, followed by rest. Antagonist supersets (e.g. bench + row) are most efficient and minimise strength loss." },
+      { name: "Drop Set", def: "A set taken to (or near) failure, then immediately reducing the weight by 20–30% and continuing for more reps. Maximises metabolic stress. Use sparingly — 1–2 per session." },
+      { name: "1RM (One Rep Max)", def: "The maximum weight you can lift for a single rep with good form. Used to calculate training percentages. You can estimate your 1RM from submaximal sets using the Epley formula." },
+    ],
+  },
+  {
+    section: "Programming",
+    terms: [
+      { name: "Mesocycle", def: "A structured training block, typically 4–8 weeks, built around a specific goal (e.g. hypertrophy, strength peak). Volume and intensity are progressively increased each week before a deload." },
+      { name: "Split", def: "How your training is divided across the week. Common splits: Full Body (2–3×/wk), Upper/Lower (4×/wk), Push/Pull/Legs (5–6×/wk), Body Part (5–6×/wk, advanced)." },
+    ],
+  },
+  {
+    section: "Logging How-Tos",
+    terms: [
+      { name: "Logging a Superset", def: "In the exercise list, tap the ⊕ superset button on the first exercise, then select the paired exercise. Both will appear grouped and log together in your set rows." },
+      { name: "Logging a Drop Set", def: "Log your top set normally, then immediately add another set for the same exercise at reduced weight — no rest logged between them. Tag it as a drop set using the set type selector." },
+      { name: "Logging Unilateral", def: "Log the weight per side (not combined). If you did 20 kg dumbbell lunges per leg, log 20 — not 40. RepIQ calculates volume per side consistently." },
+    ],
+  },
+];
+
+function GlossaryPage({ onBack, resolvedTheme }: { onBack: () => void; resolvedTheme: string }) {
+  return (
+    <div className="glossary-shell" data-theme={resolvedTheme}>
+      <header className="glossary-header">
+        <button className="glossary-back-btn" type="button" onClick={onBack} aria-label="Back">
+          ← Back
+        </button>
+        <h1 className="glossary-title">Fitness Glossary</h1>
+        <div style={{ width: 60 }} />
+      </header>
+      <div className="glossary-body">
+        {GLOSSARY_DATA.map((sec) => (
+          <div key={sec.section}>
+            <p className="glossary-section-title">{sec.section}</p>
+            {sec.terms.map((term) => (
+              <div key={term.name} className="glossary-term">
+                <p className="glossary-term-name">{term.name}</p>
+                <p className="glossary-term-def">{term.def}</p>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── More Sheet ────────────────────────────────────────────────────────────────
+function MoreSheet({ open, onClose, onGoTo, resolvedTheme }: { open: boolean; onClose: () => void; onGoTo: (view: AppView) => void; resolvedTheme: string }) {
+  if (!open) return null;
+  return (
+    <div className="more-sheet-overlay" data-theme={resolvedTheme} onClick={onClose}>
+      <div className="more-sheet-card" onClick={(e) => e.stopPropagation()}>
+        <div className="more-sheet-handle" />
+        <p className="more-sheet-title">More</p>
+        <button className="more-sheet-item" type="button" onClick={() => onGoTo("profile")}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+          Profile
+        </button>
+        <button className="more-sheet-item" type="button" onClick={() => onGoTo("glossary")}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+          </svg>
+          Glossary
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function App() {
   const storedPlanBuilderState = getStoredPlanBuilderDraft();
   const [appView, setAppView] = useState<AppView>("home");
+  const [showMoreSheet, setShowMoreSheet] = useState(false);
   const [insightsInitialTab, setInsightsInitialTab] = useState<"analyzer" | "reports">("reports");
   const [hasActiveWorkout, setHasActiveWorkout] = useState(false);
   const [clockTick, setClockTick] = useState(() => Date.now());
@@ -15180,7 +15321,8 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => { setEditingCustomExerciseId(null); setAppView(view); }} />
+        <BottomNav activeView={appView} onNavigate={(view) => { setEditingCustomExerciseId(null); setAppView(view); }} onMore={() => setShowMoreSheet(true)} />
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
   }
@@ -15213,7 +15355,8 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => { setDetailsExerciseId(null); setAppView(view); }} />
+        <BottomNav activeView={appView} onNavigate={(view) => { setDetailsExerciseId(null); setAppView(view); }} onMore={() => setShowMoreSheet(true)} />
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
   }
@@ -15230,7 +15373,8 @@ export function App() {
           }}
           onBack={() => setMusclesExerciseId(null)}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => { setMusclesExerciseId(null); setAppView(view); }} />
+        <BottomNav activeView={appView} onNavigate={(view) => { setMusclesExerciseId(null); setAppView(view); }} onMore={() => setShowMoreSheet(true)} />
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
   }
@@ -15260,7 +15404,8 @@ export function App() {
           preFilterMuscle={replaceTarget?.primaryMuscle}
           replaceMode={Boolean(replaceTarget)}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => { setAddExerciseOpen(false); setSmartReplaceExerciseId(null); setAppView(view); }} />
+        <BottomNav activeView={appView} onNavigate={(view) => { setAddExerciseOpen(false); setSmartReplaceExerciseId(null); setAppView(view); }} onMore={() => setShowMoreSheet(true)} />
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
   }
@@ -15275,7 +15420,7 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
         {/* ── RepIQ plan update prompt ─────────────────────────────────────── */}
         {repiqUpdatePrompt && (
           <div
@@ -15314,6 +15459,7 @@ export function App() {
           </div>
         )}
         {/* cross-plan prompt removed — plan is flagged silently; review notice shown inline on home and planner */}
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
   }
@@ -15378,7 +15524,8 @@ export function App() {
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
           initialTab={insightsInitialTab}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
   }
@@ -15391,7 +15538,19 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
+      </div>
+    );
+  }
+
+  if (appView === "glossary") {
+    return (
+      <div data-theme={resolvedTheme} style={{ height: "100dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        <GlossaryPage
+          resolvedTheme={resolvedTheme}
+          onBack={() => setAppView("home")}
+        />
       </div>
     );
   }
@@ -15406,7 +15565,8 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
   }
@@ -15441,7 +15601,7 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
         {templateApplyPromptImages && (
           <section className="sheet-overlay leave-center-overlay" onClick={() => setTemplateApplyPromptImages(null)}>
             <div className="leave-center-card" onClick={(event) => event.stopPropagation()}>
@@ -15474,6 +15634,7 @@ export function App() {
             </div>
           </section>
         )}
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
   }
@@ -15572,7 +15733,7 @@ export function App() {
           }}
           onSaveHistoryWorkout={saveHistoryWorkoutToMyWorkouts}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
 
         {hasActiveWorkout && (
           <ActiveWorkoutTray
@@ -15665,6 +15826,7 @@ export function App() {
             </div>
           </section>
         )}
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
   }
@@ -15699,7 +15861,7 @@ export function App() {
             resolvedTheme={resolvedTheme}
             onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
           />
-          <BottomNav activeView={appView} onNavigate={(view) => { setBuilderAddExerciseOpen(false); setAppView(view); }} />
+          <BottomNav activeView={appView} onNavigate={(view) => { setBuilderAddExerciseOpen(false); setAppView(view); }} onMore={() => setShowMoreSheet(true)} />
           {hasActiveWorkout && (
             <ActiveWorkoutTray
               sessionName={workoutMeta.sessionName}
@@ -15708,6 +15870,7 @@ export function App() {
               onDiscardRequest={() => { setDiscardReturnView("planner"); setTrayDiscardOpen(true); }}
             />
           )}
+          <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
         </div>
       );
     }
@@ -15743,7 +15906,7 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
         {hasActiveWorkout && (
           <ActiveWorkoutTray
             sessionName={workoutMeta.sessionName}
@@ -15752,6 +15915,7 @@ export function App() {
             onDiscardRequest={() => { setDiscardReturnView("planner"); setTrayDiscardOpen(true); }}
           />
         )}
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
   }
@@ -15787,26 +15951,29 @@ export function App() {
                 {firstName ? `${greeting}, ${firstName}` : greeting}
               </h1>
               {(streak >= 2 || weekStreak >= 2) && (
-                <div className="home-streak-row">
-                  {streak >= 2 && (
-                    <div className="home-streak-badge">
-                      <span className="home-streak-fire">🔥</span>
-                      <span className="home-streak-count">{streak}</span>
-                      <span className="home-streak-label">day{streak !== 1 ? "s" : ""}</span>
-                    </div>
-                  )}
-                  {weekStreak >= 2 && (
-                    <div className="home-streak-badge home-streak-badge--week">
-                      <svg className="home-streak-cal-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                        <line x1="16" y1="2" x2="16" y2="6"/>
-                        <line x1="8" y1="2" x2="8" y2="6"/>
-                        <line x1="3" y1="10" x2="21" y2="10"/>
-                      </svg>
-                      <span className="home-streak-count">{weekStreak}</span>
-                      <span className="home-streak-label">wk{weekStreak !== 1 ? "s" : ""}</span>
-                    </div>
-                  )}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div className="home-streak-row">
+                    {streak >= 2 && (
+                      <div className="home-streak-badge">
+                        <span className="home-streak-fire">🔥</span>
+                        <span className="home-streak-count">{streak}</span>
+                        <span className="home-streak-label">day{streak !== 1 ? "s" : ""}</span>
+                      </div>
+                    )}
+                    {weekStreak >= 2 && (
+                      <div className="home-streak-badge home-streak-badge--week">
+                        <svg className="home-streak-cal-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                          <line x1="16" y1="2" x2="16" y2="6"/>
+                          <line x1="8" y1="2" x2="8" y2="6"/>
+                          <line x1="3" y1="10" x2="21" y2="10"/>
+                        </svg>
+                        <span className="home-streak-count">{weekStreak}</span>
+                        <span className="home-streak-label">wk{weekStreak !== 1 ? "s" : ""}</span>
+                      </div>
+                    )}
+                  </div>
+                  <InfoIcon onClick={() => setAppView("glossary")} />
                 </div>
               )}
             </div>
@@ -15899,30 +16066,29 @@ export function App() {
               onClick={() => { setInsightsInitialTab("analyzer"); setAppView("insights"); }}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setInsightsInitialTab("analyzer"); setAppView("insights"); } }}
             >
-              <div className="home-trend-top">
-                <div className="home-goal-meta">
-                  <p className="home-goal-label">Training Trend · Overall Volume</p>
-                  <p className={`home-trend-zone-label home-trend-zone-label--${trainingTrend.currentZone}`}>
-                    {trainingTrend.zoneLabel}
-                  </p>
-                </div>
-                {/* 3 week boxes — W-2, W-1, W-0 (current) */}
-                <div className="home-trend-weeks" aria-hidden="true">
-                  {trainingTrend.recentWeeks.map((wk) => (
-                    <div
-                      key={wk.label}
-                      className={`home-trend-wk home-trend-wk--${wk.zone}${wk.isCurrent ? " home-trend-wk--current" : ""}`}
-                    >
-                      <span className="home-trend-wk-label">{wk.label}</span>
-                      <span className="home-trend-wk-zone">
-                        {wk.zone === "progress" ? "Progress"
-                          : wk.zone === "plateau" ? "Plateau"
-                          : wk.zone === "missed" ? "Missed"
-                          : "Maintain"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+              <div className="home-trend-header">
+                <p className="home-goal-label">Training Trend · Overall Volume <InfoIcon onClick={(e) => { e.stopPropagation(); setAppView("glossary"); }} /></p>
+                <p className={`home-trend-zone-label home-trend-zone-label--${trainingTrend.currentZone}`}>
+                  {trainingTrend.zoneLabel}
+                </p>
+              </div>
+              {/* 3 week boxes — W-2, W-1, W-0 (current) */}
+              <div className="home-trend-weeks home-trend-weeks--full" aria-hidden="true">
+                {trainingTrend.recentWeeks.map((wk) => (
+                  <div
+                    key={wk.label}
+                    className={`home-trend-wk home-trend-wk--${wk.zone}${wk.isCurrent ? " home-trend-wk--current" : ""}${wk.isPartial ? " home-trend-wk--partial" : ""}`}
+                  >
+                    <span className="home-trend-wk-label">{wk.label}</span>
+                    <span className="home-trend-wk-zone">
+                      {wk.isPartial ? "Partial"
+                        : wk.zone === "progress" ? "Progress"
+                        : wk.zone === "plateau" ? "Plateau"
+                        : wk.zone === "missed" ? "Missed"
+                        : "Maintain"}
+                    </span>
+                  </div>
+                ))}
               </div>
               <p className="home-goal-insight">{trainingTrend.insight}</p>
               <p className="home-card-tap-hint">{trainingTrend.tapHint}</p>
@@ -15965,7 +16131,7 @@ export function App() {
           </section>
         </section>
 
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
 
         {hasActiveWorkout && (
           <ActiveWorkoutTray
@@ -16020,6 +16186,7 @@ export function App() {
             </div>
           </section>
         )}
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </main>
     );
   }
@@ -16103,7 +16270,8 @@ export function App() {
           </div>
         </div>
       </main>
-      <BottomNav activeView={appView} onNavigate={(view) => { setSettingsOpen(false); setAppView(view); }} />
+      <BottomNav activeView={appView} onNavigate={(view) => { setSettingsOpen(false); setAppView(view); }} onMore={() => setShowMoreSheet(true)} />
+      <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </>
     );
   }
