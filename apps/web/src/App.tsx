@@ -12555,6 +12555,16 @@ const GLOSSARY_DATA: { section: string; terms: { name: string; def: string }[] }
 ];
 
 function GlossaryPage({ onBack, resolvedTheme }: { onBack: () => void; resolvedTheme: string }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+
+  const filtered = GLOSSARY_DATA.map((sec) => ({
+    ...sec,
+    terms: sec.terms.filter(
+      (t) => t.name.toLowerCase().includes(q) || t.def.toLowerCase().includes(q)
+    ),
+  })).filter((sec) => sec.terms.length > 0);
+
   return (
     <div className="glossary-shell" data-theme={resolvedTheme}>
       <header className="glossary-header">
@@ -12564,18 +12574,53 @@ function GlossaryPage({ onBack, resolvedTheme }: { onBack: () => void; resolvedT
         <h1 className="glossary-title">Fitness Glossary</h1>
         <div style={{ width: 60 }} />
       </header>
+
+      {/* Search bar */}
+      <div className="glossary-search-wrap">
+        <svg className="glossary-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input
+          className="glossary-search-input"
+          type="search"
+          placeholder="Search terms…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search glossary"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        {query && (
+          <button
+            type="button"
+            className="glossary-search-clear"
+            onClick={() => setQuery("")}
+            aria-label="Clear search"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
       <div className="glossary-body">
-        {GLOSSARY_DATA.map((sec) => (
-          <div key={sec.section}>
-            <p className="glossary-section-title">{sec.section}</p>
-            {sec.terms.map((term) => (
-              <div key={term.name} className="glossary-term">
-                <p className="glossary-term-name">{term.name}</p>
-                <p className="glossary-term-def">{term.def}</p>
-              </div>
-            ))}
+        {filtered.length === 0 ? (
+          <div className="glossary-empty">
+            <p className="glossary-empty-title">No results for "{query}"</p>
+            <p className="glossary-empty-sub">Try a different term — e.g. RPE, superset, deload</p>
           </div>
-        ))}
+        ) : (
+          filtered.map((sec) => (
+            <div key={sec.section}>
+              <p className="glossary-section-title">{sec.section}</p>
+              {sec.terms.map((term) => (
+                <div key={term.name} className="glossary-term">
+                  <p className="glossary-term-name">{term.name}</p>
+                  <p className="glossary-term-def">{term.def}</p>
+                </div>
+              ))}
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
