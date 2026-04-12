@@ -11743,6 +11743,91 @@ function computeWeekStreak(workouts: SavedWorkoutData[], targetPerWeek: number):
   return streak;
 }
 
+type TrainingZone = "progress" | "maintenance" | "plateau" | "missed";
+
+function computeTrainingTrend(workouts: SavedWorkoutData[]): {
+  weekZones: TrainingZone[];   // last 4 weeks, oldest → newest
+  currentZone: TrainingZone;
+  insight: string;
+  zoneLabel: string;
+} {
+  const getMondayUtc = (d: Date): number => {
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() + diff);
+  };
+
+  const today = new Date();
+  const currentMon = getMondayUtc(today);
+  const msPerWeek = 7 * 86400000;
+
+  // Build map: weekMondayMs → total volume
+  const weekVolMap = new Map<number, number>();
+  const weekSessMap = new Map<number, number>();
+  for (const w of workouts) {
+    const ds = (w.date ?? w.savedAt).slice(0, 10);
+    const [y, mo, d] = ds.split("-").map(Number);
+    const mon = getMondayUtc(new Date(y, mo - 1, d));
+    weekVolMap.set(mon, (weekVolMap.get(mon) ?? 0) + (w.totalVolume ?? 0));
+    weekSessMap.set(mon, (weekSessMap.get(mon) ?? 0) + 1);
+  }
+
+  // Volumes for last 5 weeks (oldest first) to compute 4 deltas
+  const vols: number[] = [];
+  for (let i = 4; i >= 0; i--) {
+    vols.push(weekVolMap.get(currentMon - i * msPerWeek) ?? 0);
+  }
+
+  const classify = (vol: number, prev: number): TrainingZone => {
+    if (vol === 0) return "missed";
+    if (prev === 0) return "maintenance";   // no baseline to compare
+    const delta = (vol - prev) / prev;
+    if (delta > 0.05) return "progress";
+    if (delta < -0.10) return "plateau";
+    return "maintenance";
+  };
+
+  const weekZones: TrainingZone[] = vols.slice(1).map((vol, i) => classify(vol, vols[i]));
+  const currentZone = weekZones[weekZones.length - 1];
+
+  const progressCount = weekZones.filter(z => z === "progress").length;
+  const plateauCount  = weekZones.filter(z => z === "plateau").length;
+  const missedCount   = weekZones.filter(z => z === "missed").length;
+
+  let zoneLabel: string;
+  let insight: string;
+
+  if (workouts.length === 0 || missedCount === 4) {
+    zoneLabel = "No data yet";
+    insight = "Log your first session to start tracking your trend.";
+  } else if (currentZone === "missed") {
+    zoneLabel = "Week missed";
+    insight = missedCount >= 2
+      ? "Two weeks with no sessions — consistency is the unlock."
+      : "Missed this week. Pick it up before the streak breaks.";
+  } else if (progressCount >= 3) {
+    zoneLabel = "↑ Progressing";
+    insight = "Volume climbing 3+ weeks straight — stay ahead of recovery.";
+  } else if (progressCount >= 2 && plateauCount === 0) {
+    zoneLabel = "↑ Progressing";
+    insight = "Solid upward trend. Push progressive overload on your key lifts.";
+  } else if (plateauCount >= 2) {
+    zoneLabel = "↓ Plateauing";
+    insight = "Load has stalled for 2+ weeks. See which lifts need a reset.";
+  } else if (currentZone === "plateau") {
+    zoneLabel = "↓ Plateauing";
+    insight = "This week's volume dipped. Check if you need a deload or a new stimulus.";
+  } else if (currentZone === "progress") {
+    zoneLabel = "↑ Progressing";
+    insight = "Volume up this week. Check the Analyzer for which muscles are leading.";
+  } else {
+    zoneLabel = "→ Maintaining";
+    insight = "Load is steady. A small overload nudge could break you into a progress phase.";
+  }
+
+  return { weekZones, currentZone, insight, zoneLabel };
+}
+
 function getThisWeekStats(workouts: SavedWorkoutData[]): {
   sessions: number; sets: number; volume: number; activeDayNumbers: number[];
 } {
@@ -15607,6 +15692,7 @@ export function App() {
     const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
     const muscleCoverage = computeMuscleCoverage(savedWorkoutsList);
     const goalProgress = computeGoalProgress(savedWorkoutsList, psychProfile);
+    const trainingTrend = computeTrainingTrend(savedWorkoutsList);
     const todayDayNum = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
     const nextRepIQSession = repiqPlan ? getNextRepIQSession(repiqPlan) : null;
     // Show last workout card only when no plan AND last workout was within 14 days
@@ -15636,7 +15722,12 @@ export function App() {
                   )}
                   {weekStreak >= 2 && (
                     <div className="home-streak-badge home-streak-badge--week">
-                      <span className="home-streak-fire">📅</span>
+                      <svg className="home-streak-cal-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                        <line x1="16" y1="2" x2="16" y2="6"/>
+                        <line x1="8" y1="2" x2="8" y2="6"/>
+                        <line x1="3" y1="10" x2="21" y2="10"/>
+                      </svg>
                       <span className="home-streak-count">{weekStreak}</span>
                       <span className="home-streak-label">wk{weekStreak !== 1 ? "s" : ""}</span>
                     </div>
@@ -15725,7 +15816,7 @@ export function App() {
               )}
             </article>
 
-            {/* ── Goal progress card ── */}
+            {/* ── Training Trend card ── */}
             <div
               className="home-goal-card home-card-tappable"
               role="button"
@@ -15733,27 +15824,47 @@ export function App() {
               onClick={() => { setInsightsInitialTab("analyzer"); setAppView("insights"); }}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setInsightsInitialTab("analyzer"); setAppView("insights"); } }}
             >
-              <div className="home-goal-top">
+              <div className="home-trend-top">
                 <div className="home-goal-meta">
-                  <p className="home-goal-label">Monthly Progress</p>
-                  <p className="home-goal-name">{goalProgress.goalName}</p>
+                  <p className="home-goal-label">Training Trend</p>
+                  <p className={`home-trend-zone-label home-trend-zone-label--${trainingTrend.currentZone}`}>
+                    {trainingTrend.zoneLabel}
+                  </p>
                 </div>
-                <div className="home-goal-score-wrap">
-                  <span className="home-goal-score">{goalProgress.score}</span>
-                  <span className="home-goal-score-max">/100</span>
+                {/* 4-week dot trail — oldest left, current right (larger) */}
+                <div className="home-trend-dots" aria-hidden="true">
+                  {trainingTrend.weekZones.map((zone, i) => (
+                    <div
+                      key={i}
+                      className={`home-trend-dot home-trend-dot--${zone}${i === 3 ? " home-trend-dot--current" : ""}`}
+                    />
+                  ))}
                 </div>
               </div>
-              <div className="home-goal-bar-wrap">
-                <div className="home-goal-bar">
-                  <div
-                    className="home-goal-bar-fill"
-                    style={{ width: `${goalProgress.score}%` }}
-                  />
+              {/* 3-zone bar with position marker */}
+              <div className="home-trend-bar-wrap" aria-hidden="true">
+                <div className="home-trend-bar">
+                  <div className={`home-trend-seg home-trend-seg--plateau${trainingTrend.currentZone === "plateau" ? " is-active" : ""}`} />
+                  <div className={`home-trend-seg home-trend-seg--maintenance${trainingTrend.currentZone === "maintenance" ? " is-active" : ""}`} />
+                  <div className={`home-trend-seg home-trend-seg--progress${trainingTrend.currentZone === "progress" ? " is-active" : ""}`} />
                 </div>
-                <span className="home-goal-status-label">{goalProgress.label}</span>
+                <div
+                  className={`home-trend-marker home-trend-marker--${trainingTrend.currentZone}`}
+                  style={{
+                    left: trainingTrend.currentZone === "plateau" ? "16.5%"
+                        : trainingTrend.currentZone === "maintenance" ? "50%"
+                        : trainingTrend.currentZone === "progress" ? "83.5%"
+                        : "50%",
+                  }}
+                />
+                <div className="home-trend-bar-labels">
+                  <span>Plateau</span>
+                  <span>Maintaining</span>
+                  <span>Progress</span>
+                </div>
               </div>
-              <p className="home-goal-insight">{goalProgress.insight}</p>
-              <p className="home-card-tap-hint">View full analysis →</p>
+              <p className="home-goal-insight">{trainingTrend.insight}</p>
+              <p className="home-card-tap-hint">See what's driving it →</p>
             </div>
 
             {/* ── Muscle coverage card ── */}
