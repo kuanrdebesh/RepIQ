@@ -8503,6 +8503,27 @@ ol {
   margin-right: 4px;
 }
 
+.muscle-anatomy-figures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.muscle-anatomy-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.muscle-anatomy-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  text-align: center;
+  margin: 0;
+}
+
 .muscle-train-next {
   display: flex;
   align-items: center;

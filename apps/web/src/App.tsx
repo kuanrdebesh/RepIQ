@@ -12,6 +12,8 @@ import {
 } from "@repiq/shared";
 import benchPressImage from "./assets/bench-press.svg";
 import inclineDumbbellPressImage from "./assets/incline-dumbbell-press.svg";
+import anatomyFrontImg from "./assets/anatomy-front.png";
+import anatomyBackImg from "./assets/anatomy-back.png";
 
 type FlowState = {
   status: "idle" | "loading" | "success" | "error";
@@ -10774,125 +10776,106 @@ function sessionToMuscleCoverage(exercises: FinishedExerciseSummary[]): Record<s
   return result;
 }
 
-function MuscleHeatmapSVG({
-  coverage,
-  mode = "history",
+// Muscle overlay paths in a 100×140 coordinate space aligned to the anatomy PNG.
+// Each path is drawn to roughly match the muscle group's anatomical position.
+// The paths are rendered with mix-blend-mode:multiply over a greyscale PNG base,
+// so the anatomical detail shows through the color tint.
+
+const FRONT_MUSCLE_PATHS: Record<string, string> = {
+  // Pectoralis major — two fan-shaped pecs in upper-mid chest
+  Chest: "M 50,30 C 43,30 34,36 31,44 C 29,51 32,60 39,64 C 44,67 50,65 50,65 C 50,65 56,67 61,64 C 68,60 71,51 69,44 C 66,36 57,30 50,30 Z",
+  // Anterior deltoid caps — shoulder balls
+  Shoulders: "M 29,27 C 23,29 19,36 20,44 C 21,50 27,53 33,50 C 37,47 38,39 35,31 Z M 71,27 C 77,29 81,36 80,44 C 79,50 73,53 67,50 C 63,47 62,39 65,31 Z",
+  // Biceps brachii — front of upper arm
+  Biceps: "M 18,44 C 14,51 13,63 17,71 C 20,75 26,75 28,71 C 30,65 29,51 25,45 Z M 82,44 C 86,51 87,63 83,71 C 80,75 74,75 72,71 C 70,65 71,51 75,45 Z",
+  // Rectus abdominis — segmented abs
+  Core: "M 44,66 C 41,74 40,87 43,97 C 46,101 54,101 57,97 C 60,87 59,74 56,66 C 53,63 47,63 44,66 Z",
+  // Quadriceps — front of thighs
+  Quads: "M 37,101 C 33,112 32,132 36,145 C 39,151 47,152 51,147 C 54,135 52,111 48,101 Z M 63,101 C 67,112 68,132 64,145 C 61,151 53,152 49,147 C 46,135 48,111 52,101 Z",
+  // Tibialis anterior / gastrocnemius front
+  Calves: "M 34,146 C 31,157 31,172 35,180 C 38,184 45,184 48,180 C 50,171 48,155 44,146 Z M 66,146 C 69,157 69,172 65,180 C 62,184 55,184 52,180 C 50,171 52,155 56,146 Z",
+};
+
+const BACK_MUSCLE_PATHS: Record<string, string> = {
+  // Trapezius — upper back diamond + posterior deltoid area
+  Back: "M 50,28 C 42,31 32,38 30,48 C 28,56 33,64 42,68 C 47,70 53,70 58,68 C 67,64 72,56 70,48 C 68,38 58,31 50,28 Z M 30,55 C 24,64 22,80 26,93 C 30,98 40,98 44,91 C 46,80 44,63 38,54 Z M 70,55 C 76,64 78,80 74,93 C 70,98 60,98 56,91 C 54,80 56,63 62,54 Z",
+  // Posterior deltoid
+  Shoulders: "M 29,27 C 23,29 19,37 21,45 C 22,51 28,53 34,50 C 38,47 39,38 36,31 Z M 71,27 C 77,29 81,37 79,45 C 78,51 72,53 66,50 C 62,47 61,38 64,31 Z",
+  // Triceps — back of upper arm
+  Triceps: "M 18,44 C 14,52 14,65 18,72 C 21,76 27,75 29,70 C 31,63 30,50 26,45 Z M 82,44 C 86,52 86,65 82,72 C 79,76 73,75 71,70 C 69,63 70,50 74,45 Z",
+  // Gluteus maximus
+  Glutes: "M 33,94 C 28,101 27,115 31,123 C 35,128 44,129 50,125 C 56,129 65,128 69,123 C 73,115 72,101 67,94 C 62,89 38,89 33,94 Z",
+  // Biceps femoris / hamstrings
+  Hamstrings: "M 36,102 C 32,113 31,133 35,146 C 38,152 46,153 50,148 C 53,136 51,111 47,102 Z M 64,102 C 68,113 69,133 65,146 C 62,152 54,153 50,148 C 47,136 49,111 53,102 Z",
+  // Gastrocnemius — two heads from back
+  Calves: "M 34,148 C 31,159 30,174 34,182 C 37,186 45,186 48,182 C 50,173 48,157 44,148 Z M 66,148 C 69,159 70,174 66,182 C 63,186 55,186 52,182 C 50,173 52,157 56,148 Z",
+};
+
+function AnatomyView({
+  img, paths, coverage, mode,
 }: {
+  img: string;
+  paths: Record<string, string>;
   coverage: Record<string, MuscleStatus>;
-  mode?: "history" | "session";
+  mode: "history" | "session";
 }) {
   function col(muscle: string): string {
     const s = coverage[muscle] ?? "none";
-    if (mode === "session") return s === "fresh" ? "var(--accent)" : "var(--line)";
+    if (mode === "session") return s === "fresh" ? "#3b82f6" : "transparent";
     if (s === "fresh") return "#3b82f6";
-    if (s === "fading") return "#93c5fd";
-    return "var(--line)";
+    if (s === "fading") return "#60a5fa";
+    return "transparent";
   }
   function op(muscle: string): number {
     const s = coverage[muscle] ?? "none";
-    if (mode === "session") return s === "fresh" ? 0.88 : 0.18;
-    if (s === "fresh") return 0.88;
-    if (s === "fading") return 0.75;
-    return 0.18;
+    if (mode === "session") return s === "fresh" ? 0.72 : 0;
+    if (s === "fresh") return 0.72;
+    if (s === "fading") return 0.55;
+    return 0;
   }
-  const mp = (m: string) => ({
-    fill: col(m), fillOpacity: op(m),
-    stroke: col(m), strokeOpacity: Math.min(op(m) + 0.1, 1), strokeWidth: 0.4,
-  });
-  const bf = "var(--surface)";
-  const bs = "var(--line)";
-  const bsw = "0.7";
 
   return (
-    <svg viewBox="0 0 240 200" xmlns="http://www.w3.org/2000/svg" style={{ width: "100%", display: "block" }} aria-label="Muscle coverage map">
-      <text x="60" y="8" textAnchor="middle" fontSize="5.5" fill="var(--muted)" fontWeight="700" letterSpacing="0.12em">FRONT</text>
-      <text x="180" y="8" textAnchor="middle" fontSize="5.5" fill="var(--muted)" fontWeight="700" letterSpacing="0.12em">BACK</text>
-      <line x1="120" y1="3" x2="120" y2="197" stroke="var(--line)" strokeWidth="0.5" strokeDasharray="2,3" />
-
-      {/* ══ FRONT FIGURE (cx=60) ══ */}
-      <circle cx="60" cy="17" r="9" fill={bf} stroke={bs} strokeWidth="0.7" />
-      <path d="M 57,25 L 57,32 L 63,32 L 63,25 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Torso */}
-      <path d="M 57,32 C 52,32 43,35 40,39 C 37,43 37,53 39,59 C 41,65 44,71 45,78 C 46,84 47,92 47,99 L 54,103 L 66,103 L 73,99 C 73,92 74,84 75,78 C 76,71 79,65 81,59 C 83,53 83,43 80,39 C 77,35 68,32 63,32 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Left upper arm */}
-      <path d="M 39,40 C 35,42 32,49 31,57 C 30,64 31,72 34,76 C 37,78 41,77 43,74 C 45,69 45,60 43,52 C 42,46 41,41 39,40 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Right upper arm */}
-      <path d="M 81,40 C 85,42 88,49 89,57 C 90,64 89,72 86,76 C 83,78 79,77 77,74 C 75,69 75,60 77,52 C 78,46 79,41 81,40 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Left forearm */}
-      <path d="M 31,74 C 28,80 27,90 28,98 C 29,103 33,105 36,104 C 39,103 40,98 39,91 C 38,83 35,76 32,74 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Right forearm */}
-      <path d="M 89,74 C 92,80 93,90 92,98 C 91,103 87,105 84,104 C 81,103 80,98 81,91 C 82,83 85,76 88,74 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Left thigh */}
-      <path d="M 47,101 C 44,110 43,128 46,141 C 48,147 54,150 59,148 C 63,146 64,140 62,131 C 60,118 57,105 54,101 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Right thigh */}
-      <path d="M 73,101 C 76,110 77,128 74,141 C 72,147 66,150 61,148 C 57,146 56,140 58,131 C 60,118 63,105 66,101 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Left lower leg */}
-      <path d="M 45,142 C 43,151 42,166 45,175 C 47,180 53,182 57,179 C 60,177 61,171 59,163 C 57,153 53,144 49,142 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Right lower leg */}
-      <path d="M 75,142 C 77,151 78,166 75,175 C 73,180 67,182 63,179 C 60,177 59,171 61,163 C 63,153 67,144 71,142 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-
-      {/* ── Front muscle overlays ── */}
-      {/* Anterior deltoids — confined to arm-shoulder cap only */}
-      <path d="M 40,39 C 35,41 32,48 33,55 C 34,60 39,62 43,60 C 46,57 46,49 44,43 Z" {...mp("Shoulders")} />
-      <path d="M 80,39 C 85,41 88,48 87,55 C 86,60 81,62 77,60 C 74,57 74,49 76,43 Z" {...mp("Shoulders")} />
-      {/* Pectoralis major — two fan shapes from sternum, NOT reaching shoulders */}
-      <path d="M 57,34 C 51,36 44,43 42,50 C 40,57 43,65 49,68 C 53,70 57,68 57,67 L 57,34 Z" {...mp("Chest")} />
-      <path d="M 63,34 C 69,36 76,43 78,50 C 80,57 77,65 71,68 C 67,70 63,68 63,67 L 63,34 Z" {...mp("Chest")} />
-      {/* Biceps — front of upper arm, lower half only */}
-      <path d="M 32,54 C 29,60 29,70 33,75 C 36,77 41,75 42,70 C 43,63 41,55 37,53 Z" {...mp("Biceps")} />
-      <path d="M 88,54 C 91,60 91,70 87,75 C 84,77 79,75 78,70 C 77,63 79,55 83,53 Z" {...mp("Biceps")} />
-      {/* Rectus abdominis */}
-      <path d="M 52,68 C 49,76 48,88 51,97 C 54,101 66,101 69,97 C 72,88 71,76 68,68 C 64,65 56,65 52,68 Z" {...mp("Core")} />
-      {/* Quadriceps — front thigh */}
-      <path d="M 48,103 C 44,113 43,131 46,143 C 49,149 57,150 61,146 C 63,134 61,110 57,103 Z" {...mp("Quads")} />
-      <path d="M 72,103 C 76,113 77,131 74,143 C 71,149 63,150 59,146 C 57,134 59,110 63,103 Z" {...mp("Quads")} />
-      {/* Calves — tibialis/gastrocnemius front */}
-      <path d="M 45,144 C 42,153 41,167 44,176 C 47,181 54,182 58,179 C 60,170 58,153 54,144 Z" {...mp("Calves")} />
-      <path d="M 75,144 C 78,153 79,167 76,176 C 73,181 66,182 62,179 C 60,170 62,153 66,144 Z" {...mp("Calves")} />
-
-      {/* ══ BACK FIGURE (cx=180) ══ */}
-      <circle cx="180" cy="17" r="9" fill={bf} stroke={bs} strokeWidth="0.7" />
-      <path d="M 177,25 L 177,32 L 183,32 L 183,25 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Torso back */}
-      <path d="M 177,32 C 172,32 163,35 160,39 C 157,43 157,53 159,59 C 161,65 164,71 165,78 C 166,84 167,92 167,99 L 174,103 L 186,103 L 193,99 C 193,92 194,84 195,78 C 196,71 199,65 201,59 C 203,53 203,43 200,39 C 197,35 188,32 183,32 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Left upper arm back */}
-      <path d="M 159,40 C 155,42 152,49 151,57 C 150,64 151,72 154,76 C 157,78 161,77 163,74 C 165,69 165,60 163,52 C 162,46 161,41 159,40 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Right upper arm back */}
-      <path d="M 201,40 C 205,42 208,49 209,57 C 210,64 209,72 206,76 C 203,78 199,77 197,74 C 195,69 195,60 197,52 C 198,46 199,41 201,40 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Left forearm back */}
-      <path d="M 151,74 C 148,80 147,90 148,98 C 149,103 153,105 156,104 C 159,103 160,98 159,91 C 158,83 155,76 152,74 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Right forearm back */}
-      <path d="M 209,74 C 212,80 213,90 212,98 C 211,103 207,105 204,104 C 201,103 200,98 201,91 C 202,83 205,76 208,74 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Left thigh back */}
-      <path d="M 167,101 C 164,110 163,128 166,141 C 168,147 174,150 179,148 C 183,146 184,140 182,131 C 180,118 177,105 174,101 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Right thigh back */}
-      <path d="M 193,101 C 196,110 197,128 194,141 C 192,147 186,150 181,148 C 177,146 176,140 178,131 C 180,118 183,105 186,101 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Left lower leg back */}
-      <path d="M 165,142 C 163,151 162,166 165,175 C 167,180 173,182 177,179 C 180,177 181,171 179,163 C 177,153 173,144 169,142 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-      {/* Right lower leg back */}
-      <path d="M 195,142 C 197,151 198,166 195,175 C 193,180 187,182 183,179 C 180,177 179,171 181,163 C 183,153 187,144 191,142 Z" fill={bf} stroke={bs} strokeWidth="0.7" />
-
-      {/* ── Back muscle overlays ── */}
-      {/* Posterior deltoids */}
-      <path d="M 160,39 C 155,41 152,48 153,55 C 154,60 159,62 163,60 C 166,57 166,49 164,43 Z" {...mp("Shoulders")} />
-      <path d="M 200,39 C 205,41 208,48 207,55 C 206,60 201,62 197,60 C 194,57 194,49 196,43 Z" {...mp("Shoulders")} />
-      {/* Trapezius — upper back diamond, stays within torso */}
-      <path d="M 177,33 C 170,36 161,43 159,51 C 158,57 162,63 170,66 C 175,68 185,68 190,66 C 198,63 202,57 201,51 C 199,43 190,36 183,33 Z" {...mp("Back")} />
-      {/* Latissimus dorsi — V taper from armpit to lower back flanks */}
-      <path d="M 159,55 C 155,64 154,79 157,91 C 160,97 168,97 172,91 C 174,81 172,64 167,54 Z" {...mp("Back")} />
-      <path d="M 201,55 C 205,64 206,79 203,91 C 200,97 192,97 188,91 C 186,81 188,64 193,54 Z" {...mp("Back")} />
-      {/* Triceps — back of upper arm */}
-      <path d="M 152,54 C 149,60 149,70 153,75 C 156,77 161,75 162,70 C 163,63 161,55 157,53 Z" {...mp("Triceps")} />
-      <path d="M 208,54 C 211,60 211,70 207,75 C 204,77 199,75 198,70 C 197,63 199,55 203,53 Z" {...mp("Triceps")} />
-      {/* Gluteus maximus — below torso, rounded */}
-      <path d="M 166,93 C 161,99 160,110 163,117 C 167,122 185,122 189,117 C 192,110 191,99 186,93 C 182,88 170,88 166,93 Z" {...mp("Glutes")} />
-      {/* Hamstrings — back thigh */}
-      <path d="M 168,103 C 164,113 163,131 166,143 C 169,149 177,150 181,146 C 183,134 181,110 177,103 Z" {...mp("Hamstrings")} />
-      <path d="M 192,103 C 196,113 197,131 194,143 C 191,149 183,150 179,146 C 177,134 179,110 183,103 Z" {...mp("Hamstrings")} />
-      {/* Gastrocnemius — two heads, back view */}
-      <path d="M 165,144 C 162,153 161,167 164,176 C 167,181 174,182 178,179 C 180,170 178,153 174,144 Z" {...mp("Calves")} />
-      <path d="M 195,144 C 198,153 199,167 196,176 C 193,181 186,182 182,179 C 180,170 182,153 186,144 Z" {...mp("Calves")} />
-    </svg>
+    <div style={{ position: "relative", width: "100%" }}>
+      {/* Greyscale anatomical base */}
+      <img
+        src={img}
+        alt=""
+        aria-hidden="true"
+        style={{
+          width: "100%",
+          display: "block",
+          filter: "grayscale(1) brightness(1.15) contrast(0.9)",
+        }}
+      />
+      {/* SVG overlay — same coordinate space as the PNG (100×140 viewBox) */}
+      <svg
+        viewBox="0 0 100 200"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          mixBlendMode: "multiply",
+        }}
+        aria-hidden="true"
+      >
+        {Object.entries(paths).map(([muscle, d]) => (
+          op(muscle) > 0 ? (
+            <path
+              key={muscle}
+              d={d}
+              fill={col(muscle)}
+              fillOpacity={op(muscle)}
+              stroke={col(muscle)}
+              strokeOpacity={Math.min(op(muscle) + 0.08, 1)}
+              strokeWidth="0.5"
+              strokeLinejoin="round"
+            />
+          ) : null
+        ))}
+      </svg>
+    </div>
   );
 }
 
@@ -10924,7 +10907,16 @@ function MuscleCoverageCard({
           </div>
         )}
       </div>
-      <MuscleHeatmapSVG coverage={coverage} mode={mode} />
+      <div className="muscle-anatomy-figures">
+        <div className="muscle-anatomy-figure">
+          <p className="muscle-anatomy-label">FRONT</p>
+          <AnatomyView img={anatomyFrontImg} paths={FRONT_MUSCLE_PATHS} coverage={coverage} mode={mode} />
+        </div>
+        <div className="muscle-anatomy-figure">
+          <p className="muscle-anatomy-label">BACK</p>
+          <AnatomyView img={anatomyBackImg} paths={BACK_MUSCLE_PATHS} coverage={coverage} mode={mode} />
+        </div>
+      </div>
       {mode === "history" && trainNext.length > 0 && (
         <div className="muscle-train-next">
           <p className="muscle-train-next-label">Train next</p>
