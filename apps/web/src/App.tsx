@@ -252,6 +252,9 @@ interface RepIQPlan {
   currentWeekIndex: number;
   weeks: RepIQPlanWeek[];
   status?: "active" | "paused";
+  pausedAt?: string | null;           // ISO timestamp when paused; null when active
+  pauseDaysMax?: number | null;       // user-configurable max pause days (system ceiling: 45)
+  totalPauseDaysUsed?: number;        // cumulative pause days across all pauses this plan
   needsReview?: boolean;            // set when extra volume was logged outside the plan
   extraVolumeCount?: number;        // how many cross-plan workouts triggered the flag
   extraVolumeWorkoutIds?: string[]; // savedAt IDs of those workouts (for delete cleanup)
@@ -5601,7 +5604,10 @@ function PlannerHomePage({
         );
 
         const completedSessions = allSessions.filter(s => s.isCompleted);
-        const activeSessions = allSessions.filter(s => !s.isCompleted && !s.isLocked);
+        const allActiveSessions = allSessions.filter(s => !s.isCompleted && !s.isLocked);
+        // Show at most one cycle's worth of upcoming sessions
+        const visibleActiveCount = Math.min(sessionsPerWeek, allActiveSessions.length);
+        const activeSessions = allActiveSessions.slice(0, visibleActiveCount);
         const lockedSessions = allSessions.filter(s => s.isLocked);
 
         return (
@@ -5648,12 +5654,32 @@ function PlannerHomePage({
             </div>
 
             {/* Paused notice */}
-            {repiqPlan.status === "paused" && (
-              <div className="repiq-paused-banner">
-                <span>⏸ Plan paused</span>
-                <span className="repiq-paused-sub">Sessions won't count toward plan progress. Resume when you're ready.</span>
-              </div>
-            )}
+            {repiqPlan.status === "paused" && (() => {
+              const pausedAtMs = repiqPlan.pausedAt ? new Date(repiqPlan.pausedAt).getTime() : Date.now();
+              const daysPaused = Math.round((Date.now() - pausedAtMs) / 86400000);
+              const totalUsed = (repiqPlan.totalPauseDaysUsed ?? 0) + daysPaused;
+              const maxDays = repiqPlan.pauseDaysMax ?? 45;
+              const daysRemaining = Math.max(0, maxDays - totalUsed);
+              const isNearExpiry = totalUsed >= maxDays * 0.7;
+              const isExpired = totalUsed >= maxDays;
+              return (
+                <div className={`repiq-paused-banner${isNearExpiry ? " is-warning" : ""}${isExpired ? " is-expired" : ""}`}>
+                  <div className="repiq-paused-top">
+                    <span>{isExpired ? "⚠ Plan expired" : "⏸ Plan paused"}</span>
+                    <span className="repiq-paused-day-count">
+                      Day {totalUsed} of {maxDays}
+                    </span>
+                  </div>
+                  {isExpired ? (
+                    <span className="repiq-paused-sub">This plan has been paused too long. Archive it and start fresh to continue your progress.</span>
+                  ) : isNearExpiry ? (
+                    <span className="repiq-paused-sub">⚠ Plan expires in {daysRemaining} day{daysRemaining !== 1 ? "s" : ""}. Resume soon or your progress will be archived.</span>
+                  ) : (
+                    <span className="repiq-paused-sub">Sessions won't count toward plan progress. Resume when you're ready.</span>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Needs-review notice */}
             {repiqPlan.needsReview && (
@@ -16055,9 +16081,29 @@ export function App() {
           psychProfile={psychProfile}
           onToggleRepIQStatus={() => {
             if (!repiqPlan) return;
-            const updated = { ...repiqPlan, status: repiqPlan.status === "paused" ? "active" as const : "paused" as const };
-            persistRepIQPlan(updated);
-            setRepiqPlan(updated);
+            const isPaused = repiqPlan.status === "paused";
+            if (isPaused) {
+              // Resuming: calculate days used in this pause session
+              const pausedAtMs = repiqPlan.pausedAt ? new Date(repiqPlan.pausedAt).getTime() : Date.now();
+              const daysPaused = Math.round((Date.now() - pausedAtMs) / 86400000);
+              const updated: RepIQPlan = {
+                ...repiqPlan,
+                status: "active",
+                pausedAt: null,
+                totalPauseDaysUsed: (repiqPlan.totalPauseDaysUsed ?? 0) + daysPaused,
+              };
+              persistRepIQPlan(updated);
+              setRepiqPlan(updated);
+            } else {
+              // Pausing: record timestamp
+              const updated: RepIQPlan = {
+                ...repiqPlan,
+                status: "paused",
+                pausedAt: new Date().toISOString(),
+              };
+              persistRepIQPlan(updated);
+              setRepiqPlan(updated);
+            }
           }}
           onDismissReview={() => {
             if (!repiqPlan) return;
@@ -16280,6 +16326,19 @@ export function App() {
     const muscleCoverage = computeMuscleCoverage(savedWorkoutsList, cycleDays);
     const goalProgress = computeGoalProgress(savedWorkoutsList, psychProfile);
     const trainingTrend = computeTrainingTrend(savedWorkoutsList, cycleDays);
+    // Check if paused plan has expired
+    const pausedPlanExpired = (() => {
+      if (!repiqPlan || repiqPlan.status !== "paused") return false;
+      const pausedAtMs = repiqPlan.pausedAt ? new Date(repiqPlan.pausedAt).getTime() : 0;
+      const daysPaused = Math.round((Date.now() - pausedAtMs) / 86400000);
+      const totalUsed = (repiqPlan.totalPauseDaysUsed ?? 0) + daysPaused;
+      const maxDays = repiqPlan.pauseDaysMax ?? 45;
+      const lastSessionDate = savedWorkoutsList[0]
+        ? new Date((savedWorkoutsList[0].date ?? savedWorkoutsList[0].savedAt).slice(0, 10)).getTime()
+        : 0;
+      const daysSinceLastSession = Math.round((Date.now() - lastSessionDate) / 86400000);
+      return totalUsed >= maxDays && daysSinceLastSession > 30;
+    })();
     const todayDayNum = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
     const nextRepIQSession = repiqPlan ? getNextRepIQSession(repiqPlan) : null;
     // Show last workout card only when no plan AND last workout was within 14 days

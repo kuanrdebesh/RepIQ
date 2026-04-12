@@ -11117,6 +11117,40 @@ ol {
   font-weight: 400;
   opacity: 0.8;
 }
+
+.repiq-paused-banner .repiq-paused-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.repiq-paused-day-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.repiq-paused-banner.is-warning {
+  background: color-mix(in srgb, #f59e0b 12%, var(--surface));
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+[data-theme="dark"] .repiq-paused-banner.is-warning {
+  color: #fcd34d;
+}
+
+.repiq-paused-banner.is-expired {
+  background: color-mix(in srgb, #ef4444 12%, var(--surface));
+  border-color: #ef4444;
+  color: #991b1b;
+}
+
+[data-theme="dark"] .repiq-paused-banner.is-expired {
+  color: #fca5a5;
+}
+
 .plan-detail-manage-row {
   display: flex;
   gap: 8px;
