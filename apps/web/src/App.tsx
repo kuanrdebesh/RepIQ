@@ -457,11 +457,13 @@ type ExerciseEquipment =
   | "none";       // Bodyweight / no equipment needed
 
 type ReplacementReason =
+  | "best_match"
   | "machine_taken"
   | "no_equipment"
   | "too_difficult"
   | "pain_discomfort"
-  | "preference";
+  | "preference"
+  | "just_change";
 
 interface ReplacementEvent {
   schemaVersion: 1;
@@ -523,80 +525,437 @@ type ExerciseWithTaxonomy = ExerciseDraft & {
   difficultyLevel?: ExerciseDifficulty;
 };
 
-// Core scoring function — returns 0–100
-// Priority: same pattern + same angle + different equipment (best swap)
-//           same pattern + different angle + same equipment
-//           same pattern + different everything (still valid)
-//           same movement family (broader fallback)
-function scoreReplacement(
+type ReplacementRankTuple = [
+  number, // movement
+  number, // muscle
+  number, // angle
+  number, // equipment
+  number, // reason
+  number, // difficulty
+  number, // tracking
+  number, // preference
+  number, // fatigue
+  number, // novelty
+];
+
+type RankedReplacement = {
+  exercise: ExerciseWithTaxonomy;
+  score: number;
+  matchReason: string;
+  rankTuple: ReplacementRankTuple;
+};
+
+function normalizeReplacementReason(reason: ReplacementReason): ReplacementReason {
+  return reason === "preference" ? "best_match" : reason;
+}
+
+function getEquipmentBucket(exercise: ExerciseWithTaxonomy): "machine" | "free_weight" | "cable" | "bodyweight" | "cardio" | "accessory" {
+  const equipment = exercise.equipment;
+  const exerciseType = exercise.exerciseType ?? inferExerciseType(exercise);
+
+  if (equipment === "machine" || equipment === "smith_machine" || exerciseType === "machine") {
+    return "machine";
+  }
+  if (equipment === "cable") {
+    return "cable";
+  }
+  if (equipment === "barbell" || equipment === "dumbbell" || equipment === "kettlebell" || equipment === "landmine") {
+    return "free_weight";
+  }
+  if (equipment === "bodyweight" || equipment === "none" || exerciseType === "bodyweight_only") {
+    return "bodyweight";
+  }
+  if (exerciseType === "freestyle_cardio") {
+    return "cardio";
+  }
+  return "accessory";
+}
+
+function getBaseExerciseId(exerciseId: string): string {
+  return exerciseId.replace(/-\d{8,}-\d+$/, "");
+}
+
+function getExercisePrimaryMuscles(exercise: ExerciseDraft): string[] {
+  const raw = exercise.primaryMuscles?.length ? exercise.primaryMuscles : [exercise.primaryMuscle];
+  return Array.from(new Set(raw.map((muscle) => getCanonicalMuscle(muscle))));
+}
+
+function getExerciseSecondaryMuscles(exercise: ExerciseDraft): string[] {
+  return Array.from(new Set((exercise.secondaryMuscles ?? []).map((muscle) => getCanonicalMuscle(muscle))));
+}
+
+function getExerciseTrackingType(exercise: ExerciseDraft): MeasurementType {
+  return exercise.measurementType ?? getExerciseMeasurementType(exercise);
+}
+
+function getDifficultyRank(level?: ExerciseDifficulty): number {
+  switch (level ?? "intermediate") {
+    case "beginner":
+      return 1;
+    case "intermediate":
+      return 2;
+    case "advanced":
+      return 3;
+  }
+}
+
+function isNearbyAngle(original?: ExerciseAngle, candidate?: ExerciseAngle): boolean {
+  if (!original || !candidate) return false;
+  if (original === candidate) return true;
+  const nearbyPairs = new Set([
+    "flat:incline",
+    "incline:flat",
+    "flat:decline",
+    "decline:flat",
+    "neutral:none",
+    "none:neutral",
+    "overhead:neutral",
+    "neutral:overhead",
+  ]);
+  return nearbyPairs.has(`${original}:${candidate}`);
+}
+
+function hasPrimaryOverlap(original: ExerciseDraft, candidate: ExerciseDraft): boolean {
+  const originalPrimary = getExercisePrimaryMuscles(original);
+  const candidatePrimary = getExercisePrimaryMuscles(candidate);
+  return candidatePrimary.some((muscle) => originalPrimary.includes(muscle));
+}
+
+function computeMovementTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy): number {
+  const originalPattern = original.movementPattern;
+  const candidatePattern = candidate.movementPattern;
+  if (!originalPattern || !candidatePattern) return 0;
+  if (candidatePattern === originalPattern) return 4;
+  if (getMovementFamily(candidatePattern) === getMovementFamily(originalPattern) && isNearbyAngle(original.angle, candidate.angle)) {
+    return 3;
+  }
+  if (getMovementFamily(candidatePattern) === getMovementFamily(originalPattern) && hasPrimaryOverlap(original, candidate)) {
+    return 2;
+  }
+  return 0;
+}
+
+function computeMuscleTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy): number {
+  const originalPrimary = getExercisePrimaryMuscles(original);
+  const candidatePrimary = getExercisePrimaryMuscles(candidate);
+  const originalSecondary = getExerciseSecondaryMuscles(original);
+  const candidateSecondary = getExerciseSecondaryMuscles(candidate);
+  const primaryOverlap = candidatePrimary.filter((muscle) => originalPrimary.includes(muscle));
+  const secondaryOverlap = candidateSecondary.filter((muscle) => originalSecondary.includes(muscle));
+
+  if (primaryOverlap.length === originalPrimary.length && secondaryOverlap.length > 0) return 4;
+  if (primaryOverlap.length === originalPrimary.length) return 3;
+  if (primaryOverlap.length > 0) return 2;
+  if (candidateSecondary.some((muscle) => originalPrimary.includes(muscle))) return 1;
+  return 0;
+}
+
+function computeAngleTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy): number {
+  if (original.angle && candidate.angle && original.angle === candidate.angle) return 3;
+  if (isNearbyAngle(original.angle, candidate.angle)) return 2;
+  if (!original.angle || !candidate.angle || original.angle === "none" || candidate.angle === "none" || original.angle === "neutral" || candidate.angle === "neutral") {
+    return 1;
+  }
+  return 0;
+}
+
+function isFreeWeightSibling(original?: ExerciseEquipment, candidate?: ExerciseEquipment): boolean {
+  return (
+    (original === "barbell" && candidate === "dumbbell") ||
+    (original === "dumbbell" && candidate === "barbell")
+  );
+}
+
+function computeEquipmentTier(
+  original: ExerciseWithTaxonomy,
+  candidate: ExerciseWithTaxonomy,
+  reason: ReplacementReason,
+): number {
+  const normalizedReason = normalizeReplacementReason(reason);
+  const originalBucket = getEquipmentBucket(original);
+  const candidateBucket = getEquipmentBucket(candidate);
+  const originalEquipment = original.equipment;
+  const candidateEquipment = candidate.equipment;
+
+  if (normalizedReason === "best_match") {
+    if (isFreeWeightSibling(originalEquipment, candidateEquipment)) return 4;
+    if (originalEquipment && candidateEquipment && originalEquipment === candidateEquipment) return 3;
+    if (originalBucket === candidateBucket) return 2;
+    if (candidateBucket === "cable" || candidateBucket === "machine") return 1;
+    return 0;
+  }
+
+  if (normalizedReason === "just_change") {
+    if (originalBucket !== candidateBucket) return 4;
+    if (originalEquipment && candidateEquipment && originalEquipment !== candidateEquipment) return 3;
+    return 1;
+  }
+
+  if (originalEquipment && candidateEquipment && originalEquipment === candidateEquipment) return 3;
+  if (originalBucket === candidateBucket) return 2;
+  if (candidateBucket === "bodyweight") return 1;
+  return 1;
+}
+
+function computeReasonTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy, reason: ReplacementReason): number {
+  const normalizedReason = normalizeReplacementReason(reason);
+  const bucket = getEquipmentBucket(candidate);
+  const samePattern = candidate.movementPattern && candidate.movementPattern === original.movementPattern;
+  const samePrimary = hasPrimaryOverlap(original, candidate);
+  const sameEquipmentBucket = getEquipmentBucket(original) === bucket;
+  const candidateDifficulty = getDifficultyRank(candidate.difficultyLevel);
+  const originalDifficulty = getDifficultyRank(original.difficultyLevel);
+  const isIsolation = candidate.movementPattern?.startsWith("isolation_") ?? false;
+
+  switch (normalizedReason) {
+    case "best_match":
+      if (samePattern && samePrimary && candidate.angle === original.angle) return 4;
+      if (samePattern && samePrimary) return 3;
+      if (getMovementFamily(candidate.movementPattern ?? "cardio") === getMovementFamily(original.movementPattern ?? "cardio") && samePrimary) return 2;
+      if (samePrimary) return 1;
+      return 0;
+    case "machine_taken":
+      if (bucket === "machine") return 0;
+      if ((bucket === "free_weight" || bucket === "cable") && samePattern) return 4;
+      if (bucket === "accessory" && samePrimary) return 3;
+      if (bucket === "bodyweight") return 2;
+      return 1;
+    case "no_equipment":
+      if (!["bodyweight", "cardio"].includes(bucket)) return 0;
+      if (bucket === "bodyweight" && samePattern) return 4;
+      if (bucket === "bodyweight" && getMovementFamily(candidate.movementPattern ?? "cardio") === getMovementFamily(original.movementPattern ?? "cardio")) return 3;
+      if (bucket === "cardio") return 2;
+      return 1;
+    case "too_difficult":
+      if (candidateDifficulty > originalDifficulty) return 0;
+      if (isIsolation && samePrimary) return 4;
+      if (bucket === "bodyweight" && getMovementFamily(candidate.movementPattern ?? "cardio") === getMovementFamily(original.movementPattern ?? "cardio")) return 3;
+      if (bucket === "machine") return 2;
+      if (candidateDifficulty <= originalDifficulty) return 1;
+      return 0;
+    case "pain_discomfort":
+      if (isIsolation && samePrimary) return 4;
+      if ((bucket === "cable" || bucket === "machine" || bucket === "bodyweight") && samePrimary) return 4;
+      if (samePrimary && !sameEquipmentBucket) return 3;
+      if (samePrimary) return 2;
+      return 1;
+    case "just_change":
+      if (samePattern && samePrimary && (!sameEquipmentBucket || candidate.angle !== original.angle)) return 4;
+      if (samePrimary && !sameEquipmentBucket) return 3;
+      if (getMovementFamily(candidate.movementPattern ?? "cardio") === getMovementFamily(original.movementPattern ?? "cardio") && samePrimary) return 2;
+      return 1;
+  }
+
+  return 1;
+}
+
+function computeDifficultyTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy, reason: ReplacementReason): number {
+  const normalizedReason = normalizeReplacementReason(reason);
+  const originalDifficulty = getDifficultyRank(original.difficultyLevel);
+  const candidateDifficulty = getDifficultyRank(candidate.difficultyLevel);
+  if (candidateDifficulty <= originalDifficulty) {
+    return candidateDifficulty < originalDifficulty && (normalizedReason === "too_difficult" || normalizedReason === "pain_discomfort")
+      ? 2
+      : 3;
+  }
+  return candidateDifficulty - originalDifficulty === 1 ? 1 : 0;
+}
+
+function computeTrackingTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy): number {
+  const originalTracking = getExerciseTrackingType(original);
+  const candidateTracking = getExerciseTrackingType(candidate);
+  if (originalTracking === candidateTracking) return 2;
+  if (
+    (originalTracking === "timed" && candidateTracking === "weight_timed") ||
+    (originalTracking === "weight_timed" && candidateTracking === "timed")
+  ) {
+    return 1;
+  }
+  return 0;
+}
+
+function computePreferenceTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy, reason: ReplacementReason): number {
+  if (!hasPrimaryOverlap(original, candidate)) return 0;
+
+  const normalizedReason = normalizeReplacementReason(reason);
+  const originalBaseId = getBaseExerciseId(original.id);
+  const candidateBaseId = getBaseExerciseId(candidate.id);
+  const now = Date.now();
+  let score = 0;
+  let primaryMuscleMatches = 0;
+
+  for (const event of getStoredReplacementEvents()) {
+    const eventOriginalBase = getBaseExerciseId(event.originalExerciseId);
+    const eventReplacementBase = getBaseExerciseId(event.replacementExerciseId);
+    if (eventReplacementBase !== candidateBaseId) continue;
+
+    const ageDays = Math.max(0, (now - new Date(event.replacedAt).getTime()) / (1000 * 60 * 60 * 24));
+    const decay = ageDays <= 30 ? 1 : ageDays <= 90 ? 0.7 : 0.4;
+
+    if (eventOriginalBase === originalBaseId) {
+      score = Math.max(score, Math.round(6 * decay));
+      if (normalizeReplacementReason(event.reason) === normalizedReason) {
+        score = Math.max(score, Math.round(7 * decay));
+      }
+    }
+
+    if (normalizeReplacementReason(event.reason) === normalizedReason) {
+      score = Math.max(score, Math.round(3 * decay));
+    }
+
+    primaryMuscleMatches += 1;
+    if (ageDays <= 30) {
+      score = Math.max(score, Math.round(4 * decay));
+    }
+  }
+
+  if (primaryMuscleMatches >= 2) {
+    score = Math.max(score, 2);
+  }
+
+  return Math.min(score, 8);
+}
+
+function computeFatigueTier(candidate: ExerciseWithTaxonomy, sessionExercises: ExerciseDraft[]): number {
+  const candidatePrimary = getExercisePrimaryMuscles(candidate);
+  const completedSetsOnCandidateMuscles = sessionExercises.reduce((sum, exercise) => {
+    const exercisePrimary = getExercisePrimaryMuscles(exercise);
+    if (!exercisePrimary.some((muscle) => candidatePrimary.includes(muscle))) {
+      return sum;
+    }
+    return sum + exercise.draftSets.filter((set) => set.done).length;
+  }, 0);
+
+  if (completedSetsOnCandidateMuscles >= 9) return 0;
+  if (completedSetsOnCandidateMuscles >= 6) return 1;
+  if (completedSetsOnCandidateMuscles >= 3) return 2;
+  return 3;
+}
+
+function computeNoveltyTier(candidate: ExerciseWithTaxonomy): number {
+  const candidateBaseId = getBaseExerciseId(candidate.id);
+  const matchingEvents = getStoredReplacementEvents().filter(
+    (event) => getBaseExerciseId(event.replacementExerciseId) === candidateBaseId
+  );
+  if (matchingEvents.length === 0) return 2;
+  const latest = matchingEvents
+    .map((event) => new Date(event.replacedAt).getTime())
+    .sort((left, right) => right - left)[0];
+  if (!latest) return 2;
+  const ageDays = (Date.now() - latest) / (1000 * 60 * 60 * 24);
+  if (ageDays <= 30) return 0;
+  if (ageDays <= 90) return 1;
+  return 2;
+}
+
+function compareRankTuples(left: ReplacementRankTuple, right: ReplacementRankTuple): number {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return right[index] - left[index];
+    }
+  }
+  return 0;
+}
+
+function flattenRankTuple(rankTuple: ReplacementRankTuple): number {
+  return rankTuple.reduce((sum, value, index) => sum + value * 10 ** (rankTuple.length - index), 0);
+}
+
+function buildMatchReason(
+  original: ExerciseWithTaxonomy,
+  candidate: ExerciseWithTaxonomy,
+  reason: ReplacementReason,
+  rankTuple: ReplacementRankTuple,
+): string {
+  const normalizedReason = normalizeReplacementReason(reason);
+  const [movementTier, muscleTier, angleTier, equipmentTier, reasonTier, difficultyTier, trackingTier, preferenceTier] = rankTuple;
+
+  if (movementTier === 4 && angleTier === 3) {
+    if (normalizedReason === "best_match" && equipmentTier >= 4) {
+      return "Closest equipment sibling";
+    }
+    return "Same movement, same angle";
+  }
+  if (movementTier >= 3 && reasonTier >= 4) {
+    if (normalizedReason === "best_match") return "Closest overall match";
+    if (normalizedReason === "machine_taken") return "Closest non-machine swap";
+    if (normalizedReason === "no_equipment") return "Closest no-equipment swap";
+    if (normalizedReason === "too_difficult") return "Easier matched variation";
+    if (normalizedReason === "pain_discomfort") return "Safer matched variation";
+    return "Closest like-for-like change";
+  }
+  if (muscleTier >= 3) {
+    return `Targets ${original.primaryMuscle}`;
+  }
+  if (preferenceTier > 0) {
+    return "Picked before";
+  }
+  if (difficultyTier >= 2) {
+    return "Simpler to perform";
+  }
+  if (trackingTier === 2) {
+    return "Keeps the same logging style";
+  }
+  return "Similar muscle coverage";
+}
+
+function rankCandidate(
   original: ExerciseWithTaxonomy,
   candidate: ExerciseWithTaxonomy,
   sessionExercises: ExerciseDraft[],
   reason: ReplacementReason,
   availableEquipment: CustomExerciseType[],
   userLevel: ExperienceLevel | null,
-): number {
-  // Hard exclusions
-  if (candidate.id === original.id) return -1;
-  if (sessionExercises.some(e => e.id === candidate.id)) return -1;
+): RankedReplacement | null {
+  if (getBaseExerciseId(candidate.id) === getBaseExerciseId(original.id)) return null;
+  if (sessionExercises.some((exercise) => getBaseExerciseId(exercise.id) === getBaseExerciseId(candidate.id))) return null;
 
-  // Equipment filter
-  const needed = getEquipmentAccessibility(candidate.exerciseType ?? "bodyweight_only");
-  const canDo = needed.some(e => availableEquipment.includes(e));
-  if (!canDo) return -1;
+  const normalizedReason = normalizeReplacementReason(reason);
+  const neededEquipment = getEquipmentAccessibility(candidate.exerciseType ?? inferExerciseType(candidate));
+  const canDo = neededEquipment.some((item) => availableEquipment.includes(item));
+  if (!canDo) return null;
 
-  // Difficulty filter when reason is too_difficult
-  if (reason === "too_difficult" && userLevel !== "advanced") {
-    if ((candidate.difficultyLevel ?? "intermediate") === "advanced") return -1;
-  }
+  const candidateBucket = getEquipmentBucket(candidate);
+  if (normalizedReason === "machine_taken" && candidateBucket === "machine") return null;
+  if (normalizedReason === "no_equipment" && !["bodyweight", "cardio"].includes(candidateBucket)) return null;
+  if (normalizedReason === "too_difficult" && userLevel !== "advanced" && (candidate.difficultyLevel ?? "intermediate") === "advanced") return null;
 
-  let score = 0;
+  const movementTier = computeMovementTier(original, candidate);
+  if (movementTier === 0) return null;
 
-  // ── Movement pattern + angle match (0–50) ─────────────────────────────────
-  // Most important: preserves session intent and balance
-  const origPattern = original.movementPattern;
-  const candPattern = candidate.movementPattern;
-  if (origPattern && candPattern) {
-    if (candPattern === origPattern) {
-      score += 30;
-      // Bonus for same angle (same stimulus, just different equipment)
-      if (original.angle && candidate.angle && candidate.angle === original.angle) {
-        score += 20;  // e.g. Incline Barbell → Incline Dumbbell Press ✦
-      } else if (original.angle && candidate.angle && candidate.angle !== original.angle) {
-        score += 8;   // e.g. Incline Barbell → Flat Barbell Press
-      }
-    } else if (getMovementFamily(candPattern) === getMovementFamily(origPattern)) {
-      score += 15;    // Same family (e.g. push), different pattern
-    }
-  }
+  const muscleTier = computeMuscleTier(original, candidate);
+  if (muscleTier === 0) return null;
 
-  // ── Muscle match (0–40) ────────────────────────────────────────────────────
-  const origPrimary = original.primaryMuscle.toLowerCase();
-  const candPrimary = candidate.primaryMuscle.toLowerCase();
-  if (candPrimary === origPrimary) score += 30;
-  else if (candidate.secondaryMuscles.some(m => m.toLowerCase() === origPrimary)) score += 12;
+  const angleTier = computeAngleTier(original, candidate);
+  const equipmentTier = computeEquipmentTier(original, candidate, reason);
+  const reasonTier = computeReasonTier(original, candidate, reason);
+  if (reasonTier === 0) return null;
 
-  const origSecondary = original.secondaryMuscles.map(m => m.toLowerCase());
-  const candSecondary = candidate.secondaryMuscles.map(m => m.toLowerCase());
-  const secondaryOverlap = candSecondary.filter(m => origSecondary.includes(m)).length;
-  score += Math.min(secondaryOverlap * 5, 15);
+  const difficultyTier = computeDifficultyTier(original, candidate, reason);
+  if (difficultyTier === 0) return null;
 
-  // ── Equipment accessibility bonus ──────────────────────────────────────────
-  // Same equipment type as original = user knows how to use it
-  if (original.equipment && candidate.equipment && candidate.equipment === original.equipment) {
-    score += 5;
-  }
-  // Bodyweight is always accessible — slight boost
-  if (candidate.exerciseType === "bodyweight_only") score += 3;
+  const trackingTier = computeTrackingTier(original, candidate);
+  if (trackingTier === 0) return null;
 
-  // ── Session fatigue penalty ────────────────────────────────────────────────
-  const setsOnSameMuscle = sessionExercises
-    .filter(e => e.primaryMuscle.toLowerCase() === candPrimary)
-    .reduce((sum, e) => sum + e.draftSets.length, 0);
-  if (setsOnSameMuscle >= 6) score -= 25;
-  else if (setsOnSameMuscle >= 3) score -= 10;
+  const rankTuple: ReplacementRankTuple = [
+    movementTier,
+    muscleTier,
+    angleTier,
+    equipmentTier,
+    reasonTier,
+    difficultyTier,
+    trackingTier,
+    computePreferenceTier(original, candidate, reason),
+    computeFatigueTier(candidate, sessionExercises),
+    computeNoveltyTier(candidate),
+  ];
 
-  return Math.max(score, 0);
+  return {
+    exercise: candidate,
+    score: flattenRankTuple(rankTuple),
+    matchReason: buildMatchReason(original, candidate, reason, rankTuple),
+    rankTuple,
+  };
 }
 
 // Main replacement function — returns up to 5 ranked suggestions
@@ -607,30 +966,17 @@ function getSmartReplacements(
   availableEquipment: CustomExerciseType[],
   allExercises: ExerciseWithTaxonomy[],
   userLevel: ExperienceLevel | null,
-): Array<{ exercise: ExerciseWithTaxonomy; score: number; matchReason: string }> {
+) : RankedReplacement[] {
   return allExercises
-    .map(candidate => {
-      const score = scoreReplacement(original, candidate, sessionExercises, reason, availableEquipment, userLevel);
-      // Generate a human-readable match reason for the UI chip
-      let matchReason = "";
-      if (score >= 0) {
-        if (candidate.movementPattern === original.movementPattern && candidate.angle === original.angle) {
-          matchReason = "Same movement, different equipment";
-        } else if (candidate.movementPattern === original.movementPattern) {
-          matchReason = "Same pattern, different angle";
-        } else if (candidate.primaryMuscle === original.primaryMuscle) {
-          matchReason = `Targets ${original.primaryMuscle}`;
-        } else if (getMovementFamily(candidate.movementPattern ?? "cardio") === getMovementFamily(original.movementPattern ?? "cardio")) {
-          matchReason = "Same movement family";
-        } else {
-          matchReason = "Similar muscle group";
-        }
-        if (candidate.exerciseType === "bodyweight_only") matchReason += " · No equipment";
-      }
-      return { exercise: candidate, score, matchReason };
-    })
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score);
+    .map((candidate) =>
+      rankCandidate(original, candidate, sessionExercises, reason, availableEquipment, userLevel)
+    )
+    .filter((candidate): candidate is RankedReplacement => candidate !== null)
+    .sort((left, right) => {
+      const tupleDelta = compareRankTuples(left.rankTuple, right.rankTuple);
+      if (tupleDelta !== 0) return tupleDelta;
+      return right.score - left.score;
+    });
 }
 
 // Insights helper — roll up session volume by movement pattern
@@ -9280,6 +9626,7 @@ function AddExercisePage({
   onToggleTheme,
   preFilterMuscle,
   replaceMode,
+  smartReplacementMeta,
 }: {
   templates: ExerciseDraft[];
   existingExerciseNames: string[];
@@ -9293,6 +9640,7 @@ function AddExercisePage({
   onToggleTheme?: () => void;
   preFilterMuscle?: string;
   replaceMode?: boolean;
+  smartReplacementMeta?: Record<string, { rank: number; score: number; matchReason: string }>;
 }) {
   const isEditingCustomExercise = Boolean(editorExercise);
   const [mode, setMode] = useState<AddExerciseMode>(editorExercise ? "create" : "browse");
@@ -9305,7 +9653,7 @@ function AddExercisePage({
   const [sortMode, setSortMode] = useState<"alphabetical" | "frequency" | "library">("alphabetical");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [query, setQuery] = useState(preFilterMuscle ?? "");
+  const [query, setQuery] = useState(replaceMode ? "" : (preFilterMuscle ?? ""));
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
   const [showInWorkoutOnly, setShowInWorkoutOnly] = useState(false);
   const [showSelectedOnly, setShowSelectedOnly] = useState(false);
@@ -9420,6 +9768,21 @@ function AddExercisePage({
     });
 
     const sorted = [...narrowed].sort((left, right) => {
+      const leftReplacementMeta = smartReplacementMeta?.[left.id];
+      const rightReplacementMeta = smartReplacementMeta?.[right.id];
+      if (replaceMode && (leftReplacementMeta || rightReplacementMeta)) {
+        if (leftReplacementMeta && rightReplacementMeta) {
+          if (leftReplacementMeta.rank !== rightReplacementMeta.rank) {
+            return leftReplacementMeta.rank - rightReplacementMeta.rank;
+          }
+          if (leftReplacementMeta.score !== rightReplacementMeta.score) {
+            return rightReplacementMeta.score - leftReplacementMeta.score;
+          }
+        } else {
+          return leftReplacementMeta ? -1 : 1;
+        }
+      }
+
       if (sortMode === "library") {
         const orderDelta = (templateOrder.get(left.id) ?? 0) - (templateOrder.get(right.id) ?? 0);
         return sortDirection === "asc" ? orderDelta : -orderDelta;
@@ -9440,7 +9803,7 @@ function AddExercisePage({
     });
 
     return sorted;
-  }, [existingExerciseNames, query, selectedTemplateIds, showInWorkoutOnly, showSelectedOnly, sortDirection, sortMode, templateOrder, templates]);
+  }, [existingExerciseNames, query, replaceMode, selectedTemplateIds, showInWorkoutOnly, showSelectedOnly, smartReplacementMeta, sortDirection, sortMode, templateOrder, templates]);
 
   function selectSortMode(nextMode: "alphabetical" | "frequency" | "library") {
     if (nextMode === sortMode) {
@@ -9760,6 +10123,7 @@ function AddExercisePage({
   const renderTemplateCard = (template: ExerciseDraft) => {
     const alreadyInWorkout = existingExerciseNames.includes(template.name);
     const selectionIndex = selectedTemplateIds.indexOf(template.id);
+    const replacementHint = smartReplacementMeta?.[template.id]?.matchReason;
 
     return (
       <article
@@ -9788,6 +10152,9 @@ function AddExercisePage({
                 )}
               </div>
             </div>
+            {replaceMode && replacementHint && (
+              <p className="template-card-match-reason">{replacementHint}</p>
+            )}
             <p className="template-card-meta">
               <strong>{formatPrimaryMuscles(template)}</strong>
               {template.secondaryMuscles.length > 0 ? (
@@ -9844,7 +10211,9 @@ function AddExercisePage({
               ? isEditingCustomExercise
                 ? "Edit Exercise"
                 : "Create Exercise"
-              : "Add Exercise"}
+              : replaceMode
+                ? "Replace Exercise"
+                : "Add Exercise"}
           </h1>
         </div>
         <div className="detail-topbar-actions">
@@ -12551,7 +12920,12 @@ export function App() {
     );
   }
 
-  function replaceExerciseWithTemplate(originalId: string, templateId: string) {
+  function replaceExerciseWithTemplate(
+    originalId: string,
+    templateId: string,
+    reason: ReplacementReason = "preference",
+    matchScore = 0,
+  ) {
     const template = availableExerciseTemplates.find(e => e.id === templateId);
     if (!template) return;
     const suffix = `${Date.now()}-1`;
@@ -12571,9 +12945,9 @@ export function App() {
       replacedAt: new Date().toISOString(),
       originalExerciseId: originalId,
       replacementExerciseId: templateId,
-      reason: "preference",
+      reason,
       setsAlreadyLogged,
-      matchScore: 0,
+      matchScore,
     };
     persistReplacementEvent(event);
     setSmartReplaceExerciseId(null);
@@ -14018,6 +14392,33 @@ export function App() {
     const replaceTarget = smartReplaceExerciseId
       ? exercises.find(e => e.id === smartReplaceExerciseId)
       : null;
+    const smartReplaceAvailableEquipment: CustomExerciseType[] =
+      psychProfile.equipmentAccess === "bodyweight"
+        ? ["bodyweight_only", "freestyle_cardio"]
+        : psychProfile.equipmentAccess === "home_gym"
+          ? ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "barbell", "freestyle_cardio"]
+          : ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "barbell", "machine", "freestyle_cardio"];
+    const smartReplacementResults = replaceTarget
+      ? getSmartReplacements(
+          replaceTarget as ExerciseWithTaxonomy,
+          exercises,
+          "best_match",
+          smartReplaceAvailableEquipment,
+          availableExerciseTemplates as ExerciseWithTaxonomy[],
+          psychProfile.experienceLevel
+        )
+      : [];
+    const smartReplacementMeta = smartReplacementResults.reduce<Record<string, { rank: number; score: number; matchReason: string }>>(
+      (result, entry, index) => {
+        result[entry.exercise.id] = {
+          rank: index,
+          score: entry.score,
+          matchReason: entry.matchReason,
+        };
+        return result;
+      },
+      {}
+    );
     return (
       <div data-theme={resolvedTheme}>
         <AddExercisePage
@@ -14026,7 +14427,12 @@ export function App() {
           onBack={() => { setAddExerciseOpen(false); setSmartReplaceExerciseId(null); }}
           onAddSelected={(templateIds) => {
             if (replaceTarget && templateIds[0]) {
-              replaceExerciseWithTemplate(replaceTarget.id, templateIds[0]);
+              replaceExerciseWithTemplate(
+                replaceTarget.id,
+                templateIds[0],
+                "best_match",
+                smartReplacementMeta[templateIds[0]]?.score ?? 0
+              );
             } else {
               addExercisesFromTemplates(templateIds);
             }
@@ -14036,8 +14442,8 @@ export function App() {
           onUpdateCustom={updateCustomExercise}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
-          preFilterMuscle={replaceTarget?.primaryMuscle}
           replaceMode={Boolean(replaceTarget)}
+          smartReplacementMeta={replaceTarget ? smartReplacementMeta : undefined}
         />
         <BottomNav activeView={appView} onNavigate={(view) => { setAddExerciseOpen(false); setSmartReplaceExerciseId(null); setAppView(view); }} />
       </div>
