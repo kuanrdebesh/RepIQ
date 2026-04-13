@@ -14,496 +14,14 @@ import benchPressImage from "./assets/bench-press.svg";
 import inclineDumbbellPressImage from "./assets/incline-dumbbell-press.svg";
 import anatomyFrontImg from "./assets/anatomy-front.png";
 import anatomyBackImg from "./assets/anatomy-back.png";
+import { makeExercise, exerciseCatalog, _additionalExercises, _finalExercises, _strongExercises, _userExercises, allCatalogExercises } from "./catalog";
+import { getStoredReplacementEvents, persistReplacementEvent, getStoredExercisePreferences, persistExercisePreference, getStoredHiddenSuggestions, persistHiddenSuggestion, removeHiddenSuggestion, themeStorageKey, workoutSettingsStorageKey, customExercisesStorageKey, savedWorkoutsStorageKey, workoutPlansStorageKey, planBuilderDraftStorageKey, psychProfileStorageKey, postWorkoutPsychStorageKey, dailyReadinessStorageKey, sessionBehaviorStorageKey, derivedPsychStorageKey, repiqPlanStorageKey, getStoredSavedWorkouts, persistSavedWorkout, persistSavedWorkoutsList, getStoredPsychProfile, persistPsychProfile, getStoredRepIQPlan, persistRepIQPlan, getStoredPostWorkoutPsych, persistPostWorkoutPsych, getStoredDailyReadiness, persistDailyReadiness, getStoredSessionBehavior, persistSessionBehavior, getStoredWorkoutPlans, persistWorkoutPlans, getStoredPlanBuilderDraft, persistPlanBuilderDraft, SAMPLE_WORKOUT_PLANS, SAMPLE_PLAN_IDS } from "./storage";
+import { DEFAULT_PSYCH_PROFILE, deriveTimeOfDay, buildSessionBehaviorSignals, createInitialSwipeState, COMPOUND_PATTERNS } from "./types";
+import type { FlowState, DraftSet, ExerciseDraft, DetailTab, ThemePreference, DraftSetType, AppView, MotivationalWhy, TrainingGoal, ExperienceLevel, EquipmentAccess, ScheduleCommitment, MoodRating, EnergyRating, RPERating, ThreePointScale, TimeOfDay, SessionSource, Trend, MotivationStyle, UserPsychProfile, PostWorkoutPsych, DailyReadiness, SessionBehaviorSignals, DerivedPsychProfile, SplitType, RepIQPlanExercise, RepIQPlanDay, RepIQPlanWeek, RepIQPlan, PlannedExercise, WorkoutPlan, PlanBuilderMode, PlanSessionSource, ActivePlanSession, WorkoutSettings, WorkoutMeta, RewardCategory, RewardLevel, AddExerciseMode, CreateExerciseStep, CustomExerciseType, MeasurementType, MovementSide, MovementPattern, ExerciseDifficulty, ExerciseAngle, ExerciseEquipment, ReplacementReason, ReplacementEvent, ExerciseWithTaxonomy, ExercisePreferenceEntry, ExercisePreferenceMap, CustomExerciseInput, LoggerReward, RewardSummary, FinishedExerciseSummary, FinishWorkoutDraft, SavedWorkoutData, ExerciseRestDefaults, SwipeState, ActiveRestTimer, MuscleRegion } from "./types";
 
-type FlowState = {
-  status: "idle" | "loading" | "success" | "error";
-  suggestion: CoachingSuggestion | null;
-  message: string | null;
-  engineSource: "live" | "fallback" | "unavailable" | null;
-};
+// ── Types — see types.ts ──────────────────────────────────────────────────────
 
-type DraftSet = {
-  id: string;
-  setType: DraftSetType;
-  weightInput: string;
-  repsInput: string;
-  rpeInput: string;
-  done: boolean;
-  failed: boolean;
-};
-
-type ExerciseDraft = {
-  id: string;
-  name: string;
-  note: string;
-  stickyNoteEnabled?: boolean;
-  restTimer: string;
-  supersetGroupId?: string | null;
-  goal: ExerciseEvaluationRequest["goal"];
-  imageSrc: string;
-  primaryMuscle: string;
-  primaryMuscles?: string[];
-  secondaryMuscles: string[];
-  exerciseType?: CustomExerciseType;
-  measurementType?: MeasurementType;
-  movementSide?: MovementSide;
-  isCustom?: boolean;
-  libraryStatus?: "active" | "archived";
-  howTo: string[];
-  videoLabel?: string;
-  history: ExerciseHistorySession[];
-  draftSets: DraftSet[];
-};
-
-type DetailTab = "summary" | "history" | "howto";
-type ThemePreference = "light" | "dark" | "system";
-type DraftSetType = "warmup" | "normal" | "drop" | "restpause" | "failure";
-type AppView = "home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "profile" | "history-detail" | "glossary" | "more";
-
-// ── Psychological Data Layer ──────────────────────────────────────────────────
-// V1: types and storage stubs defined now so data is captured from day one.
-// V2: intelligence (skip prediction, deload triggers, motivation style) ships later.
-// See docs/psych-layer.md for the full design specification.
-
-type MotivationalWhy =
-  | "inconsistent"        // "I've been inconsistent and want to fix that"
-  | "plateau"             // "I've hit a plateau and need structure"
-  | "look_feel_stronger"  // "I want to look and feel stronger"
-  | "fresh_start"         // "I'm starting fresh"
-  | "feel_good";          // "I just want to feel good"
-
-type TrainingGoal =
-  | "muscle_strength" | "fat_loss" | "endurance" | "general_fitness"  // legacy
-  | "build_muscle" | "get_stronger" | "improve_fitness" | "athletic_performance" | "stay_active"; // onboarding
-
-type ExperienceLevel = "never" | "beginner" | "intermediate" | "advanced" | "veteran";
-type EquipmentAccess =
-  | "bodyweight"      // No equipment — bodyweight exercises only
-  | "dumbbell_pair"   // A pair of dumbbells (fixed or adjustable)
-  | "home_setup"      // Home gym: full dumbbell rack + barbell with plates
-  | "basic_gym"       // Commercial gym: barbells, dumbbells, some machines/cables
-  | "full_gym";       // Full gym: all equipment, cable stations, full machine selection
-type ScheduleCommitment = 2 | 3 | 4 | 5 | 6;
-
-// 1–5 scales for mood and energy capture
-type MoodRating = 1 | 2 | 3 | 4 | 5;
-type EnergyRating = 1 | 2 | 3 | 4 | 5;
-// Standard Borg RPE — session-level perceived exertion (distinct from per-set RPE in logger)
-type RPERating = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
-// 3-point scale for daily readiness (sleep/stress/energy)
-type ThreePointScale = 1 | 2 | 3;
-
-type TimeOfDay = "early_morning" | "morning" | "afternoon" | "evening" | "night";
-// 04–07 / 07–11 / 11–17 / 17–21 / 21–04
-
-type SessionSource = "plan" | "template" | "generated" | "goal_planner" | "quick" | "resume";
-
-type Trend = "improving" | "stable" | "declining";
-
-type MotivationStyle =
-  | "accountability"  // streak-driven; hurt by skips
-  | "achievement"     // PR-driven; volume milestones
-  | "social"          // responds to community activity
-  | "intrinsic"       // self-directed; data-rich; low notification preference
-  | "irregular";      // long gaps; emotional re-starts
-
-// ── UserPsychProfile — stored as singleton, captured at onboarding ────────────
-interface UserPsychProfile {
-  schemaVersion: 1;
-  motivationalWhy: MotivationalWhy | null;
-  primaryGoal: TrainingGoal | null;
-  secondaryGoal: TrainingGoal | null;
-  experienceLevel: ExperienceLevel | null;
-  equipmentAccess: EquipmentAccess | null;
-  scheduleCommitment: ScheduleCommitment | null;
-  onboardingCompletedAt: string | null;   // ISO timestamp
-  // ── Personal info collected at onboarding ──
-  name: string | null;
-  gender: "male" | "female" | "other" | null;
-  unitSystem: "metric" | "imperial";
-  heightCm: number | null;
-  weightKg: number | null;
-  age: number | null;
-  bodyFatBracket: string | null;
-  // ── Schedule preferences ──
-  daysPerWeekPref: number | null;
-  cycleDays: number | null;    // null = 7 (weekly); set if user follows N-day rotating cycle
-  sessionLengthPref: number | null;
-  bestTimePref: string | null;
-  workoutStylePref: string | null;
-  planLengthWeeksPref: number | null; // mesocycle length preference (default 12)
-  // ── Mindset / psych ──
-  preWorkoutFeeling: string | null;
-  isReturningAfterBreak: boolean;
-  breakMonths: number | null;
-  successVision: string | null;
-  biggestObstacles: string[];
-  lastGoalCheckAt: string | null;          // ISO timestamp — 90-day re-check prompt
-  // Consent flags — each capture dimension can be individually disabled
-  capturePostWorkoutMood: boolean;
-  capturePostWorkoutEnergy: boolean;
-  captureSessionRPE: boolean;
-  captureDailyReadiness: boolean;
-  capturePassiveBehavior: boolean;
-}
-
-// ── PostWorkoutPsych — one per completed session, optional capture ─────────────
-interface PostWorkoutPsych {
-  schemaVersion: 1;
-  sessionId: string;        // = SavedWorkoutData.savedAt
-  capturedAt: string;       // ISO timestamp
-  postMood: MoodRating | null;
-  postEnergy: EnergyRating | null;
-  sessionRPE: RPERating | null;
-  psychNote: string | null; // optional reflection, max 280 chars
-}
-
-// ── DailyReadiness — one per calendar day, optional Home card capture ──────────
-interface DailyReadiness {
-  schemaVersion: 1;
-  date: string;             // YYYY-MM-DD
-  capturedAt: string;       // ISO timestamp
-  sleepQuality: ThreePointScale | null;   // 1=poor 2=ok 3=great
-  stressLevel: ThreePointScale | null;    // 1=low 2=medium 3=high
-  energyLevel: ThreePointScale | null;    // 1=low 2=medium 3=high
-  followedBySessionId: string | null;     // populated post-session
-  skippedPlannedSession: boolean;         // had a plan, didn't start
-}
-
-// ── SessionBehaviorSignals — auto-captured at finalizeFinishedWorkoutSave ──────
-interface SessionBehaviorSignals {
-  schemaVersion: 1;
-  sessionId: string;                           // = SavedWorkoutData.savedAt
-  date: string;                                // YYYY-MM-DD
-  dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6;      // 0 = Sunday
-  timeOfDay: TimeOfDay;
-  startedAt: string;                           // ISO timestamp
-  actualDurationMinutes: number;
-  plannedDurationMinutes: number | null;
-  plannedExerciseCount: number | null;
-  actualExerciseCount: number;
-  plannedSetCount: number | null;
-  completedSetCount: number;
-  setCompletionRate: number | null;            // 0–1, null if no plan
-  sessionSource: SessionSource;
-  planId: string | null;
-  restTimerUseCount: number;
-  midSessionExercisesAdded: number;
-}
-
-// ── DerivedPsychProfile — V2 computed, schema reserved in V1 ──────────────────
-// Written by analytics, never by user action. Cached result of pattern analysis.
-interface DerivedPsychProfile {
-  schemaVersion: 1;
-  computedAt: string;
-  confidenceScore: number;                     // 0–1; don't surface insights below ~0.4
-  motivationStyle: MotivationStyle | null;
-  bestTrainingDays: (0 | 1 | 2 | 3 | 4 | 5 | 6)[];
-  skipRiskDays: (0 | 1 | 2 | 3 | 4 | 5 | 6)[];
-  bestTimeOfDay: TimeOfDay | null;
-  avgSessionsPerWeek: number | null;
-  avgReadinessScore: number | null;
-  avgPostMood: number | null;
-  avgPostEnergy: number | null;
-  avgSessionRPE: number | null;
-  avgSetCompletionRate: number | null;
-  moodTrend: Trend | null;
-  energyTrend: Trend | null;
-  consistencyTrend: Trend | null;
-  volumeTrend: Trend | null;
-  deloadRecommended: boolean;
-  deloadReason: string | null;
-  statedGoal: TrainingGoal | null;
-  behaviourAlignedWithGoal: boolean | null;
-  goalDriftDetectedAt: string | null;
-}
-
-// ── RepIQ Generated Plan — V1 rules-based, V2 will add AI layer ───────────────
-type SplitType = "full_body" | "upper_lower" | "ppl" | "body_part";
-
-interface RepIQPlanExercise {
-  exerciseId: string;
-  sets: number;
-  reps: string;
-  restSeconds: number;
-}
-
-interface RepIQPlanDay {
-  sessionLabel: string;
-  focus: string;
-  exercises: RepIQPlanExercise[];
-  completedAt: string | null;
-}
-
-interface RepIQPlanWeek {
-  weekNumber: number;
-  isCompleted: boolean;
-  days: RepIQPlanDay[];
-}
-
-interface RepIQPlan {
-  schemaVersion: 1;
-  id: string;
-  generatedAt: string;
-  startDate: string;
-  planName: string;
-  goal: TrainingGoal;
-  secondaryGoal: TrainingGoal | null;
-  experienceLevel: ExperienceLevel;
-  daysPerWeek: number;
-  sessionLengthMin: number;
-  splitType: SplitType;
-  mesocycleLengthWeeks: number;
-  currentWeekIndex: number;
-  weeks: RepIQPlanWeek[];
-  status?: "active" | "paused";
-  pausedAt?: string | null;           // ISO timestamp when paused; null when active
-  pauseDaysMax?: number | null;       // user-configurable max pause days (system ceiling: 45)
-  totalPauseDaysUsed?: number;        // cumulative pause days across all pauses this plan
-  needsReview?: boolean;            // set when extra volume was logged outside the plan
-  extraVolumeCount?: number;        // how many cross-plan workouts triggered the flag
-  extraVolumeWorkoutIds?: string[]; // savedAt IDs of those workouts (for delete cleanup)
-  lastRegeneratedAt?: string;       // ISO timestamp of last full or partial regeneration
-}
-
-const DEFAULT_PSYCH_PROFILE: UserPsychProfile = {
-  schemaVersion: 1,
-  motivationalWhy: null,
-  primaryGoal: null,
-  secondaryGoal: null,
-  experienceLevel: null,
-  equipmentAccess: null,
-  scheduleCommitment: null,
-  onboardingCompletedAt: null,
-  name: null,
-  gender: null,
-  unitSystem: "metric",
-  heightCm: null,
-  weightKg: null,
-  age: null,
-  bodyFatBracket: null,
-  daysPerWeekPref: null,
-  cycleDays: null,
-  sessionLengthPref: null,
-  bestTimePref: null,
-  workoutStylePref: null,
-  planLengthWeeksPref: null,
-  preWorkoutFeeling: null,
-  isReturningAfterBreak: false,
-  breakMonths: null,
-  successVision: null,
-  biggestObstacles: [],
-  lastGoalCheckAt: null,
-  capturePostWorkoutMood: true,
-  capturePostWorkoutEnergy: true,
-  captureSessionRPE: true,
-  captureDailyReadiness: true,
-  capturePassiveBehavior: true,
-};
-
-function deriveTimeOfDay(isoTimestamp: string): TimeOfDay {
-  const hour = new Date(isoTimestamp).getHours();
-  if (hour >= 4 && hour < 7) return "early_morning";
-  if (hour >= 7 && hour < 11) return "morning";
-  if (hour >= 11 && hour < 17) return "afternoon";
-  if (hour >= 17 && hour < 21) return "evening";
-  return "night";
-}
-
-function buildSessionBehaviorSignals(
-  savedAt: string,
-  session: {
-    date: string;
-    startInstant?: string;
-    duration: string;
-    exerciseCount: number;
-    totalSets: number;
-  },
-  plan: { id: string; exercises: { setCount: number }[] } | null,
-  source: SessionSource,
-  restTimerUseCount: number,
-  midSessionExercisesAdded: number,
-): SessionBehaviorSignals {
-  const startedAt = session.startInstant ?? savedAt;
-  const startDate = new Date(startedAt);
-  const durationMatch = session.duration.match(/(\d+)h?\s*(\d+)?m?/);
-  const actualMinutes = durationMatch
-    ? (parseInt(durationMatch[1] ?? "0") * (session.duration.includes("h") ? 60 : 1)) +
-      parseInt(durationMatch[2] ?? "0")
-    : 0;
-
-  const plannedSetCount = plan
-    ? plan.exercises.reduce((s, e) => s + e.setCount, 0)
-    : null;
-
-  return {
-    schemaVersion: 1,
-    sessionId: savedAt,
-    date: session.date.slice(0, 10),
-    dayOfWeek: startDate.getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6,
-    timeOfDay: deriveTimeOfDay(startedAt),
-    startedAt,
-    actualDurationMinutes: actualMinutes,
-    plannedDurationMinutes: null,   // TODO: wire plan estimated duration when available
-    plannedExerciseCount: plan ? plan.exercises.length : null,
-    actualExerciseCount: session.exerciseCount,
-    plannedSetCount,
-    completedSetCount: session.totalSets,
-    setCompletionRate: plannedSetCount ? session.totalSets / plannedSetCount : null,
-    sessionSource: source,
-    planId: plan?.id ?? null,
-    restTimerUseCount,
-    midSessionExercisesAdded,
-  };
-}
-
-type PlannedExercise = {
-  exerciseId: string;
-  setCount: number;
-  setTypes?: DraftSetType[];
-  restTimer: string;
-  note?: string;
-};
-
-type WorkoutPlan = {
-  id: string;
-  name: string;
-  tag?: string;
-  userTags?: string[];
-  note?: string;
-  exercises: PlannedExercise[];
-  createdAt: string;
-  updatedAt: string;
-  // Template metadata (populated only on WORKOUT_PLAN_TEMPLATES entries)
-  level?: "Beginner" | "Intermediate" | "Advanced";
-  equipment?: "Full Gym" | "Dumbbells" | "Bodyweight";
-  goal?: "Hypertrophy" | "Strength" | "Endurance";
-  muscleGroups?: string[];
-  duration?: number;
-  category?: string;
-};
-
-type PlanBuilderMode = "create" | "edit" | "generate";
-type PlanSessionSource = "saved" | "library" | "generated" | "quick";
-
-type ActivePlanSession = {
-  source: PlanSessionSource;
-  planId: string | null;
-  originalPlan: WorkoutPlan | null;
-} | { source: "repiq"; planId: null; originalPlan: null; weekIdx: number; dayIdx: number } | null;
-
-type WorkoutSettings = {
-  defaultRestSeconds: string;
-  transitionRestSeconds: string;
-  carryForwardDefaults: boolean;
-  showRpe: boolean;
-  guidanceTopStrip: boolean;
-  guidanceInline: boolean;
-  preferredGoal: string | null;
-  preferredLevel: string | null;
-  preferredEquipment: string | null;
-};
-
-type WorkoutMeta = {
-  date: string;
-  startTime: string;
-  startedMinutesAgo: string;
-  sessionName: string;
-  startInstant?: string;
-};
-
-type RewardCategory = "pr" | "volume" | "progress";
-type RewardLevel = "set" | "exercise" | "session";
-type AddExerciseMode = "browse" | "create";
-type CreateExerciseStep = 1 | 2;
-type CustomExerciseType =
-  | "bodyweight_only"
-  | "bodyweight_weighted"
-  | "free_weights_accessories"
-  | "barbell"
-  | "machine"
-  | "freestyle_cardio";
-type MeasurementType = "timed" | "reps_volume" | "weight_timed";
-type MovementSide = "unilateral" | "bilateral";
-
-// ── Smart Replace — see docs/smart-replace.md ─────────────────────────────────
-type MovementPattern =
-  | "horizontal_push"    // Bench press, push-up, dumbbell press
-  | "vertical_push"      // Overhead press, Arnold press, pike push-up
-  | "horizontal_pull"    // Row (barbell, dumbbell, cable, machine)
-  | "vertical_pull"      // Lat pulldown, pull-up, chin-up
-  | "hip_hinge"          // Deadlift, RDL, good morning, hip thrust
-  | "squat"              // Back squat, front squat, goblet squat, leg press
-  | "lunge"              // Lunge, split squat, step-up, Bulgarian
-  | "carry"              // Farmer carry, suitcase carry
-  | "core_anterior"      // Plank, crunch, leg raise, hollow hold
-  | "core_rotational"    // Russian twist, woodchop, cable rotation
-  | "isolation_push"     // Tricep pushdown, chest fly, lateral raise
-  | "isolation_pull"     // Bicep curl, face pull, rear delt fly
-  | "isolation_legs"     // Leg extension, leg curl, calf raise
-  | "cardio";            // Jump rope, sled, rowing machine
-
-type ExerciseDifficulty = "beginner" | "intermediate" | "advanced";
-
-// Exercise angle — describes the bench/body position for the movement
-type ExerciseAngle =
-  | "flat"        // Standard horizontal (bench press, bent-over row)
-  | "incline"     // Angled upward (incline press, incline curl)
-  | "decline"     // Angled downward (decline press)
-  | "overhead"    // Vertical pressing plane
-  | "neutral"     // Neutral grip / neutral stance variant
-  | "prone"       // Face-down (reverse fly, prone leg curl)
-  | "none";       // Not applicable (squat, deadlift, carry)
-
-// Equipment — more granular than exerciseType, used for matching and filtering
-type ExerciseEquipment =
-  | "barbell"
-  | "dumbbell"
-  | "cable"
-  | "machine"
-  | "bodyweight"
-  | "kettlebell"
-  | "resistance_band"
-  | "landmine"
-  | "smith_machine"
-  | "none";       // Bodyweight / no equipment needed
-
-type ReplacementReason =
-  | "machine_taken"
-  | "no_equipment"
-  | "too_difficult"
-  | "pain_discomfort"
-  | "preference";
-
-interface ReplacementEvent {
-  schemaVersion: 1;
-  sessionId: string;               // = SavedWorkoutData.savedAt
-  replacedAt: string;              // ISO timestamp
-  originalExerciseId: string;
-  replacementExerciseId: string;
-  reason: ReplacementReason;
-  setsAlreadyLogged: number;
-  matchScore: number;
-}
-
-const replacementEventsStorageKey = "repiq-replacement-events";
-
-function getStoredReplacementEvents(): ReplacementEvent[] {
-  try {
-    const raw = window.localStorage.getItem(replacementEventsStorageKey);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
-}
-
-function persistReplacementEvent(event: ReplacementEvent): void {
-  try {
-    const existing = getStoredReplacementEvents();
-    const updated = [event, ...existing].slice(0, 500);
-    window.localStorage.setItem(replacementEventsStorageKey, JSON.stringify(updated));
-  } catch {}
-}
+// ── Psych types, plan types, storage functions — see types.ts / storage.ts ────
 
 // Movement family — used for partial-match scoring
 function getMovementFamily(pattern: MovementPattern): string {
@@ -536,91 +54,447 @@ function getEquipmentAccessibility(type: CustomExerciseType): CustomExerciseType
   }
 }
 
-// Type alias for extended exercise draft with taxonomy fields
-type ExerciseWithTaxonomy = ExerciseDraft & {
-  movementPattern?: MovementPattern;
-  angle?: ExerciseAngle;
-  equipment?: ExerciseEquipment;
-  difficultyLevel?: ExerciseDifficulty;
+// ── Exercise Replacement Engine ───────────────────────────────────────────────
+// Lexicographic 10-tuple ranking: movement > muscle > angle > equipment > reason
+//   > difficulty > tracking > preference > fatigue > novelty
+// Each tier is computed independently; higher tiers are never overridden by lower.
+
+type ReplacementRankTuple = [
+  number, // movement
+  number, // muscle
+  number, // angle
+  number, // equipment
+  number, // reason
+  number, // difficulty
+  number, // tracking
+  number, // preference
+  number, // fatigue
+  number, // novelty
+];
+
+type RankedReplacement = {
+  exercise: ExerciseWithTaxonomy;
+  score: number;
+  matchReason: string;
+  rankTuple: ReplacementRankTuple;
 };
 
-// Core scoring function — returns 0–100
-// Priority: same pattern + same angle + different equipment (best swap)
-//           same pattern + different angle + same equipment
-//           same pattern + different everything (still valid)
-//           same movement family (broader fallback)
-function scoreReplacement(
+function normalizeReplacementReason(reason: ReplacementReason): ReplacementReason {
+  return reason === "preference" ? "best_match" : reason;
+}
+
+function getEquipmentBucket(exercise: ExerciseWithTaxonomy): "machine" | "free_weight" | "cable" | "bodyweight" | "cardio" | "accessory" {
+  const equipment = exercise.equipment;
+  const exerciseType = exercise.exerciseType ?? inferExerciseType(exercise);
+
+  if (equipment === "machine" || equipment === "smith_machine" || exerciseType === "machine") {
+    return "machine";
+  }
+  if (equipment === "cable") {
+    return "cable";
+  }
+  if (equipment === "barbell" || equipment === "dumbbell" || equipment === "kettlebell" || equipment === "landmine") {
+    return "free_weight";
+  }
+  if (equipment === "bodyweight" || equipment === "none" || exerciseType === "bodyweight_only") {
+    return "bodyweight";
+  }
+  if (exerciseType === "freestyle_cardio") {
+    return "cardio";
+  }
+  return "accessory";
+}
+
+// Strip timestamp suffix from cloned exercise IDs (e.g. "bench-press-1748...-1" → "bench-press")
+function getBaseExerciseId(id: string): string {
+  return id.replace(/-\d{8,}-\d+$/, "");
+}
+
+function getExercisePrimaryMuscles(exercise: ExerciseDraft): string[] {
+  const raw = exercise.primaryMuscles?.length ? exercise.primaryMuscles : [exercise.primaryMuscle];
+  return Array.from(new Set(raw.map((muscle) => getCanonicalMuscle(muscle))));
+}
+
+function getExerciseSecondaryMuscles(exercise: ExerciseDraft): string[] {
+  return Array.from(new Set((exercise.secondaryMuscles ?? []).map((muscle) => getCanonicalMuscle(muscle))));
+}
+
+function getExerciseTrackingType(exercise: ExerciseDraft): MeasurementType {
+  return exercise.measurementType ?? getExerciseMeasurementType(exercise);
+}
+
+function getDifficultyRank(level?: ExerciseDifficulty): number {
+  switch (level ?? "intermediate") {
+    case "beginner":
+      return 1;
+    case "intermediate":
+      return 2;
+    case "advanced":
+      return 3;
+  }
+}
+
+function isNearbyAngle(original?: ExerciseAngle, candidate?: ExerciseAngle): boolean {
+  if (!original || !candidate) return false;
+  if (original === candidate) return true;
+  const nearbyPairs = new Set([
+    "flat:incline",
+    "incline:flat",
+    "flat:decline",
+    "decline:flat",
+    "neutral:none",
+    "none:neutral",
+    "overhead:neutral",
+    "neutral:overhead",
+  ]);
+  return nearbyPairs.has(`${original}:${candidate}`);
+}
+
+function hasPrimaryOverlap(original: ExerciseDraft, candidate: ExerciseDraft): boolean {
+  const originalPrimary = getExercisePrimaryMuscles(original);
+  const candidatePrimary = getExercisePrimaryMuscles(candidate);
+  return candidatePrimary.some((muscle) => originalPrimary.includes(muscle));
+}
+
+function computeMovementTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy): number {
+  const originalPattern = original.movementPattern;
+  const candidatePattern = candidate.movementPattern;
+  if (!originalPattern || !candidatePattern) return 0;
+  if (candidatePattern === originalPattern) return 4;
+  if (getMovementFamily(candidatePattern) === getMovementFamily(originalPattern) && isNearbyAngle(original.angle, candidate.angle)) {
+    return 3;
+  }
+  if (getMovementFamily(candidatePattern) === getMovementFamily(originalPattern) && hasPrimaryOverlap(original, candidate)) {
+    return 2;
+  }
+  return 0;
+}
+
+function computeMuscleTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy): number {
+  const originalPrimary = getExercisePrimaryMuscles(original);
+  const candidatePrimary = getExercisePrimaryMuscles(candidate);
+  const originalSecondary = getExerciseSecondaryMuscles(original);
+  const candidateSecondary = getExerciseSecondaryMuscles(candidate);
+  const primaryOverlap = candidatePrimary.filter((muscle) => originalPrimary.includes(muscle));
+  const secondaryOverlap = candidateSecondary.filter((muscle) => originalSecondary.includes(muscle));
+
+  if (primaryOverlap.length === originalPrimary.length && secondaryOverlap.length > 0) return 4;
+  if (primaryOverlap.length === originalPrimary.length) return 3;
+  if (primaryOverlap.length > 0) return 2;
+  if (candidateSecondary.some((muscle) => originalPrimary.includes(muscle))) return 1;
+  return 0;
+}
+
+function computeAngleTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy): number {
+  if (original.angle && candidate.angle && original.angle === candidate.angle) return 3;
+  if (isNearbyAngle(original.angle, candidate.angle)) return 2;
+  if (!original.angle || !candidate.angle || original.angle === "none" || candidate.angle === "none" || original.angle === "neutral" || candidate.angle === "neutral") {
+    return 1;
+  }
+  return 0;
+}
+
+function isFreeWeightSibling(original?: ExerciseEquipment, candidate?: ExerciseEquipment): boolean {
+  return (
+    (original === "barbell" && candidate === "dumbbell") ||
+    (original === "dumbbell" && candidate === "barbell")
+  );
+}
+
+function computeEquipmentTier(
+  original: ExerciseWithTaxonomy,
+  candidate: ExerciseWithTaxonomy,
+  reason: ReplacementReason,
+): number {
+  const normalizedReason = normalizeReplacementReason(reason);
+  const originalBucket = getEquipmentBucket(original);
+  const candidateBucket = getEquipmentBucket(candidate);
+  const originalEquipment = original.equipment;
+  const candidateEquipment = candidate.equipment;
+
+  if (normalizedReason === "best_match") {
+    if (isFreeWeightSibling(originalEquipment, candidateEquipment)) return 4;
+    if (originalEquipment && candidateEquipment && originalEquipment === candidateEquipment) return 3;
+    if (originalBucket === candidateBucket) return 2;
+    if (candidateBucket === "cable" || candidateBucket === "machine") return 1;
+    return 0;
+  }
+
+  if (normalizedReason === "just_change") {
+    if (originalBucket !== candidateBucket) return 4;
+    if (originalEquipment && candidateEquipment && originalEquipment !== candidateEquipment) return 3;
+    return 1;
+  }
+
+  if (originalEquipment && candidateEquipment && originalEquipment === candidateEquipment) return 3;
+  if (originalBucket === candidateBucket) return 2;
+  if (candidateBucket === "bodyweight") return 1;
+  return 1;
+}
+
+function computeReasonTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy, reason: ReplacementReason): number {
+  const normalizedReason = normalizeReplacementReason(reason);
+  const bucket = getEquipmentBucket(candidate);
+  const samePattern = candidate.movementPattern && candidate.movementPattern === original.movementPattern;
+  const samePrimary = hasPrimaryOverlap(original, candidate);
+  const sameEquipmentBucket = getEquipmentBucket(original) === bucket;
+  const candidateDifficulty = getDifficultyRank(candidate.difficultyLevel);
+  const originalDifficulty = getDifficultyRank(original.difficultyLevel);
+  const isIsolation = candidate.movementPattern?.startsWith("isolation_") ?? false;
+
+  switch (normalizedReason) {
+    case "best_match":
+      if (samePattern && samePrimary && candidate.angle === original.angle) return 4;
+      if (samePattern && samePrimary) return 3;
+      if (getMovementFamily(candidate.movementPattern ?? "cardio") === getMovementFamily(original.movementPattern ?? "cardio") && samePrimary) return 2;
+      if (samePrimary) return 1;
+      return 0;
+    case "machine_taken":
+      if (bucket === "machine") return 0;
+      if ((bucket === "free_weight" || bucket === "cable") && samePattern) return 4;
+      if (bucket === "accessory" && samePrimary) return 3;
+      if (bucket === "bodyweight") return 2;
+      return 1;
+    case "no_equipment":
+      if (!["bodyweight", "cardio"].includes(bucket)) return 0;
+      if (bucket === "bodyweight" && samePattern) return 4;
+      if (bucket === "bodyweight" && getMovementFamily(candidate.movementPattern ?? "cardio") === getMovementFamily(original.movementPattern ?? "cardio")) return 3;
+      if (bucket === "cardio") return 2;
+      return 1;
+    case "too_difficult":
+      if (candidateDifficulty > originalDifficulty) return 0;
+      if (isIsolation && samePrimary) return 4;
+      if (bucket === "bodyweight" && getMovementFamily(candidate.movementPattern ?? "cardio") === getMovementFamily(original.movementPattern ?? "cardio")) return 3;
+      if (bucket === "machine") return 2;
+      if (candidateDifficulty <= originalDifficulty) return 1;
+      return 0;
+    case "pain_discomfort":
+      if (isIsolation && samePrimary) return 4;
+      if ((bucket === "cable" || bucket === "machine" || bucket === "bodyweight") && samePrimary) return 4;
+      if (samePrimary && !sameEquipmentBucket) return 3;
+      if (samePrimary) return 2;
+      return 1;
+    case "just_change":
+      if (samePattern && samePrimary && (!sameEquipmentBucket || candidate.angle !== original.angle)) return 4;
+      if (samePrimary && !sameEquipmentBucket) return 3;
+      if (getMovementFamily(candidate.movementPattern ?? "cardio") === getMovementFamily(original.movementPattern ?? "cardio") && samePrimary) return 2;
+      return 1;
+  }
+
+  return 1;
+}
+
+function computeDifficultyTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy, reason: ReplacementReason): number {
+  const normalizedReason = normalizeReplacementReason(reason);
+  const originalDifficulty = getDifficultyRank(original.difficultyLevel);
+  const candidateDifficulty = getDifficultyRank(candidate.difficultyLevel);
+  if (candidateDifficulty <= originalDifficulty) {
+    return candidateDifficulty < originalDifficulty && (normalizedReason === "too_difficult" || normalizedReason === "pain_discomfort")
+      ? 2
+      : 3;
+  }
+  return candidateDifficulty - originalDifficulty === 1 ? 1 : 0;
+}
+
+function computeTrackingTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy): number {
+  const originalTracking = getExerciseTrackingType(original);
+  const candidateTracking = getExerciseTrackingType(candidate);
+  if (originalTracking === candidateTracking) return 2;
+  if (
+    (originalTracking === "timed" && candidateTracking === "weight_timed") ||
+    (originalTracking === "weight_timed" && candidateTracking === "timed")
+  ) {
+    return 1;
+  }
+  return 0;
+}
+
+function computePreferenceTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy, reason: ReplacementReason): number {
+  if (!hasPrimaryOverlap(original, candidate)) return 0;
+
+  const normalizedReason = normalizeReplacementReason(reason);
+  const originalBaseId = getBaseExerciseId(original.id);
+  const candidateBaseId = getBaseExerciseId(candidate.id);
+  const now = Date.now();
+  let score = 0;
+  let primaryMuscleMatches = 0;
+
+  for (const event of getStoredReplacementEvents()) {
+    const eventOriginalBase = getBaseExerciseId(event.originalExerciseId);
+    const eventReplacementBase = getBaseExerciseId(event.replacementExerciseId);
+    if (eventReplacementBase !== candidateBaseId) continue;
+
+    const ageDays = Math.max(0, (now - new Date(event.replacedAt).getTime()) / (1000 * 60 * 60 * 24));
+    const decay = ageDays <= 30 ? 1 : ageDays <= 90 ? 0.7 : 0.4;
+
+    if (eventOriginalBase === originalBaseId) {
+      score = Math.max(score, Math.round(6 * decay));
+      if (normalizeReplacementReason(event.reason) === normalizedReason) {
+        score = Math.max(score, Math.round(7 * decay));
+      }
+    }
+
+    if (normalizeReplacementReason(event.reason) === normalizedReason) {
+      score = Math.max(score, Math.round(3 * decay));
+    }
+
+    primaryMuscleMatches += 1;
+    if (ageDays <= 30) {
+      score = Math.max(score, Math.round(4 * decay));
+    }
+  }
+
+  if (primaryMuscleMatches >= 2) {
+    score = Math.max(score, 2);
+  }
+
+  return Math.min(score, 8);
+}
+
+function computeFatigueTier(candidate: ExerciseWithTaxonomy, sessionExercises: ExerciseDraft[]): number {
+  const candidatePrimary = getExercisePrimaryMuscles(candidate);
+  const completedSetsOnCandidateMuscles = sessionExercises.reduce((sum, exercise) => {
+    const exercisePrimary = getExercisePrimaryMuscles(exercise);
+    if (!exercisePrimary.some((muscle) => candidatePrimary.includes(muscle))) {
+      return sum;
+    }
+    return sum + exercise.draftSets.filter((set) => set.done).length;
+  }, 0);
+
+  if (completedSetsOnCandidateMuscles >= 9) return 0;
+  if (completedSetsOnCandidateMuscles >= 6) return 1;
+  if (completedSetsOnCandidateMuscles >= 3) return 2;
+  return 3;
+}
+
+function computeNoveltyTier(candidate: ExerciseWithTaxonomy): number {
+  const candidateBaseId = getBaseExerciseId(candidate.id);
+  const matchingEvents = getStoredReplacementEvents().filter(
+    (event) => getBaseExerciseId(event.replacementExerciseId) === candidateBaseId
+  );
+  if (matchingEvents.length === 0) return 2;
+  const latest = matchingEvents
+    .map((event) => new Date(event.replacedAt).getTime())
+    .sort((left, right) => right - left)[0];
+  if (!latest) return 2;
+  const ageDays = (Date.now() - latest) / (1000 * 60 * 60 * 24);
+  if (ageDays <= 30) return 0;
+  if (ageDays <= 90) return 1;
+  return 2;
+}
+
+function compareRankTuples(left: ReplacementRankTuple, right: ReplacementRankTuple): number {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return right[index] - left[index];
+    }
+  }
+  return 0;
+}
+
+function flattenRankTuple(rankTuple: ReplacementRankTuple): number {
+  return rankTuple.reduce((sum, value, index) => sum + value * 10 ** (rankTuple.length - index), 0);
+}
+
+function buildMatchReason(
+  original: ExerciseWithTaxonomy,
+  candidate: ExerciseWithTaxonomy,
+  reason: ReplacementReason,
+  rankTuple: ReplacementRankTuple,
+): string {
+  const normalizedReason = normalizeReplacementReason(reason);
+  const [movementTier, muscleTier, angleTier, equipmentTier, reasonTier, difficultyTier, trackingTier, preferenceTier] = rankTuple;
+
+  if (movementTier === 4 && angleTier === 3) {
+    if (normalizedReason === "best_match" && equipmentTier >= 4) {
+      return "Closest equipment sibling";
+    }
+    return "Same movement, same angle";
+  }
+  if (movementTier >= 3 && reasonTier >= 4) {
+    if (normalizedReason === "best_match") return "Closest overall match";
+    if (normalizedReason === "machine_taken") return "Closest non-machine swap";
+    if (normalizedReason === "no_equipment") return "Closest no-equipment swap";
+    if (normalizedReason === "too_difficult") return "Easier matched variation";
+    if (normalizedReason === "pain_discomfort") return "Safer matched variation";
+    return "Closest like-for-like change";
+  }
+  if (muscleTier >= 3) {
+    return `Targets ${original.primaryMuscle}`;
+  }
+  if (preferenceTier > 0) {
+    return "Picked before";
+  }
+  if (difficultyTier >= 2) {
+    return "Simpler to perform";
+  }
+  if (trackingTier === 2) {
+    return "Keeps the same logging style";
+  }
+  return "Similar muscle coverage";
+}
+
+// ── Core ranking function — returns RankedReplacement or null (excluded) ──────
+function rankCandidate(
   original: ExerciseWithTaxonomy,
   candidate: ExerciseWithTaxonomy,
   sessionExercises: ExerciseDraft[],
   reason: ReplacementReason,
   availableEquipment: CustomExerciseType[],
   userLevel: ExperienceLevel | null,
-): number {
-  // Hard exclusions
-  if (candidate.id === original.id) return -1;
-  if (sessionExercises.some(e => e.id === candidate.id)) return -1;
+): RankedReplacement | null {
+  if (getBaseExerciseId(candidate.id) === getBaseExerciseId(original.id)) return null;
+  if (sessionExercises.some((exercise) => getBaseExerciseId(exercise.id) === getBaseExerciseId(candidate.id))) return null;
 
-  // Equipment filter
-  const needed = getEquipmentAccessibility(candidate.exerciseType ?? "bodyweight_only");
-  const canDo = needed.some(e => availableEquipment.includes(e));
-  if (!canDo) return -1;
+  const normalizedReason = normalizeReplacementReason(reason);
+  const neededEquipment = getEquipmentAccessibility(candidate.exerciseType ?? inferExerciseType(candidate));
+  const canDo = neededEquipment.some((item) => availableEquipment.includes(item));
+  if (!canDo) return null;
 
-  // Difficulty filter when reason is too_difficult
-  if (reason === "too_difficult" && userLevel !== "advanced") {
-    if ((candidate.difficultyLevel ?? "intermediate") === "advanced") return -1;
-  }
+  const candidateBucket = getEquipmentBucket(candidate);
+  if (normalizedReason === "machine_taken" && candidateBucket === "machine") return null;
+  if (normalizedReason === "no_equipment" && !["bodyweight", "cardio"].includes(candidateBucket)) return null;
+  if (normalizedReason === "too_difficult" && userLevel !== "advanced" && (candidate.difficultyLevel ?? "intermediate") === "advanced") return null;
 
-  let score = 0;
+  const movementTier = computeMovementTier(original, candidate);
+  if (movementTier === 0) return null;
 
-  // ── Movement pattern + angle match (0–50) ─────────────────────────────────
-  // Most important: preserves session intent and balance
-  const origPattern = original.movementPattern;
-  const candPattern = candidate.movementPattern;
-  if (origPattern && candPattern) {
-    if (candPattern === origPattern) {
-      score += 30;
-      // Bonus for same angle (same stimulus, just different equipment)
-      if (original.angle && candidate.angle && candidate.angle === original.angle) {
-        score += 20;  // e.g. Incline Barbell → Incline Dumbbell Press ✦
-      } else if (original.angle && candidate.angle && candidate.angle !== original.angle) {
-        score += 8;   // e.g. Incline Barbell → Flat Barbell Press
-      }
-    } else if (getMovementFamily(candPattern) === getMovementFamily(origPattern)) {
-      score += 15;    // Same family (e.g. push), different pattern
-    }
-  }
+  const muscleTier = computeMuscleTier(original, candidate);
+  if (muscleTier === 0) return null;
 
-  // ── Muscle match (0–40) ────────────────────────────────────────────────────
-  const origPrimary = original.primaryMuscle.toLowerCase();
-  const candPrimary = candidate.primaryMuscle.toLowerCase();
-  if (candPrimary === origPrimary) score += 30;
-  else if (candidate.secondaryMuscles.some(m => m.toLowerCase() === origPrimary)) score += 12;
+  const angleTier = computeAngleTier(original, candidate);
+  const equipmentTier = computeEquipmentTier(original, candidate, reason);
+  const reasonTier = computeReasonTier(original, candidate, reason);
+  if (reasonTier === 0) return null;
 
-  const origSecondary = original.secondaryMuscles.map(m => m.toLowerCase());
-  const candSecondary = candidate.secondaryMuscles.map(m => m.toLowerCase());
-  const secondaryOverlap = candSecondary.filter(m => origSecondary.includes(m)).length;
-  score += Math.min(secondaryOverlap * 5, 15);
+  const difficultyTier = computeDifficultyTier(original, candidate, reason);
+  if (difficultyTier === 0) return null;
 
-  // ── Equipment accessibility bonus ──────────────────────────────────────────
-  // Same equipment type as original = user knows how to use it
-  if (original.equipment && candidate.equipment && candidate.equipment === original.equipment) {
-    score += 5;
-  }
-  // Bodyweight is always accessible — slight boost
-  if (candidate.exerciseType === "bodyweight_only") score += 3;
+  const trackingTier = computeTrackingTier(original, candidate);
+  if (trackingTier === 0) return null;
 
-  // ── Session fatigue penalty ────────────────────────────────────────────────
-  const setsOnSameMuscle = sessionExercises
-    .filter(e => e.primaryMuscle.toLowerCase() === candPrimary)
-    .reduce((sum, e) => sum + e.draftSets.length, 0);
-  if (setsOnSameMuscle >= 6) score -= 25;
-  else if (setsOnSameMuscle >= 3) score -= 10;
+  const rankTuple: ReplacementRankTuple = [
+    movementTier,
+    muscleTier,
+    angleTier,
+    equipmentTier,
+    reasonTier,
+    difficultyTier,
+    trackingTier,
+    computePreferenceTier(original, candidate, reason),
+    computeFatigueTier(candidate, sessionExercises),
+    computeNoveltyTier(candidate),
+  ];
 
-  return Math.max(score, 0);
+  return {
+    exercise: candidate,
+    score: flattenRankTuple(rankTuple),
+    matchReason: buildMatchReason(original, candidate, reason, rankTuple),
+    rankTuple,
+  };
 }
 
-// Main replacement function — returns up to 5 ranked suggestions
+// ── Main replacement function ─────────────────────────────────────────────────
 function getSmartReplacements(
   original: ExerciseWithTaxonomy,
   sessionExercises: ExerciseDraft[],
@@ -628,30 +502,161 @@ function getSmartReplacements(
   availableEquipment: CustomExerciseType[],
   allExercises: ExerciseWithTaxonomy[],
   userLevel: ExperienceLevel | null,
-): Array<{ exercise: ExerciseWithTaxonomy; score: number; matchReason: string }> {
+): RankedReplacement[] {
   return allExercises
-    .map(candidate => {
-      const score = scoreReplacement(original, candidate, sessionExercises, reason, availableEquipment, userLevel);
-      // Generate a human-readable match reason for the UI chip
-      let matchReason = "";
-      if (score >= 0) {
-        if (candidate.movementPattern === original.movementPattern && candidate.angle === original.angle) {
-          matchReason = "Same movement, different equipment";
-        } else if (candidate.movementPattern === original.movementPattern) {
-          matchReason = "Same pattern, different angle";
-        } else if (candidate.primaryMuscle === original.primaryMuscle) {
-          matchReason = `Targets ${original.primaryMuscle}`;
-        } else if (getMovementFamily(candidate.movementPattern ?? "cardio") === getMovementFamily(original.movementPattern ?? "cardio")) {
-          matchReason = "Same movement family";
-        } else {
-          matchReason = "Similar muscle group";
-        }
-        if (candidate.exerciseType === "bodyweight_only") matchReason += " · No equipment";
-      }
-      return { exercise: candidate, score, matchReason };
-    })
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score);
+    .map((candidate) =>
+      rankCandidate(original, candidate, sessionExercises, reason, availableEquipment, userLevel)
+    )
+    .filter((candidate): candidate is RankedReplacement => candidate !== null)
+    .sort((left, right) => {
+      const tupleDelta = compareRankTuples(left.rankTuple, right.rankTuple);
+      if (tupleDelta !== 0) return tupleDelta;
+      return right.score - left.score;
+    });
+}
+
+// Seeded PRNG helpers for deterministic Generate Session
+// Same inputs → same seed → same exercise selection every time.
+// Incrementing the seed gives a valid, different deterministic set (Shuffle).
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+function seededShuffle<T>(arr: T[], seed: number): T[] {
+  const result = [...arr];
+  let s = seed === 0 ? 1 : seed;
+  for (let i = result.length - 1; i > 0; i--) {
+    s = (Math.imul(s, 1664525) + 1013904223) & 0xffffffff;
+    const j = Math.abs(s) % (i + 1);
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+// Config passed around for generated sessions — stored in root so shuffle can re-run
+export type GenConfig = {
+  goal: string;
+  muscles: string[];
+  duration: string;
+  seedOffset: number;
+};
+
+// Pure function — deterministically builds a WorkoutPlan from user inputs + library.
+// Called both by WorkoutPlannerPage (initial generate) and root App (shuffle on review).
+function buildGeneratedPlan(config: GenConfig, library: ExerciseWithTaxonomy[]): WorkoutPlan | null {
+  const { goal, muscles, duration, seedOffset } = config;
+  const muscleKeywords: Record<string, string[]> = {
+    Chest:      ["chest", "pec"],
+    Back:       ["back", "lat", "row", "rhomboid", "trap"],
+    Shoulders:  ["shoulder", "delt"],
+    Biceps:     ["bicep"],
+    Triceps:    ["tricep"],
+    Quads:      ["quad"],
+    Hamstrings: ["hamstring"],
+    Glutes:     ["glute"],
+    Calves:     ["calf", "calve"],
+    Abductors:  ["abductor", "abductors"],
+    Adductors:  ["adductor", "adductors", "inner thigh"],
+    "Core / Abs": ["core", "ab", "oblique"],
+    Obliques:   ["oblique"],
+    Arms: ["bicep", "tricep", "arm", "forearm"],
+    Legs: ["quad", "hamstring", "glute", "calf", "leg", "hip"],
+    Core: ["core", "ab", "oblique"],
+  };
+  const goalConfig: Record<string, { setCount: number; restTimer: string }> = {
+    Strength:    { setCount: 5, restTimer: "180" },
+    Hypertrophy: { setCount: 3, restTimer: "90" },
+    Endurance:   { setCount: 3, restTimer: "45" },
+    "Fat loss":  { setCount: 4, restTimer: "60" },
+  };
+  const durationCount: Record<string, number> = {
+    "30 min": 4, "45 min": 5, "60 min": 6, "75+ min": 8,
+  };
+  const config2 = goalConfig[goal] ?? { setCount: 3, restTimer: "90" };
+  const count = durationCount[duration] ?? 5;
+  const keywords = muscles.flatMap((m) => muscleKeywords[m] ?? [m.toLowerCase()]);
+
+  const STRETCH_IDS = new Set(["chest-stretch", "hip-flexor-stretch"]);
+  let candidates = library.filter((ex) =>
+    ex.movementPattern !== "cardio" &&
+    ex.exerciseType !== "freestyle_cardio" &&
+    !STRETCH_IDS.has(ex.id)
+  );
+  if (keywords.length > 0) {
+    candidates = candidates.filter((ex) =>
+      keywords.some(
+        (kw) =>
+          ex.primaryMuscle.toLowerCase().includes(kw) ||
+          ex.primaryMuscles?.some((pm) => pm.toLowerCase().includes(kw)) ||
+          ex.secondaryMuscles.some((sm) => sm.toLowerCase().includes(kw))
+      )
+    );
+  }
+
+  const inputKey = `${goal}|${[...muscles].sort().join(",")}|${duration}`;
+  const seed = hashString(inputKey) + seedOffset;
+
+  const scored = candidates.map(ex => ({
+    ex,
+    score: keywords.filter(
+      kw => ex.primaryMuscle.toLowerCase().includes(kw) ||
+            ex.primaryMuscles?.some(pm => pm.toLowerCase().includes(kw))
+    ).length,
+  }));
+  const shuffled = seededShuffle(scored, seed);
+  shuffled.sort((a, b) => b.score - a.score);
+  candidates = shuffled.map(s => s.ex);
+
+  const selected: ExerciseWithTaxonomy[] = [];
+  const muscleCounts: Record<string, number> = {};
+  const leftover: ExerciseWithTaxonomy[] = [];
+  for (const ex of candidates) {
+    const pm = ex.primaryMuscle;
+    if ((muscleCounts[pm] ?? 0) < 2) {
+      selected.push(ex);
+      muscleCounts[pm] = (muscleCounts[pm] ?? 0) + 1;
+      if (selected.length >= count) break;
+    } else {
+      leftover.push(ex);
+    }
+  }
+  for (const ex of leftover) {
+    if (selected.length >= count) break;
+    selected.push(ex);
+  }
+
+  if (selected.length === 0) return null;
+
+  return {
+    id: `gen-${Date.now()}`,
+    name: muscles.length > 0
+      ? `${goal} · ${muscles.slice(0, 2).join(" & ")}`
+      : `${goal} Workout`,
+    tag: goal,
+    note: muscles.length > 0 ? `${muscles.join(", ")} · ${duration}` : duration,
+    exercises: selected.map((ex, exIdx) => {
+      const isCompound = ex.movementPattern
+        ? COMPOUND_PATTERNS.has(ex.movementPattern as MovementPattern)
+        : false;
+      const warmupCount = isCompound ? 2 : exIdx === 0 ? 1 : 0;
+      const setTypes: DraftSetType[] = [
+        ...Array.from({ length: warmupCount }, () => "warmup" as DraftSetType),
+        ...Array.from({ length: config2.setCount }, () => "normal" as DraftSetType),
+      ];
+      return {
+        exerciseId: ex.id,
+        setCount: warmupCount + config2.setCount,
+        setTypes,
+        restTimer: config2.restTimer,
+      };
+    }),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 // Insights helper — roll up session volume by movement pattern
@@ -669,129 +674,10 @@ function groupSetsByMovementPattern(
   }
   return result;
 }
-type CustomExerciseInput = {
-  name: string;
-  imageSrc?: string;
-  primaryMuscles: string[];
-  secondaryMuscles: string[];
-  exerciseType: CustomExerciseType;
-  measurementType: MeasurementType;
-  movementSide: MovementSide;
-  movementPattern?: MovementPattern;
-};
-
-type LoggerReward = {
-  id: string;
-  exerciseId: string | null;
-  setId: string | null;
-  category: RewardCategory;
-  level: RewardLevel;
-  shortLabel: string;
-  detail: string;
-};
-
-type RewardSummary = {
-  set: number;
-  exercise: number;
-  session: number;
-  total: number;
-};
-
-type FinishedExerciseSummary = {
-  id: string;
-  name: string;
-  primaryMuscle: string;
-  loggedSets: number;
-  loggedVolume: number;
-  sets?: { weight: number; reps: number; rpe: number | null; setType: string }[];
-};
-
-type FinishWorkoutDraft = {
-  sessionName: string;
-  note: string;
-  date: string;
-  duration: string;
-  durationSeconds: number; // elapsed seconds — used to pre-seed timer on edit-from-history
-  totalVolume: number;
-  totalSets: number;
-  exerciseCount: number;
-  loggedExerciseCount: number;
-  ignoredIncompleteSets: number;
-  exercises: FinishedExerciseSummary[];
-  rewards: LoggerReward[];
-  rewardSummary: RewardSummary;
-  takeawayTitle: string;
-  takeawayBody: string;
-  images: WorkoutMediaAsset[];
-};
-
-type SavedWorkoutData = FinishWorkoutDraft & {
-  savedAt: string; // ISO string
-  repiqSourceKey?: string; // "weekIdx-dayIdx" if completed as part of a RepIQ plan session
-};
-
-type ExerciseRestDefaults = Record<string, string>;
-
-type SwipeState = {
-  rowId: string | null;
-  startX: number;
-  startY: number;
-  deltaX: number;
-  axis: "undecided" | "horizontal" | "vertical";
-  dragging: boolean;
-};
-
-function createInitialSwipeState(): SwipeState {
-  return {
-    rowId: null,
-    startX: 0,
-    startY: 0,
-    deltaX: 0,
-    axis: "undecided",
-    dragging: false
-  };
-}
-
-type ActiveRestTimer = {
-  exerciseId: string;
-  endAt: number | null;
-  pausedRemainingSeconds: number | null;
-  totalSeconds: number;
-  kind: "exercise" | "transition";
-} | null;
-
-type MuscleRegion =
-  | "chest"
-  | "frontDelts"
-  | "sideDelts"
-  | "rearDelts"
-  | "biceps"
-  | "triceps"
-  | "upperBack"
-  | "lats"
-  | "lowerBack"
-  | "quads"
-  | "hamstrings"
-  | "glutes"
-  | "adductors"
-  | "calves";
-
 const apiBaseUrl =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://127.0.0.1:4000";
 
-const themeStorageKey = "repiq-theme-preference";
-const workoutSettingsStorageKey = "repiq-workout-settings";
-const customExercisesStorageKey = "repiq-custom-exercises";
-const savedWorkoutsStorageKey = "repiq-saved-workouts";
-const workoutPlansStorageKey = "repiq-workout-plans";
-const planBuilderDraftStorageKey = "repiq-plan-builder-draft";
-// Psychological data layer (see docs/psych-layer.md)
-const psychProfileStorageKey     = "repiq-psych-profile";
-const postWorkoutPsychStorageKey  = "repiq-post-workout-psych";
-const dailyReadinessStorageKey   = "repiq-daily-readiness";
-const sessionBehaviorStorageKey  = "repiq-session-behavior";
-const derivedPsychStorageKey     = "repiq-derived-psych";
-const repiqPlanStorageKey            = "repiq-generated-plan";
+// ── Storage keys — see storage.ts ─────────────────────────────────────────────
 
 const setTypeOptions: Array<{
   value: DraftSetType;
@@ -1144,6 +1030,7 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     name: "Barbell Squat",
     restTimer: "01:45",
     imageSrc: benchPressImage,
+    exerciseType: "barbell",
     primaryMuscle: "Quads",
     secondaryMuscles: ["Glutes", "Lower Back"],
     movementPattern: "squat", angle: "none", equipment: "barbell", difficultyLevel: "advanced",
@@ -1173,6 +1060,7 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     name: "EZ Bar Curl",
     restTimer: "00:45",
     imageSrc: genericExerciseImage,
+    exerciseType: "free_weights_accessories",
     primaryMuscle: "Biceps",
     secondaryMuscles: ["Front Delts"],
     movementPattern: "isolation_pull", angle: "none", equipment: "barbell", difficultyLevel: "beginner",
@@ -1202,6 +1090,7 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     name: "Rope Pushdown",
     restTimer: "00:45",
     imageSrc: genericExerciseImage,
+    exerciseType: "machine",
     primaryMuscle: "Triceps",
     secondaryMuscles: ["Front Delts"],
     movementPattern: "isolation_push", angle: "none", equipment: "cable", difficultyLevel: "beginner",
@@ -1231,6 +1120,7 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     name: "Push-Up",
     restTimer: "00:45",
     imageSrc: genericExerciseImage,
+    exerciseType: "bodyweight_only",
     primaryMuscle: "Chest",
     secondaryMuscles: ["Front Delts", "Triceps"],
     movementPattern: "horizontal_push", angle: "flat", equipment: "bodyweight", difficultyLevel: "beginner",
@@ -1260,6 +1150,7 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     name: "Pull-Up",
     restTimer: "01:15",
     imageSrc: genericExerciseImage,
+    exerciseType: "bodyweight_only",
     primaryMuscle: "Lats",
     secondaryMuscles: ["Upper Back", "Biceps"],
     movementPattern: "vertical_pull", angle: "overhead", equipment: "bodyweight", difficultyLevel: "intermediate",
@@ -1290,9 +1181,10 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     restTimer: "00:30",
     goal: "strength",
     imageSrc: genericExerciseImage,
+    exerciseType: "machine",
     primaryMuscle: "Quads",
     secondaryMuscles: ["Calves", "Glutes"],
-    movementPattern: "cardio", angle: "none", equipment: "none", difficultyLevel: "beginner",
+    movementPattern: "cardio", angle: "none", equipment: "machine", difficultyLevel: "beginner",
     howTo: [
       "Set the pace before stepping fully into the run.",
       "Keep the torso stacked and let the arms swing naturally.",
@@ -1320,9 +1212,10 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     restTimer: "00:30",
     goal: "strength",
     imageSrc: genericExerciseImage,
+    exerciseType: "machine",
     primaryMuscle: "Quads",
     secondaryMuscles: ["Glutes", "Calves"],
-    movementPattern: "cardio", angle: "none", equipment: "none", difficultyLevel: "beginner",
+    movementPattern: "cardio", angle: "none", equipment: "machine", difficultyLevel: "beginner",
     howTo: [
       "Set the saddle height so the knee stays slightly bent at the bottom.",
       "Keep the cadence smooth and avoid rocking the hips.",
@@ -1349,9 +1242,10 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     name: "Hip Flexor Stretch",
     restTimer: "00:30",
     imageSrc: genericExerciseImage,
+    exerciseType: "bodyweight_only",
     primaryMuscle: "Quads",
     secondaryMuscles: ["Glutes"],
-    movementPattern: "cardio", angle: "none", equipment: "bodyweight", difficultyLevel: "beginner",
+    movementPattern: "lunge", angle: "none", equipment: "bodyweight", difficultyLevel: "beginner",
     howTo: [
       "Set a half-kneeling stance and tuck the pelvis under slightly.",
       "Shift forward until the front of the hip opens up.",
@@ -1378,9 +1272,10 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     name: "Chest Stretch",
     restTimer: "00:30",
     imageSrc: genericExerciseImage,
+    exerciseType: "bodyweight_only",
     primaryMuscle: "Chest",
     secondaryMuscles: ["Front Delts"],
-    movementPattern: "cardio", angle: "none", equipment: "bodyweight", difficultyLevel: "beginner",
+    movementPattern: "isolation_push", angle: "none", equipment: "bodyweight", difficultyLevel: "beginner",
     howTo: [
       "Place the forearm on the wall slightly below shoulder height.",
       "Turn the torso away gently until the chest opens.",
@@ -1657,7 +1552,7 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     id: "cable-hip-abduction",
     name: "Cable Hip Abduction",
     restTimer: "00:45",
-    exerciseType: "free_weights_accessories",
+    exerciseType: "machine",
     measurementType: "reps_volume",
     movementSide: "unilateral",
     primaryMuscle: "Abductors",
@@ -1688,12 +1583,12 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     id: "standing-calf-raise",
     name: "Standing Calf Raise",
     restTimer: "00:45",
-    exerciseType: "machine",
+    exerciseType: "bodyweight_only",
     measurementType: "reps_volume",
     movementSide: "bilateral",
     primaryMuscle: "Calves",
-    secondaryMuscles: ["Glutes"],
-    movementPattern: "isolation_legs", angle: "none", equipment: "machine", difficultyLevel: "beginner",
+    secondaryMuscles: [],
+    movementPattern: "isolation_legs", angle: "none", equipment: "none", difficultyLevel: "beginner",
     howTo: [
       "Let the heels drop into a full stretch at the bottom.",
       "Drive up through the big toe and hold the top briefly.",
@@ -2001,9 +1896,9 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     exerciseType: "free_weights_accessories",
     measurementType: "reps_volume",
     movementSide: "bilateral",
-    primaryMuscle: "Front Shoulders",
+    primaryMuscle: "Front Delts",
     secondaryMuscles: ["Upper Chest", "Side Delts"],
-    movementPattern: "isolation_push", angle: "flat", equipment: "dumbbell", difficultyLevel: "beginner",
+    movementPattern: "isolation_push", angle: "none", equipment: "dumbbell", difficultyLevel: "beginner",
     howTo: [
       "Lift with a soft elbow and a quiet torso.",
       "Raise only to shoulder height so the front delts stay loaded.",
@@ -2033,6 +1928,7 @@ const seededCustomExercises: ExerciseWithTaxonomy[] = [
     name: "Landmine Press",
     restTimer: "01:00",
     imageSrc: genericExerciseImage,
+    exerciseType: "barbell",
     primaryMuscle: "Shoulders",
     secondaryMuscles: ["Upper Chest", "Triceps"],
     movementPattern: "vertical_push", angle: "overhead", equipment: "landmine", difficultyLevel: "intermediate",
@@ -2062,6 +1958,7 @@ const seededCustomExercises: ExerciseWithTaxonomy[] = [
     name: "Cossack Squat",
     restTimer: "00:45",
     imageSrc: genericExerciseImage,
+    exerciseType: "bodyweight_only",
     primaryMuscle: "Adductors",
     secondaryMuscles: ["Glutes", "Quads"],
     movementPattern: "lunge", angle: "none", equipment: "bodyweight", difficultyLevel: "intermediate",
@@ -2275,6 +2172,7 @@ const exerciseTemplates: ExerciseWithTaxonomy[] = [
     restTimer: "01:00",
     goal: "hypertrophy",
     imageSrc: benchPressImage,
+    exerciseType: "machine" as const,
     primaryMuscle: "Upper Back",
     secondaryMuscles: ["Lats", "Biceps", "Rear Delts"],
     movementPattern: "horizontal_pull" as const,
@@ -2376,6 +2274,7 @@ const exerciseTemplates: ExerciseWithTaxonomy[] = [
     restTimer: "01:30",
     goal: "hypertrophy",
     imageSrc: benchPressImage,
+    exerciseType: "machine" as const,
     primaryMuscle: "Quads",
     secondaryMuscles: ["Glutes", "Adductors"],
     movementPattern: "squat" as const,
@@ -2477,6 +2376,7 @@ const exerciseTemplates: ExerciseWithTaxonomy[] = [
     restTimer: "00:45",
     goal: "hypertrophy",
     imageSrc: inclineDumbbellPressImage,
+    exerciseType: "machine" as const,
     primaryMuscle: "Side Delts",
     secondaryMuscles: ["Upper Traps"],
     movementPattern: "isolation_push" as const,
@@ -2575,172 +2475,6 @@ const exerciseTemplates: ExerciseWithTaxonomy[] = [
   ...expandedExerciseSamples
 ];
 
-// ── Smart Replace catalog ─────────────────────────────────────────────────────
-// Full taxonomy-tagged exercise pool used for Smart Replace scoring.
-// Separate from exerciseTemplates so the selector remains unchanged.
-function makeExercise(
-  id: string,
-  name: string,
-  primaryMuscle: string,
-  secondaryMuscles: string[],
-  movementPattern: MovementPattern,
-  angle: ExerciseAngle,
-  equipment: ExerciseEquipment,
-  difficultyLevel: ExerciseDifficulty,
-  exerciseType: CustomExerciseType,
-  restTimer: string,
-  howTo: string[],
-): ExerciseWithTaxonomy {
-  const img = (equipment === "dumbbell" || equipment === "cable" || equipment === "none" || equipment === "bodyweight")
-    ? inclineDumbbellPressImage
-    : benchPressImage;
-  return {
-    id,
-    name,
-    note: "",
-    restTimer,
-    goal: "hypertrophy",
-    imageSrc: img,
-    primaryMuscle,
-    secondaryMuscles,
-    howTo,
-    history: [],
-    draftSets: [
-      { id: `${id}-1`, setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false },
-      { id: `${id}-2`, setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false },
-      { id: `${id}-3`, setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false }
-    ],
-    movementPattern,
-    angle,
-    equipment,
-    difficultyLevel,
-    exerciseType
-  };
-}
-
-const smartReplaceCatalog: ExerciseWithTaxonomy[] = [
-  // ── Horizontal Push ──────────────────────────────────────────────────────────
-  makeExercise("bench-press", "Bench Press", "Chest", ["Front Delts", "Triceps"], "horizontal_push", "flat", "barbell", "intermediate", "barbell", "01:30", ["Plant your feet, set your upper back tight before unracking.", "Lower the bar to mid-chest with controlled elbows.", "Press up keeping the upper back pinned."]),
-  makeExercise("dumbbell-bench-press", "Dumbbell Bench Press", "Chest", ["Front Delts", "Triceps"], "horizontal_push", "flat", "dumbbell", "beginner", "free_weights_accessories", "01:30", ["Kick the dumbbells up with a tight upper back.", "Lower with stacked wrists, elbows slightly tucked.", "Press together and up."]),
-  makeExercise("machine-chest-press", "Machine Chest Press", "Chest", ["Front Delts", "Triceps"], "horizontal_push", "flat", "machine", "beginner", "machine", "01:00", ["Adjust seat so handles align with lower chest.", "Press without shrugging or losing rib position.", "Control the return."]),
-  makeExercise("cable-chest-press", "Cable Chest Press", "Chest", ["Front Delts", "Triceps"], "horizontal_push", "flat", "cable", "beginner", "machine", "01:00", ["Set cable at chest height, step forward for tension.", "Press forward and slightly together.", "Control the return to stretch the chest."]),
-  makeExercise("push-up", "Push-Up", "Chest", ["Front Delts", "Triceps", "Core"], "horizontal_push", "flat", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Set a long straight plank before the first rep.", "Lower as one unit until the chest nearly touches the floor.", "Press away keeping ribs and hips locked."]),
-  makeExercise("incline-barbell-press", "Incline Barbell Press", "Upper Chest", ["Front Delts", "Triceps"], "horizontal_push", "incline", "barbell", "intermediate", "barbell", "01:30", ["Set bench to 30-45 degrees, grip slightly narrower than flat.", "Lower to upper chest with controlled elbows.", "Press up and slightly back."]),
-  makeExercise("incline-dumbbell-press", "Incline Dumbbell Press", "Upper Chest", ["Front Delts", "Triceps"], "horizontal_push", "incline", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Set the bench incline before picking the dumbbells up.", "Lower with elbows slightly tucked and wrists stacked.", "Drive upward in an arc through the upper chest."]),
-  makeExercise("incline-machine-press", "Incline Machine Press", "Upper Chest", ["Front Delts", "Triceps"], "horizontal_push", "incline", "machine", "beginner", "machine", "01:00", ["Set incline angle on the machine, adjust seat height.", "Press without shrugging or lifting off the pad.", "Control the return."]),
-  makeExercise("incline-cable-press", "Incline Cable Press", "Upper Chest", ["Front Delts", "Triceps"], "horizontal_push", "incline", "cable", "beginner", "machine", "01:00", ["Set cables low, lean forward at incline angle.", "Press up and slightly together.", "Control the return for a full chest stretch."]),
-  makeExercise("decline-barbell-press", "Decline Barbell Press", "Lower Chest", ["Front Delts", "Triceps"], "horizontal_push", "decline", "barbell", "intermediate", "barbell", "01:30", ["Secure your feet before unracking.", "Lower to lower chest with elbows flared slightly.", "Press up through the lower chest."]),
-  makeExercise("decline-dumbbell-press", "Decline Dumbbell Press", "Lower Chest", ["Front Delts", "Triceps"], "horizontal_push", "decline", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Set the decline, kick dumbbells up carefully.", "Lower with elbows tucked at 45 degrees.", "Press up through the lower chest."]),
-
-  // ── Vertical Push ────────────────────────────────────────────────────────────
-  makeExercise("overhead-barbell-press", "Overhead Barbell Press", "Shoulders", ["Triceps", "Upper Traps"], "vertical_push", "overhead", "barbell", "intermediate", "barbell", "01:30", ["Grip just outside shoulder width, bar resting on upper chest.", "Press straight up while keeping ribs down.", "Lock out at the top without excessive lean."]),
-  makeExercise("dumbbell-shoulder-press", "Dumbbell Shoulder Press", "Shoulders", ["Triceps", "Front Delts"], "vertical_push", "overhead", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Stack wrists over elbows before pressing overhead.", "Keep the ribcage down instead of leaning back.", "Finish with biceps near the ears without shrugging."]),
-  makeExercise("machine-shoulder-press", "Machine Shoulder Press", "Shoulders", ["Triceps"], "vertical_push", "overhead", "machine", "beginner", "machine", "01:00", ["Adjust seat so handles start at shoulder height.", "Press overhead without losing back contact with the pad.", "Control the return."]),
-  makeExercise("arnold-press", "Arnold Press", "Shoulders", ["Triceps", "Front Delts"], "vertical_push", "overhead", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Start with palms facing you at chin height.", "Rotate palms out as you press overhead.", "Reverse the rotation on the way down."]),
-  makeExercise("landmine-press", "Landmine Press", "Shoulders", ["Chest", "Triceps"], "vertical_push", "overhead", "landmine", "beginner", "barbell", "01:00", ["Set the bar in the landmine, start with elbow in front.", "Press up and forward without over-arching.", "Lower under control to the shoulder line."]),
-  makeExercise("pike-push-up", "Pike Push-Up", "Shoulders", ["Triceps", "Upper Chest"], "vertical_push", "overhead", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Form an inverted V with hips high.", "Lower your head toward the floor between your hands.", "Press back up through the shoulders."]),
-
-  // ── Horizontal Pull ──────────────────────────────────────────────────────────
-  makeExercise("barbell-bent-over-row", "Barbell Bent-Over Row", "Upper Back", ["Lats", "Biceps", "Rear Delts"], "horizontal_pull", "flat", "barbell", "intermediate", "barbell", "01:30", ["Hinge to about 45 degrees, brace hard.", "Drive elbows back while keeping the chest up.", "Lower under control with shoulder blades protracting."]),
-  makeExercise("dumbbell-row", "Dumbbell Row", "Upper Back", ["Lats", "Biceps"], "horizontal_pull", "flat", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Place knee and hand on bench for support.", "Drive elbow back toward your hip.", "Lower slowly to full stretch."]),
-  makeExercise("seated-cable-row", "Seated Cable Row", "Upper Back", ["Lats", "Biceps", "Rear Delts"], "horizontal_pull", "flat", "cable", "beginner", "machine", "01:00", ["Brace feet, sit tall before starting the pull.", "Drive elbows back keeping chest lifted.", "Let shoulder blades protract under control on return."]),
-  makeExercise("machine-row", "Machine Row", "Upper Back", ["Lats", "Biceps"], "horizontal_pull", "flat", "machine", "beginner", "machine", "01:00", ["Adjust chest pad so you can fully extend arms.", "Drive elbows back and squeeze the upper back.", "Control the return to full stretch."]),
-  makeExercise("chest-supported-dumbbell-row", "Chest-Supported Dumbbell Row", "Upper Back", ["Lats", "Rear Delts"], "horizontal_pull", "prone", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Set chest firmly against the incline bench.", "Drive elbows back without shrugging.", "Control the stretch on the way down."]),
-  makeExercise("chest-supported-machine-row", "Chest-Supported Machine Row", "Upper Back", ["Lats", "Rear Delts"], "horizontal_pull", "prone", "machine", "beginner", "machine", "01:00", ["Pin your chest firmly to the pad.", "Pull handles to your sides, squeezing shoulder blades.", "Control the return to full stretch."]),
-  makeExercise("pendlay-row", "Pendlay Row", "Upper Back", ["Lats", "Biceps"], "horizontal_pull", "flat", "barbell", "advanced", "barbell", "01:30", ["Start each rep from the floor, fully horizontal torso.", "Explode the bar to the lower chest.", "Lower back to the floor under control."]),
-  makeExercise("inverted-row", "Inverted Row", "Upper Back", ["Biceps", "Rear Delts"], "horizontal_pull", "flat", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Set bar at hip height, hang with straight body.", "Pull chest to bar keeping hips up.", "Lower slowly to full arm extension."]),
-
-  // ── Vertical Pull ────────────────────────────────────────────────────────────
-  makeExercise("lat-pulldown", "Lat Pulldown", "Lats", ["Upper Back", "Biceps"], "vertical_pull", "overhead", "cable", "beginner", "machine", "01:00", ["Set the thigh pad so you stay locked into the seat.", "Drive elbows down toward your ribs without swinging.", "Control the upward stretch before starting the next rep."]),
-  makeExercise("close-grip-lat-pulldown", "Close-Grip Lat Pulldown", "Lats", ["Biceps", "Upper Back"], "vertical_pull", "overhead", "cable", "beginner", "machine", "01:00", ["Use a close neutral grip, sit tall.", "Drive elbows straight down emphasizing the lats.", "Control the return to full stretch."]),
-  makeExercise("neutral-grip-pulldown", "Neutral-Grip Pulldown", "Lats", ["Biceps", "Upper Back"], "vertical_pull", "overhead", "cable", "beginner", "machine", "01:00", ["Grip the V-bar with neutral palms facing each other.", "Pull to upper chest while leaning back slightly.", "Control the return."]),
-  makeExercise("machine-pulldown", "Machine Pulldown", "Lats", ["Upper Back", "Biceps"], "vertical_pull", "overhead", "machine", "beginner", "machine", "01:00", ["Adjust knee pad, grip handles overhead.", "Pull down toward chest driving elbows to sides.", "Return slowly."]),
-  makeExercise("pull-up", "Pull-Up", "Lats", ["Upper Back", "Biceps"], "vertical_pull", "overhead", "bodyweight", "intermediate", "bodyweight_only", "01:15", ["Start from a dead hang with ribs down.", "Drive elbows toward the hips instead of pulling with neck.", "Lower all the way to full extension."]),
-  makeExercise("chin-up", "Chin-Up", "Lats", ["Biceps", "Upper Back"], "vertical_pull", "overhead", "bodyweight", "intermediate", "bodyweight_only", "01:15", ["Underhand grip shoulder width apart.", "Pull chest to bar while keeping elbows close.", "Lower slowly to full arm extension."]),
-  makeExercise("assisted-pull-up", "Assisted Pull-Up", "Lats", ["Upper Back", "Biceps"], "vertical_pull", "overhead", "machine", "beginner", "machine", "01:00", ["Set the assistance weight to support your bodyweight.", "Pull up until chin clears the bar.", "Lower slowly for full range of motion."]),
-
-  // ── Hip Hinge ────────────────────────────────────────────────────────────────
-  makeExercise("conventional-deadlift", "Conventional Deadlift", "Hamstrings", ["Glutes", "Lower Back", "Traps"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Hinge to the bar, brace hard before pulling.", "Drive the floor away while keeping the bar close.", "Lock out hips and knees at the top."]),
-  makeExercise("romanian-deadlift", "Romanian Deadlift", "Hamstrings", ["Glutes", "Lower Back"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "01:30", ["Unlock the knees and push hips back before the bar drifts.", "Keep the lats tight so the weight stays close.", "Stand tall by driving hips through, not leaning back."]),
-  makeExercise("dumbbell-romanian-deadlift", "Dumbbell Romanian Deadlift", "Hamstrings", ["Glutes", "Lower Back"], "hip_hinge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Hold dumbbells at thighs, soft knees.", "Push hips back, lower dumbbells along legs.", "Drive hips forward to stand."]),
-  makeExercise("sumo-deadlift", "Sumo Deadlift", "Hamstrings", ["Glutes", "Inner Thigh", "Traps"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Set a wide stance with toes turned out.", "Grip inside the legs, brace hard before pulling.", "Push the floor apart as you drive hips forward."]),
-  makeExercise("single-leg-romanian-deadlift", "Single-Leg Romanian Deadlift", "Hamstrings", ["Glutes", "Core"], "hip_hinge", "none", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Hold a dumbbell in the opposite hand from working leg.", "Hinge at the hip, let the back leg lift for counterbalance.", "Return to standing with control."]),
-  makeExercise("good-morning", "Good Morning", "Hamstrings", ["Lower Back", "Glutes"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "01:00", ["Bar rests on upper back, feet shoulder width.", "Hinge at the hips with a slight knee bend.", "Return by driving hips forward."]),
-  makeExercise("barbell-hip-thrust", "Barbell Hip Thrust", "Glutes", ["Hamstrings"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "01:15", ["Set the bench against the shoulder blades before the bar.", "Drive through heels and squeeze glutes hard at the top.", "Lower under control without losing ribcage position."]),
-  makeExercise("machine-hip-thrust", "Machine Hip Thrust", "Glutes", ["Hamstrings"], "hip_hinge", "none", "machine", "beginner", "machine", "01:00", ["Adjust pad height so it sits across the hips.", "Drive hips up squeezing glutes at the top.", "Control the return."]),
-  makeExercise("dumbbell-hip-thrust", "Dumbbell Hip Thrust", "Glutes", ["Hamstrings"], "hip_hinge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Place upper back on bench, dumbbell across hips.", "Drive hips up squeezing glutes fully.", "Lower with control."]),
-  makeExercise("cable-pull-through", "Cable Pull-Through", "Glutes", ["Hamstrings"], "hip_hinge", "none", "cable", "beginner", "machine", "01:00", ["Set cable low, grip between legs facing away.", "Hinge at the hips letting the cable pull back.", "Drive hips forward to stand."]),
-
-  // ── Squat ────────────────────────────────────────────────────────────────────
-  makeExercise("back-squat", "Back Squat", "Quads", ["Glutes", "Hamstrings", "Core"], "squat", "none", "barbell", "advanced", "barbell", "02:00", ["Set the bar across the upper back, brace before unracking.", "Sit down between the hips, keeping mid-foot pressure even.", "Drive up through the floor keeping chest over hips."]),
-  makeExercise("front-squat", "Front Squat", "Quads", ["Glutes", "Core"], "squat", "none", "barbell", "advanced", "barbell", "02:00", ["Rest bar on fingertips or crossed arms at shoulders.", "Keep torso upright as you descend.", "Drive up maintaining the upright position."]),
-  makeExercise("goblet-squat", "Goblet Squat", "Quads", ["Glutes", "Core"], "squat", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Hold a dumbbell vertically at chest height.", "Squat deep keeping elbows inside the knees.", "Drive up through the floor."]),
-  makeExercise("leg-press", "Leg Press", "Quads", ["Glutes", "Hamstrings"], "squat", "none", "machine", "beginner", "machine", "01:30", ["Plant the full foot on the platform before unlocking.", "Lower until knees and hips are deeply bent.", "Drive through mid-foot keeping knees tracking over toes."]),
-  makeExercise("hack-squat", "Hack Squat", "Quads", ["Glutes"], "squat", "none", "machine", "intermediate", "machine", "01:30", ["Set shoulder pads, feet shoulder width on platform.", "Lower under control to full depth.", "Drive up through the heels."]),
-  makeExercise("smith-machine-squat", "Smith Machine Squat", "Quads", ["Glutes", "Hamstrings"], "squat", "none", "smith_machine", "beginner", "machine", "01:30", ["Position feet slightly forward of bar.", "Squat to parallel or below.", "Drive up through the heels."]),
-  makeExercise("bodyweight-squat", "Bodyweight Squat", "Quads", ["Glutes"], "squat", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stand with feet shoulder width, arms forward.", "Squat until thighs are at least parallel.", "Drive up through the heels."]),
-  makeExercise("sissy-squat", "Sissy Squat", "Quads", [], "squat", "none", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["Hold something for balance if needed.", "Lean back slightly as you lower on your toes.", "Drive through the quads to stand."]),
-
-  // ── Lunge ────────────────────────────────────────────────────────────────────
-  makeExercise("dumbbell-forward-lunge", "Dumbbell Forward Lunge", "Quads", ["Glutes", "Hamstrings"], "lunge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Step forward with control, dumbbells at sides.", "Lower back knee toward the floor.", "Push back to start through the front heel."]),
-  makeExercise("dumbbell-reverse-lunge", "Dumbbell Reverse Lunge", "Quads", ["Glutes", "Hamstrings"], "lunge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Step back keeping the torso upright.", "Lower back knee toward the floor.", "Drive through the front heel to return."]),
-  makeExercise("barbell-lunge", "Barbell Lunge", "Quads", ["Glutes", "Hamstrings"], "lunge", "none", "barbell", "intermediate", "barbell", "01:30", ["Set the bar across the upper back.", "Step forward, lower with control.", "Drive through the front heel to return."]),
-  makeExercise("walking-lunge", "Walking Lunge", "Quads", ["Glutes", "Hamstrings"], "lunge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Carry dumbbells at sides.", "Step forward lowering the back knee.", "Drive through front heel and step forward continuously."]),
-  makeExercise("bulgarian-split-squat", "Bulgarian Split Squat", "Quads", ["Glutes", "Hamstrings"], "lunge", "none", "dumbbell", "intermediate", "free_weights_accessories", "01:30", ["Rear foot elevated on a bench, dumbbells at sides.", "Lower the back knee toward the floor.", "Drive up through the front heel."]),
-  makeExercise("step-up", "Step-Up", "Quads", ["Glutes"], "lunge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Hold dumbbells, face a box or bench.", "Step up through the heel, bring the other foot up.", "Step back down with control."]),
-  makeExercise("bodyweight-lunge", "Bodyweight Lunge", "Quads", ["Glutes"], "lunge", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Hands on hips or clasped in front.", "Step forward, lower with control.", "Push back through the front heel."]),
-
-  // ── Isolation Push ───────────────────────────────────────────────────────────
-  makeExercise("dumbbell-lateral-raise", "Dumbbell Lateral Raise", "Shoulders", ["Traps"], "isolation_push", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Soft elbow, slight forward lean.", "Raise out and slightly forward to shoulder height.", "Lower under control without letting shoulders creep up."]),
-  makeExercise("cable-lateral-raise", "Cable Lateral Raise", "Shoulders", ["Traps"], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Stand sideways to the cable, grab low attachment.", "Raise out to shoulder height with soft elbow.", "Lower slowly without letting the stack crash."]),
-  makeExercise("machine-lateral-raise", "Machine Lateral Raise", "Shoulders", [], "isolation_push", "none", "machine", "beginner", "machine", "00:45", ["Adjust the seat so arms start below shoulder height.", "Raise out with control.", "Lower slowly."]),
-  makeExercise("dumbbell-front-raise", "Dumbbell Front Raise", "Front Delts", ["Shoulders"], "isolation_push", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Lift with soft elbow and a quiet torso.", "Raise only to shoulder height.", "Lower slowly without swinging."]),
-  makeExercise("dumbbell-chest-fly", "Dumbbell Chest Fly", "Chest", ["Front Delts"], "isolation_push", "flat", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Slight bend in elbows throughout.", "Open arms wide feeling the chest stretch.", "Bring dumbbells together squeezing the chest."]),
-  makeExercise("cable-chest-fly", "Cable Chest Fly", "Chest", ["Front Delts"], "isolation_push", "flat", "cable", "beginner", "machine", "00:45", ["Set cables high, lean forward slightly.", "Bring handles together in a sweeping arc.", "Control the return feeling the stretch."]),
-  makeExercise("pec-deck", "Pec Deck", "Chest", ["Front Delts"], "isolation_push", "flat", "machine", "beginner", "machine", "00:45", ["Set handles at chest height.", "Bring pads together with a controlled squeeze.", "Control the return to full stretch."]),
-  makeExercise("incline-dumbbell-fly", "Incline Dumbbell Fly", "Upper Chest", ["Front Delts"], "isolation_push", "incline", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Set bench to 30 degrees, soft elbow bend.", "Open arms feeling the upper chest stretch.", "Bring dumbbells together squeezing upper chest."]),
-  makeExercise("tricep-pushdown", "Tricep Pushdown", "Triceps", [], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Lock elbows near the ribs before starting.", "Push down until elbows are fully extended.", "Control the return without letting elbows flare."]),
-  makeExercise("overhead-tricep-extension", "Overhead Tricep Extension", "Triceps", [], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Set cable low or use a dumbbell overhead.", "Keep elbows pointing up, extend through the triceps.", "Control the return feeling the stretch."]),
-  makeExercise("dumbbell-skull-crusher", "Dumbbell Skull Crusher", "Triceps", [], "isolation_push", "flat", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Lie flat, dumbbells above face with locked elbows.", "Lower by bending only the elbows.", "Press back up through the triceps."]),
-  makeExercise("close-grip-bench-press", "Close-Grip Bench Press", "Triceps", ["Chest", "Front Delts"], "isolation_push", "flat", "barbell", "intermediate", "barbell", "01:00", ["Grip shoulder width or slightly inside.", "Lower bar to lower chest with elbows tucked.", "Press up through the triceps."]),
-  makeExercise("diamond-push-up", "Diamond Push-Up", "Triceps", ["Chest"], "isolation_push", "flat", "bodyweight", "intermediate", "bodyweight_only", "00:45", ["Form diamond shape with thumbs and forefingers.", "Keep elbows close to the body throughout.", "Press away focusing on tricep contraction."]),
-
-  // ── Isolation Pull ───────────────────────────────────────────────────────────
-  makeExercise("barbell-curl", "Barbell Curl", "Biceps", ["Forearms"], "isolation_pull", "none", "barbell", "beginner", "barbell", "00:45", ["Stand tall with elbows slightly in front.", "Curl without swinging the shoulders.", "Lower under control to full extension."]),
-  makeExercise("dumbbell-curl", "Dumbbell Curl", "Biceps", ["Forearms"], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Alternate or both arms, elbows stable at sides.", "Curl and supinate at the top.", "Lower slowly."]),
-  makeExercise("cable-curl", "Cable Curl", "Biceps", ["Forearms"], "isolation_pull", "none", "cable", "beginner", "machine", "00:45", ["Set cable low, constant tension throughout.", "Curl to full contraction keeping elbows still.", "Lower under control."]),
-  makeExercise("hammer-curl", "Hammer Curl", "Biceps", ["Forearms"], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Neutral grip, thumbs up throughout.", "Curl without rotating the forearm.", "Lower slowly."]),
-  makeExercise("incline-dumbbell-curl", "Incline Dumbbell Curl", "Biceps", ["Forearms"], "isolation_pull", "incline", "dumbbell", "intermediate", "free_weights_accessories", "00:45", ["Recline on incline bench, arms hanging back.", "Curl from fully stretched position.", "Lower slowly to full stretch."]),
-  makeExercise("concentration-curl", "Concentration Curl", "Biceps", [], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Sit, brace elbow against inner thigh.", "Curl slowly focusing on full contraction.", "Lower under control."]),
-  makeExercise("machine-curl", "Machine Curl", "Biceps", ["Forearms"], "isolation_pull", "none", "machine", "beginner", "machine", "00:45", ["Adjust arm pad, full range of motion.", "Curl with control.", "Lower slowly."]),
-  makeExercise("face-pull", "Face Pull", "Rear Delts", ["Traps", "Upper Back"], "isolation_pull", "none", "cable", "beginner", "machine", "00:45", ["Set cable at face height, rope attachment.", "Pull to face keeping elbows high.", "Control the return."]),
-  makeExercise("dumbbell-rear-delt-fly", "Dumbbell Rear Delt Fly", "Rear Delts", ["Traps", "Upper Back"], "isolation_pull", "prone", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hinge forward or lie prone on incline bench.", "Raise arms out keeping slight elbow bend.", "Control the return."]),
-  makeExercise("machine-rear-delt-fly", "Machine Rear Delt Fly", "Rear Delts", ["Upper Back"], "isolation_pull", "prone", "machine", "beginner", "machine", "00:45", ["Face the pec deck in reverse.", "Sweep arms back squeezing rear delts.", "Control the return."]),
-  makeExercise("barbell-shrug", "Barbell Shrug", "Traps", [], "isolation_pull", "none", "barbell", "beginner", "barbell", "00:45", ["Hold bar at thighs, stand tall.", "Shrug straight up without rolling shoulders.", "Pause briefly at the top."]),
-  makeExercise("dumbbell-shrug", "Dumbbell Shrug", "Traps", ["Forearms"], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Stand tall, dumbbells at sides.", "Shrug straight up without rolling.", "Pause briefly at the top before lowering."]),
-
-  // ── Isolation Legs ───────────────────────────────────────────────────────────
-  makeExercise("leg-extension", "Leg Extension", "Quads", [], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Set pad just above the ankle.", "Extend fully, pause at the top.", "Lower slowly."]),
-  makeExercise("seated-leg-curl", "Seated Leg Curl", "Hamstrings", [], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Adjust pad above the ankles.", "Curl through full range squeezing at the bottom.", "Return slowly."]),
-  makeExercise("lying-leg-curl", "Lying Leg Curl", "Hamstrings", [], "isolation_legs", "prone", "machine", "beginner", "machine", "00:45", ["Lie face down, pad above ankles.", "Curl without lifting hips off the bench.", "Lower slowly to full stretch."]),
-  makeExercise("standing-calf-raise", "Standing Calf Raise", "Calves", [], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Let heels drop to full stretch at the bottom.", "Drive up through the big toe and hold briefly.", "Lower slowly without bouncing."]),
-  makeExercise("seated-calf-raise", "Seated Calf Raise", "Calves", [], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Pad rests above the knees.", "Lower heels to full stretch.", "Drive up and squeeze at the top."]),
-  makeExercise("hip-abduction-machine", "Hip Abduction Machine", "Glutes", ["Inner Thigh"], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Sit with pads on the outside of knees.", "Push legs apart against resistance.", "Control the return."]),
-  makeExercise("hip-adduction-machine", "Hip Adduction Machine", "Inner Thigh", ["Glutes"], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Sit with pads on the inside of knees.", "Squeeze legs together against resistance.", "Control the return."]),
-
-  // ── Core ─────────────────────────────────────────────────────────────────────
-  makeExercise("plank", "Plank", "Core", [], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Brace abs before lifting into position.", "Keep ribs and hips stacked, no sagging.", "Breathe behind the brace while holding."]),
-  makeExercise("ab-crunch", "Ab Crunch", "Core", [], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Feet flat, hands behind ears.", "Curl the rib cage toward the pelvis.", "Lower under control."]),
-  makeExercise("hanging-leg-raise", "Hanging Leg Raise", "Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "intermediate", "bodyweight_only", "00:45", ["Set ribs down before lifting legs.", "Raise with abs not by swinging.", "Lower slowly to keep tension through midline."]),
-  makeExercise("cable-crunch", "Cable Crunch", "Core", [], "core_anterior", "none", "cable", "beginner", "machine", "00:45", ["Kneel, rope at forehead, hips back.", "Crunch down pulling rib cage to hips.", "Control the return."]),
-  makeExercise("ab-wheel-rollout", "Ab Wheel Rollout", "Core", ["Shoulders", "Lats"], "core_anterior", "none", "none", "advanced", "bodyweight_only", "00:45", ["Start on knees, ab wheel in front.", "Roll out as far as you can with a braced core.", "Pull back with abs, not arms."]),
-  makeExercise("hollow-hold", "Hollow Hold", "Core", [], "core_anterior", "none", "bodyweight", "intermediate", "bodyweight_only", "00:30", ["Lie flat, press lower back into floor.", "Lift legs and shoulders together.", "Hold the banana shape breathing steadily."]),
-  makeExercise("russian-twist", "Russian Twist", "Core", [], "core_rotational", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Sit with knees bent, lean back slightly.", "Rotate side to side through the torso.", "Keep the lower back from rounding."]),
-  makeExercise("woodchop", "Woodchop", "Core", ["Shoulders"], "core_rotational", "none", "cable", "beginner", "machine", "00:45", ["Brace before rotating away from the stack.", "Turn through the torso not just the arms.", "Finish under control and resist the pull back."]),
-  makeExercise("side-plank", "Side Plank", "Core", ["Glutes"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stack feet or stagger them for balance.", "Keep hips lifted and stacked.", "Hold steady without the hips sagging."]),
-  makeExercise("dead-bug", "Dead Bug", "Core", [], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie on back, arms and knees at 90 degrees.", "Extend opposite arm and leg while pressing lower back down.", "Return and repeat on the other side."]),
-];
-
 const replacementTemplates: Array<
   Pick<
     ExerciseDraft,
@@ -2773,331 +2507,11 @@ const replacementTemplates: Array<
   }
 ];
 
-// ── Exercise library enrichment ───────────────────────────────────────────────
-// Spreads smartReplaceCatalog + Hevy/FitBod-sourced exercises into
-// exerciseTemplates so they appear in the Add Exercise page.
-// Deduplication is by ID — exercises already in exerciseTemplates are skipped.
+// ── Exercise catalog — see catalog.ts ────────────────────────────────────────
+// (allCatalogExercises is imported above; push into exerciseTemplates below)
 {
-  const _additionalExercises: ExerciseWithTaxonomy[] = [
-
-    // ── CHEST ─────────────────────────────────────────────────────────────────
-    makeExercise("smith-machine-bench-press", "Smith Machine Bench Press", "Chest", ["Front Delts", "Triceps"], "horizontal_push", "flat", "smith_machine", "beginner", "machine", "01:30", ["Set safety stops, position bar over lower chest.", "Lower under control with the smith guiding the path.", "Press up to full extension without locking aggressively."]),
-    makeExercise("smith-machine-incline-press", "Smith Machine Incline Press", "Upper Chest", ["Front Delts", "Triceps"], "horizontal_push", "incline", "smith_machine", "beginner", "machine", "01:30", ["Set bench to 30-45 degrees inside the smith.", "Lower to upper chest under control.", "Press up focusing tension on the upper pec."]),
-    makeExercise("decline-machine-press", "Decline Machine Press", "Lower Chest", ["Triceps", "Front Delts"], "horizontal_push", "decline", "machine", "beginner", "machine", "01:00", ["Adjust seat so handles align with lower chest.", "Press without shrugging or losing lower back contact.", "Control the return to full stretch."]),
-    makeExercise("incline-cable-fly", "Incline Cable Fly", "Upper Chest", ["Front Delts"], "isolation_push", "incline", "cable", "beginner", "machine", "00:45", ["Set cables low, sit on incline bench.", "Arc the handles upward and together toward upper chest.", "Control the return to feel the full stretch."]),
-    makeExercise("decline-dumbbell-fly", "Decline Dumbbell Fly", "Lower Chest", ["Front Delts"], "isolation_push", "decline", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Set slight elbow bend, arms open wide on decline.", "Squeeze the lower chest as you bring the dumbbells together.", "Lower slowly to full stretch."]),
-    makeExercise("cable-crossover", "Cable Crossover", "Chest", ["Front Delts"], "isolation_push", "flat", "cable", "beginner", "machine", "00:45", ["Set cables high, step forward with a slight forward lean.", "Sweep hands together and slightly down in an arc.", "Control the return feeling the full chest stretch."]),
-    makeExercise("push-up-decline", "Decline Push-Up", "Lower Chest", ["Triceps", "Front Delts"], "horizontal_push", "decline", "bodyweight", "intermediate", "bodyweight_only", "00:45", ["Place feet elevated on a bench behind you.", "Lower as one unit keeping the core braced.", "Press away through the lower chest."]),
-    makeExercise("push-up-incline", "Incline Push-Up", "Upper Chest", ["Front Delts", "Triceps"], "horizontal_push", "incline", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Place hands on an elevated surface like a bench.", "Lower chest toward the surface keeping the body in a plank.", "Press back up through the upper chest."]),
-    makeExercise("svend-press", "Svend Press", "Chest", ["Front Delts"], "isolation_push", "flat", "none", "beginner", "free_weights_accessories", "00:45", ["Press two plates together with palms flat.", "Extend arms away from chest while squeezing the plates.", "Return slowly maintaining the squeeze."]),
-    makeExercise("reverse-grip-bench-press", "Reverse Grip Bench Press", "Upper Chest", ["Triceps", "Front Delts"], "horizontal_push", "flat", "barbell", "advanced", "barbell", "01:30", ["Grip the bar underhand slightly outside shoulder width.", "Lower to mid-chest keeping elbows closer to body.", "Press up driving through the upper chest."]),
-
-    // ── BACK ──────────────────────────────────────────────────────────────────
-    makeExercise("barbell-row-underhand", "Barbell Row (Underhand)", "Upper Back", ["Biceps", "Lats"], "horizontal_pull", "flat", "barbell", "intermediate", "barbell", "01:30", ["Hinge to about 45 degrees, underhand grip outside hips.", "Drive elbows back leading with the biceps.", "Lower under control to full extension."]),
-    makeExercise("wide-grip-pull-up", "Wide-Grip Pull-Up", "Lats", ["Upper Back", "Rear Delts"], "vertical_pull", "overhead", "bodyweight", "intermediate", "bodyweight_only", "01:15", ["Grip wider than shoulder width, dead hang start.", "Pull until chin clears the bar driving elbows down and back.", "Lower slowly to full extension."]),
-    makeExercise("weighted-chin-up", "Weighted Chin-Up", "Lats", ["Biceps", "Upper Back"], "vertical_pull", "overhead", "bodyweight", "advanced", "bodyweight_weighted", "01:30", ["Attach weight via belt or hold between feet.", "Underhand grip, pull chest to bar.", "Lower slowly under control."]),
-    makeExercise("single-arm-lat-pulldown", "Single-Arm Lat Pulldown", "Lats", ["Biceps"], "vertical_pull", "overhead", "cable", "beginner", "machine", "00:45", ["Grip a single handle with one hand, sit tall.", "Pull down to shoulder level driving the elbow toward the hip.", "Return slowly and feel the full lat stretch."]),
-    makeExercise("meadows-row", "Meadows Row", "Upper Back", ["Lats", "Rear Delts", "Biceps"], "horizontal_pull", "flat", "barbell", "advanced", "barbell", "01:00", ["Stagger stance perpendicular to the bar, grip the far end.", "Row the bar to your hip in a high arc.", "Lower under control to full stretch."]),
-    makeExercise("cable-shrug", "Cable Shrug", "Traps", [], "isolation_pull", "none", "cable", "beginner", "machine", "00:45", ["Set cable low or at waist height, grab straight bar.", "Shrug straight up without rolling the shoulders.", "Pause briefly at the top before lowering."]),
-    makeExercise("dumbbell-deadlift", "Dumbbell Deadlift", "Hamstrings", ["Glutes", "Lower Back", "Traps"], "hip_hinge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Hold dumbbells at thighs, soft knees, brace.", "Push hips back and lower dumbbells along legs.", "Drive hips forward and squeeze glutes at the top."]),
-    makeExercise("trap-bar-deadlift", "Trap Bar Deadlift", "Hamstrings", ["Glutes", "Traps", "Quads"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "01:30", ["Stand inside the hex bar, grip the handles.", "Brace hard and drive the floor away.", "Lock out hips and knees at the top."]),
-    makeExercise("deficit-deadlift", "Deficit Deadlift", "Hamstrings", ["Glutes", "Lower Back"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Stand on a plate or platform to increase range of motion.", "Brace hard, keep bar close through the longer pull.", "Lock out at the top."]),
-    makeExercise("stiff-leg-deadlift", "Stiff-Leg Deadlift", "Hamstrings", ["Lower Back", "Glutes"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "01:30", ["Keep legs nearly straight — only a soft unlock.", "Hinge at the hips lowering bar along the legs.", "Drive hips forward to stand without using knee drive."]),
-    makeExercise("landmine-row", "Landmine Row", "Upper Back", ["Lats", "Biceps"], "horizontal_pull", "flat", "landmine", "beginner", "barbell", "01:00", ["Stagger stance, hinge slightly forward.", "Row the loaded end toward your hip.", "Lower with control to full stretch."]),
-    makeExercise("dumbbell-sumo-deadlift", "Dumbbell Sumo Deadlift", "Hamstrings", ["Glutes", "Inner Thigh"], "hip_hinge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Stand wide with toes turned out, dumbbell between legs.", "Brace and pull up by driving hips forward.", "Squeeze glutes at the top."]),
-
-    // ── SHOULDERS ─────────────────────────────────────────────────────────────
-    makeExercise("push-press", "Push Press", "Shoulders", ["Triceps", "Traps", "Quads"], "vertical_push", "overhead", "barbell", "intermediate", "barbell", "01:30", ["Slight knee dip to load the legs.", "Drive the bar overhead using leg momentum.", "Lock out overhead controlling the descent."]),
-    makeExercise("smith-machine-overhead-press", "Smith Machine Overhead Press", "Shoulders", ["Triceps"], "vertical_push", "overhead", "smith_machine", "beginner", "machine", "01:00", ["Set bench upright inside the smith, bar at upper chest.", "Press overhead without excessive lean.", "Lower under control to start."]),
-    makeExercise("z-press", "Z-Press", "Shoulders", ["Core", "Triceps"], "vertical_push", "overhead", "barbell", "advanced", "barbell", "01:30", ["Sit on the floor with legs extended, bar on shoulders.", "Press overhead keeping the torso strictly upright.", "Lower under control requiring full shoulder mobility."]),
-    makeExercise("dumbbell-upright-row", "Dumbbell Upright Row", "Traps", ["Side Delts", "Biceps"], "isolation_pull", "none", "dumbbell", "intermediate", "free_weights_accessories", "00:45", ["Hold dumbbells in front of thighs.", "Pull upward leading with the elbows.", "Lower slowly keeping control."]),
-    makeExercise("barbell-front-raise", "Barbell Front Raise", "Front Delts", ["Upper Chest"], "isolation_push", "none", "barbell", "beginner", "barbell", "00:45", ["Grip bar at shoulder width, arms extended.", "Raise to shoulder height with a soft elbow.", "Lower slowly under control."]),
-    makeExercise("plate-front-raise", "Plate Front Raise", "Front Delts", ["Upper Chest"], "isolation_push", "none", "none", "beginner", "free_weights_accessories", "00:45", ["Hold a plate with both hands at hip level.", "Raise to shoulder height with straight arms.", "Lower slowly without swinging."]),
-    makeExercise("cable-rear-delt-fly", "Cable Rear Delt Fly", "Rear Delts", ["Traps", "Upper Back"], "isolation_pull", "prone", "cable", "beginner", "machine", "00:45", ["Cross the cables at face height, grab opposite handles.", "Open arms wide squeezing the rear delts.", "Control the return without letting cables pull you forward."]),
-    makeExercise("landmine-lateral-raise", "Landmine Lateral Raise", "Side Delts", ["Traps"], "isolation_push", "none", "landmine", "intermediate", "barbell", "00:45", ["Stand beside the landmine, hold the loaded end.", "Raise laterally to shoulder height keeping elbow soft.", "Lower under control."]),
-    makeExercise("cable-external-rotation", "Cable External Rotation", "Rotator Cuff", ["Rear Delts"], "isolation_pull", "none", "cable", "beginner", "machine", "00:45", ["Set cable at elbow height, arm at 90 degrees.", "Rotate the forearm outward keeping the elbow fixed.", "Return slowly."]),
-
-    // ── BICEPS ────────────────────────────────────────────────────────────────
-    makeExercise("zottman-curl", "Zottman Curl", "Biceps", ["Forearms", "Brachialis"], "isolation_pull", "none", "dumbbell", "intermediate", "free_weights_accessories", "00:45", ["Curl with a supinated grip up to full contraction.", "Rotate to a pronated grip at the top.", "Lower with palms facing down for forearm work."]),
-    makeExercise("bayesian-curl", "Bayesian Curl", "Biceps", ["Forearms"], "isolation_pull", "incline", "cable", "intermediate", "machine", "00:45", ["Set cable low behind you, arm extended back.", "Curl from a fully stretched position through the full arc.", "Lower back to full stretch."]),
-    makeExercise("drag-curl", "Drag Curl", "Biceps", [], "isolation_pull", "none", "barbell", "intermediate", "barbell", "00:45", ["Instead of arcing forward, drag the bar up the body.", "Keep elbows moving back as you curl.", "Lower along the same path."]),
-    makeExercise("reverse-curl", "Reverse Curl", "Forearms", ["Biceps", "Brachialis"], "isolation_pull", "none", "barbell", "beginner", "barbell", "00:45", ["Grip overhand at shoulder width.", "Curl to full contraction without swinging.", "Lower under control to full extension."]),
-    makeExercise("cross-body-hammer-curl", "Cross-Body Hammer Curl", "Biceps", ["Brachialis", "Forearms"], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hold dumbbell at side with a neutral grip.", "Curl across the body toward the opposite shoulder.", "Lower slowly and alternate."]),
-    makeExercise("cable-hammer-curl", "Cable Hammer Curl", "Biceps", ["Brachialis", "Forearms"], "isolation_pull", "none", "cable", "beginner", "machine", "00:45", ["Attach a rope, stand facing the cable.", "Curl with neutral grip, thumbs up throughout.", "Lower slowly keeping elbows fixed."]),
-    makeExercise("seated-dumbbell-curl", "Seated Dumbbell Curl", "Biceps", ["Forearms"], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Sit upright on a bench, dumbbells at sides.", "Curl and supinate at the top of the movement.", "Lower under control without swinging."]),
-    makeExercise("spider-curl", "Spider Curl", "Biceps", ["Forearms"], "isolation_pull", "incline", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Lie chest-down on an incline bench, arms hanging freely.", "Curl both dumbbells keeping elbows still.", "Lower slowly to full stretch."]),
-    makeExercise("preacher-curl", "Preacher Curl", "Biceps", ["Forearms"], "isolation_pull", "incline", "barbell", "beginner", "free_weights_accessories", "00:45", ["Lock upper arms flat on the pad before starting.", "Curl slowly to full contraction without swinging.", "Lower under control to full extension."]),
-
-    // ── TRICEPS ───────────────────────────────────────────────────────────────
-    makeExercise("barbell-skull-crusher", "Barbell Skull Crusher", "Triceps", ["Front Delts"], "isolation_push", "flat", "barbell", "intermediate", "barbell", "01:00", ["Lie flat, grip shoulder-width on a straight bar.", "Lower by bending only at the elbows toward the forehead.", "Press back through the triceps keeping elbows pinned."]),
-    makeExercise("dumbbell-tricep-kickback", "Dumbbell Tricep Kickback", "Triceps", [], "isolation_push", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hinge forward with upper arm parallel to the floor.", "Extend the elbow fully pressing the dumbbell back.", "Return slowly keeping the upper arm completely still."]),
-    makeExercise("cable-tricep-kickback", "Cable Tricep Kickback", "Triceps", [], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Hinge forward, upper arm parallel to the floor.", "Extend the elbow fully pressing back.", "Return slowly keeping the upper arm still."]),
-    makeExercise("lying-tricep-extension", "Lying Tricep Extension", "Triceps", [], "isolation_push", "flat", "barbell", "beginner", "barbell", "00:45", ["Lie flat, arms extended over face with barbell.", "Lower by bending at the elbows toward the forehead.", "Press back to full extension through the triceps."]),
-    makeExercise("single-arm-tricep-extension", "Single-Arm Overhead Tricep Extension", "Triceps", [], "isolation_push", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hold dumbbell behind the head with one arm, elbow pointing up.", "Extend the arm fully pressing overhead.", "Lower under control to full stretch."]),
-    makeExercise("tricep-dip", "Tricep Dip", "Triceps", ["Chest", "Shoulders"], "vertical_push", "decline", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["Keep the torso upright to bias the triceps.", "Lower until the elbows reach 90 degrees.", "Press back up through the triceps."]),
-    makeExercise("jm-press", "JM Press", "Triceps", ["Chest"], "isolation_push", "flat", "barbell", "advanced", "barbell", "01:00", ["Half skull crusher, half close-grip press.", "Lower bar to throat with elbows flared at 45 degrees.", "Press back up through the triceps."]),
-    makeExercise("tate-press", "Tate Press", "Triceps", [], "isolation_push", "flat", "dumbbell", "intermediate", "free_weights_accessories", "00:45", ["Lie flat, dumbbells above chest pointing outward.", "Tip the dumbbells toward the chest bending only the elbows.", "Extend back up squeezing the triceps."]),
-    makeExercise("ring-dip", "Ring Dip", "Triceps", ["Chest", "Shoulders"], "vertical_push", "decline", "bodyweight", "advanced", "bodyweight_only", "01:30", ["Support on rings with arms locked out.", "Lower under control stabilizing the rings.", "Press back up to lockout."]),
-
-    // ── QUADS / LEGS ──────────────────────────────────────────────────────────
-    makeExercise("pistol-squat", "Pistol Squat", "Quads", ["Glutes", "Core"], "squat", "none", "bodyweight", "advanced", "bodyweight_only", "01:00", ["Extend one leg forward, arms out for balance.", "Sit down on one leg to full depth.", "Drive through the heel to stand."]),
-    makeExercise("barbell-hack-squat", "Barbell Hack Squat", "Quads", ["Glutes"], "squat", "none", "barbell", "advanced", "barbell", "01:30", ["Hold bar behind the legs at arm's length.", "Squat down keeping torso upright.", "Drive up through the heels."]),
-    makeExercise("zercher-squat", "Zercher Squat", "Quads", ["Glutes", "Core", "Upper Back"], "squat", "none", "barbell", "advanced", "barbell", "01:30", ["Cradle bar in the crook of the elbows.", "Keep the torso upright as you descend to full depth.", "Drive up through the floor."]),
-    makeExercise("pause-squat", "Pause Squat", "Quads", ["Glutes", "Core"], "squat", "none", "barbell", "advanced", "barbell", "02:00", ["Squat to the bottom position and hold for 2-3 seconds.", "Stay braced through the pause — do not relax.", "Drive up explosively after the pause."]),
-    makeExercise("overhead-squat", "Overhead Squat", "Quads", ["Shoulders", "Core", "Glutes"], "squat", "overhead", "barbell", "advanced", "barbell", "02:00", ["Hold bar locked out overhead with a wide grip.", "Descend keeping the bar stacked over mid-foot.", "Drive up maintaining the overhead position."]),
-    makeExercise("safety-bar-squat", "Safety Bar Squat", "Quads", ["Glutes", "Upper Back"], "squat", "none", "barbell", "intermediate", "barbell", "01:30", ["The cambered bar rests on the traps, handles at the front.", "Descend keeping the torso more upright than a back squat.", "Drive up through the floor."]),
-    makeExercise("belt-squat", "Belt Squat", "Quads", ["Glutes"], "squat", "none", "machine", "intermediate", "machine", "01:30", ["Load hangs from a belt around the hips — no spinal load.", "Squat freely with hands free to assist balance.", "Drive up through the heels."]),
-    makeExercise("sumo-squat", "Sumo Squat", "Quads", ["Glutes", "Inner Thigh"], "squat", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Wide stance, toes turned out, hold dumbbell between legs.", "Sit down keeping knees tracking toes.", "Drive up through the heels."]),
-    makeExercise("landmine-squat", "Landmine Squat", "Quads", ["Glutes", "Core"], "squat", "none", "landmine", "beginner", "barbell", "01:00", ["Hold loaded end at chest height with both hands.", "Squat freely — landmine acts as a counterbalance.", "Drive up to standing."]),
-    makeExercise("wall-ball", "Wall Ball", "Quads", ["Shoulders", "Glutes", "Core"], "squat", "overhead", "none", "intermediate", "free_weights_accessories", "01:00", ["Hold medicine ball at chest, face the wall.", "Squat and drive upward throwing the ball to a target.", "Catch it and go directly into the next rep."]),
-    makeExercise("thruster", "Thruster", "Quads", ["Shoulders", "Glutes", "Core"], "squat", "overhead", "barbell", "advanced", "barbell", "01:30", ["Hold bar in the front rack position.", "Squat to depth and drive up explosively.", "Use the momentum to press the bar overhead in one motion."]),
-    makeExercise("burpee", "Burpee", "Quads", ["Shoulders", "Core", "Chest"], "squat", "none", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["Squat down and jump feet back to plank.", "Perform a push-up, jump feet forward.", "Explode up and clap overhead."]),
-
-    // ── HAMSTRINGS / GLUTES ───────────────────────────────────────────────────
-    makeExercise("nordic-curl", "Nordic Curl", "Hamstrings", ["Glutes", "Lower Back"], "hip_hinge", "none", "bodyweight", "advanced", "bodyweight_only", "01:30", ["Anchor feet securely, kneel tall with arms crossed.", "Lower your body under control as far as possible.", "Catch yourself and use your hands to reset."]),
-    makeExercise("glute-bridge", "Glute Bridge", "Glutes", ["Hamstrings", "Core"], "hip_hinge", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie on your back, feet flat near your glutes.", "Drive through heels and squeeze fully at the top.", "Lower slowly with control."]),
-    makeExercise("single-leg-glute-bridge", "Single-Leg Glute Bridge", "Glutes", ["Hamstrings", "Core"], "hip_hinge", "none", "bodyweight", "intermediate", "bodyweight_only", "00:45", ["Lie on your back, one leg extended, one foot flat.", "Drive through the planted heel squeezing the glute.", "Lower slowly and repeat before switching."]),
-    makeExercise("banded-hip-thrust", "Banded Hip Thrust", "Glutes", ["Hamstrings"], "hip_hinge", "none", "resistance_band", "beginner", "free_weights_accessories", "01:00", ["Loop band across hips, upper back on bench.", "Drive through heels squeezing glutes at the top.", "Lower slowly — band adds resistance in both directions."]),
-    makeExercise("frog-pump", "Frog Pump", "Glutes", ["Inner Thigh"], "hip_hinge", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie on back, soles of feet together and pulled toward glutes.", "Drive hips up squeezing the glutes fully.", "Lower slowly and repeat."]),
-    makeExercise("glute-kickback-machine", "Glute Kickback Machine", "Glutes", ["Hamstrings"], "hip_hinge", "none", "machine", "beginner", "machine", "00:45", ["Position the pad behind the knee, grip handles.", "Kick leg back until the hip is fully extended.", "Return slowly under control."]),
-    makeExercise("standing-leg-curl", "Standing Leg Curl", "Hamstrings", ["Calves"], "isolation_legs", "none", "machine", "beginner", "machine", "00:45", ["Stand with pad behind ankle, grip handles for support.", "Curl the heel toward the glute.", "Lower slowly to full extension."]),
-    makeExercise("b-stance-rdl", "B-Stance Romanian Deadlift", "Hamstrings", ["Glutes"], "hip_hinge", "none", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Lead leg carries most weight, back leg lightly touches the floor.", "Hinge at the hips lowering dumbbells.", "Drive through the lead heel to stand."]),
-    makeExercise("reverse-hyperextension", "Reverse Hyperextension", "Glutes", ["Hamstrings", "Lower Back"], "hip_hinge", "prone", "machine", "intermediate", "machine", "00:45", ["Lie face down on the bench with hips at the edge.", "Raise both legs until they are parallel to the floor.", "Lower slowly without swinging."]),
-    makeExercise("glute-kickback-cable", "Cable Glute Kickback", "Glutes", ["Hamstrings"], "hip_hinge", "none", "cable", "beginner", "machine", "00:45", ["Attach ankle cuff, face the cable tower.", "Kick the leg back squeezing the glute fully.", "Lower slowly and switch sides."]),
-
-    // ── CALVES ────────────────────────────────────────────────────────────────
-    makeExercise("single-leg-calf-raise", "Single-Leg Calf Raise", "Calves", [], "isolation_legs", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stand on one foot on an elevated surface, hold for balance.", "Lower the heel below the step for full stretch.", "Drive up on the big toe and hold briefly."]),
-    makeExercise("donkey-calf-raise", "Donkey Calf Raise", "Calves", [], "isolation_legs", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Hinge forward with hands on a surface.", "Let heels drop low for a full stretch.", "Drive up through the balls of the feet."]),
-    makeExercise("leg-press-calf-raise", "Leg Press Calf Raise", "Calves", [], "isolation_legs", "none", "machine", "beginner", "machine", "00:30", ["Set only the balls of the feet on the bottom of the platform.", "Lower the carriage to fully stretch the calves.", "Drive up through the forefoot and hold briefly."]),
-    makeExercise("tibia-raise", "Tibia Raise", "Calves", [], "isolation_legs", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stand with heels against a wall or elevated.", "Raise the toes upward as high as possible.", "Lower slowly to full plantarflexion."]),
-    makeExercise("seated-dumbbell-calf-raise", "Seated Dumbbell Calf Raise", "Calves", [], "isolation_legs", "none", "dumbbell", "beginner", "free_weights_accessories", "00:30", ["Sit on a bench with dumbbells balanced on knees.", "Lower heels to a full stretch.", "Drive up through the forefoot squeezing at the top."]),
-
-    // ── CORE ──────────────────────────────────────────────────────────────────
-    makeExercise("floor-leg-raise", "Floor Leg Raise", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie flat, lower back pressed into the floor.", "Raise legs together to vertical without lifting the lower back.", "Lower slowly without touching the floor."]),
-    makeExercise("flutter-kicks", "Flutter Kicks", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie flat, legs elevated a few inches off the floor.", "Alternate kicking up and down in small controlled arcs.", "Keep the lower back pressed down throughout."]),
-    makeExercise("scissor-kicks", "Scissor Kicks", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie flat with legs raised, criss-cross them side to side.", "Keep the movement controlled and the lower back flat.", "Hold the top position briefly on each cross."]),
-    makeExercise("sit-up", "Sit-Up", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie on back, knees bent, hands behind ears.", "Curl the torso all the way up to the knees.", "Lower slowly under control."]),
-    makeExercise("decline-crunch", "Decline Crunch", "Abs / Core", [], "core_anterior", "decline", "bodyweight", "intermediate", "bodyweight_only", "00:30", ["Anchor feet on a decline bench, hands behind head.", "Curl the rib cage toward the pelvis.", "Lower under control."]),
-    makeExercise("machine-crunch", "Machine Crunch", "Abs / Core", [], "core_anterior", "none", "machine", "beginner", "machine", "00:30", ["Grip the handles, feet under the pad.", "Crunch down pulling the ribcage toward the hips.", "Control the return to full extension."]),
-    makeExercise("l-sit", "L-Sit", "Abs / Core", ["Triceps", "Hip Flexors"], "core_anterior", "none", "bodyweight", "advanced", "bodyweight_only", "00:45", ["Support on parallel bars or floor with arms locked out.", "Raise legs to parallel with the floor.", "Hold the position breathing steadily."]),
-    makeExercise("bird-dog", "Bird Dog", "Abs / Core", ["Glutes", "Lower Back"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["On hands and knees, brace the core.", "Extend opposite arm and leg simultaneously.", "Return and repeat on the other side."]),
-    makeExercise("ghd-sit-up", "GHD Sit-Up", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "machine", "advanced", "machine", "01:00", ["Sit on the GHD with hips at the pad edge.", "Lower back freely until parallel to the floor.", "Pull back up using the abs and hip flexors."]),
-    makeExercise("landmine-rotation", "Landmine Rotation", "Obliques", ["Core", "Shoulders"], "core_rotational", "none", "landmine", "beginner", "barbell", "00:45", ["Hold the loaded end with both hands, arms extended.", "Rotate the bar in an arc from side to side.", "Keep hips stable and rotate through the thoracic spine."]),
-    makeExercise("copenhagen-plank", "Copenhagen Plank", "Core", ["Inner Thigh", "Glutes"], "core_anterior", "none", "bodyweight", "advanced", "bodyweight_only", "00:45", ["Side plank with top foot on a bench.", "Lift the bottom leg to meet the bench.", "Hold the top position or add reps."]),
-    makeExercise("bicycle-crunch", "Bicycle Crunch", "Abs / Core", ["Obliques"], "core_rotational", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie flat, hands behind head.", "Bring opposite elbow to opposite knee in a cycling motion.", "Keep the lower back from arching."]),
-    makeExercise("mountain-climber", "Mountain Climber", "Abs / Core", ["Shoulders", "Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Hold a push-up position with a braced core.", "Drive knees toward the chest alternately.", "Keep the hips level throughout."]),
-    makeExercise("dragon-flag", "Dragon Flag", "Abs / Core", ["Lats"], "core_anterior", "none", "bodyweight", "advanced", "bodyweight_only", "01:00", ["Grip a fixed point behind the head.", "Lift the body to vertical as one unit.", "Lower as slowly as possible."]),
-    makeExercise("toes-to-bar", "Toes-to-Bar", "Abs / Core", ["Hip Flexors", "Lats"], "core_anterior", "none", "bodyweight", "advanced", "bodyweight_only", "01:00", ["Dead hang from the bar with ribs down.", "Raise toes to the bar keeping legs straight.", "Lower slowly under control."]),
-    makeExercise("v-up", "V-Up", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "intermediate", "bodyweight_only", "00:30", ["Lie flat, arms overhead.", "Simultaneously raise legs and torso reaching hands to feet.", "Lower under control."]),
-    makeExercise("pallof-press", "Pallof Press", "Abs / Core", ["Obliques"], "core_rotational", "none", "cable", "beginner", "machine", "00:45", ["Stand sideways to the cable, cable at chest height.", "Press straight out and hold briefly.", "Return without letting the cable rotate you."]),
-
-    // ── OLYMPIC / POWER ───────────────────────────────────────────────────────
-    makeExercise("power-clean", "Power Clean", "Hamstrings", ["Glutes", "Traps", "Shoulders"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Start with bar over mid-foot, brace hard.", "Drive legs and hips explosively to get the bar moving.", "Catch in a partial squat as the bar reaches the shoulders."]),
-    makeExercise("hang-power-clean", "Hang Power Clean", "Hamstrings", ["Glutes", "Traps", "Shoulders"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Start with bar at hang position above the knees.", "Explosively extend the hips and shrug.", "Catch in a partial squat at the shoulders."]),
-    makeExercise("clean-and-jerk", "Clean and Jerk", "Hamstrings", ["Shoulders", "Glutes", "Traps"], "hip_hinge", "overhead", "barbell", "advanced", "barbell", "02:00", ["Clean the bar to the shoulders in one pull.", "Dip and drive the bar overhead with a split or squat.", "Lock out and stand to complete the lift."]),
-    makeExercise("snatch-barbell", "Snatch", "Hamstrings", ["Shoulders", "Glutes", "Core"], "hip_hinge", "overhead", "barbell", "advanced", "barbell", "02:00", ["Wide grip, bar over mid-foot.", "Pull explosively and get under the bar with arms locked.", "Stand up from the catch position."]),
-    makeExercise("muscle-up", "Muscle-Up", "Lats", ["Chest", "Triceps", "Shoulders"], "vertical_pull", "overhead", "bodyweight", "advanced", "bodyweight_only", "01:30", ["Dead hang with a false grip.", "Pull explosively and transition over the bar at the top.", "Press out to lockout as in a dip."]),
-    makeExercise("battle-ropes", "Battle Ropes", "Shoulders", ["Core", "Back"], "cardio", "none", "none", "intermediate", "machine", "01:00", ["Stand in an athletic stance gripping one end of each rope.", "Alternate or simultaneous waves with power.", "Keep the core braced throughout."]),
-    makeExercise("turkish-get-up", "Turkish Get-Up", "Shoulders", ["Core", "Glutes", "Hips"], "carry", "none", "kettlebell", "advanced", "free_weights_accessories", "01:30", ["Start lying down, weight pressed straight overhead.", "Navigate through each position keeping the weight locked out.", "Reverse the sequence back to the floor."]),
-    makeExercise("bear-crawl", "Bear Crawl", "Shoulders", ["Core", "Quads", "Hip Flexors"], "cardio", "none", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["On hands and feet with knees hovering an inch off the floor.", "Move opposite hand and foot simultaneously.", "Keep the hips low and core braced throughout."]),
-    makeExercise("ski-erg", "Ski Erg", "Back", ["Core", "Shoulders", "Lats"], "cardio", "none", "machine", "intermediate", "machine", "00:30", ["Grip handles overhead, stand tall.", "Pull down and back driving handles to hips.", "Return to overhead under control and repeat."]),
-
-    // ── KETTLEBELL ────────────────────────────────────────────────────────────
-    makeExercise("kettlebell-swing", "Kettlebell Swing", "Glutes", ["Hamstrings", "Core", "Shoulders"], "hip_hinge", "none", "kettlebell", "intermediate", "free_weights_accessories", "01:00", ["Hike the bell back between legs with a snap.", "Drive the hips forward explosively.", "Let the bell float to chest height — power comes from hips not arms."]),
-    makeExercise("kettlebell-snatch", "Kettlebell Snatch", "Glutes", ["Shoulders", "Core", "Hamstrings"], "hip_hinge", "overhead", "kettlebell", "advanced", "free_weights_accessories", "01:30", ["Swing the bell up and punch through at the top.", "Receive with the arm locked overhead.", "Lower under control to the swing position."]),
-    makeExercise("kettlebell-clean-and-press", "Kettlebell Clean and Press", "Shoulders", ["Glutes", "Core", "Triceps"], "vertical_push", "overhead", "kettlebell", "advanced", "free_weights_accessories", "01:30", ["Clean the bell to the rack position in one motion.", "Press overhead to full lockout.", "Lower and return to the clean position."]),
-    makeExercise("kettlebell-deadlift", "Kettlebell Deadlift", "Hamstrings", ["Glutes", "Lower Back"], "hip_hinge", "none", "kettlebell", "beginner", "free_weights_accessories", "01:00", ["Straddle the kettlebell, hinge and grip the handle.", "Brace and stand driving through the heels.", "Lower back to the floor with control."]),
-    makeExercise("kettlebell-row", "Kettlebell Row", "Upper Back", ["Biceps", "Rear Delts"], "horizontal_pull", "flat", "kettlebell", "beginner", "free_weights_accessories", "01:00", ["Hinge forward supporting with one hand, KB in the other.", "Row to the hip driving the elbow back.", "Lower slowly to full stretch."]),
-    makeExercise("kettlebell-press", "Kettlebell Press", "Shoulders", ["Triceps"], "vertical_push", "overhead", "kettlebell", "intermediate", "free_weights_accessories", "01:00", ["Clean the bell to the rack position.", "Press overhead to lockout.", "Lower back to rack under control."]),
-    makeExercise("kettlebell-goblet-squat", "Kettlebell Goblet Squat", "Quads", ["Glutes", "Core"], "squat", "none", "kettlebell", "beginner", "free_weights_accessories", "01:00", ["Hold the horns of the bell at chest height.", "Squat deep keeping elbows inside the knees.", "Drive up through the floor."]),
-    makeExercise("kettlebell-figure-8", "Kettlebell Figure-8", "Core", ["Shoulders", "Glutes"], "core_rotational", "none", "kettlebell", "intermediate", "free_weights_accessories", "01:00", ["Straddle the bell in an athletic hinge.", "Pass the bell in a figure-8 pattern between and around the legs.", "Keep the torso stable while the hips rotate."]),
-    makeExercise("kettlebell-windmill", "Kettlebell Windmill", "Core", ["Shoulders", "Glutes", "Hips"], "carry", "none", "kettlebell", "advanced", "free_weights_accessories", "01:00", ["Press the bell overhead and lock the arm.", "Hinge to one side, rotating the floor hand toward the foot.", "Return to standing with the bell locked out."]),
-
-    // ── CARRY ─────────────────────────────────────────────────────────────────
-    makeExercise("farmers-carry", "Farmer's Carry", "Forearms", ["Traps", "Core", "Glutes"], "carry", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Pick up heavy dumbbells with a tight core and packed shoulders.", "Walk steady keeping the torso upright.", "Set down with control at the end of the run."]),
-    makeExercise("suitcase-carry", "Suitcase Carry", "Core", ["Traps", "Glutes"], "carry", "none", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Hold a heavy dumbbell in one hand at your side.", "Walk without tilting the torso to the loaded side.", "Complete the run then switch hands."]),
-    makeExercise("overhead-carry", "Overhead Carry", "Shoulders", ["Traps", "Core"], "carry", "none", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Press the dumbbell overhead and lock the arm.", "Walk steadily without letting the shoulder collapse.", "Keep the core braced throughout."]),
-    makeExercise("yoke-carry", "Yoke Carry", "Traps", ["Glutes", "Core", "Quads"], "carry", "none", "none", "advanced", "machine", "01:00", ["Load the yoke and step underneath it.", "Walk with short powerful steps keeping a braced trunk.", "Set it down with control."]),
-
-    // ── FOREARMS ──────────────────────────────────────────────────────────────
-    makeExercise("wrist-extension", "Wrist Extension", "Forearms", [], "isolation_pull", "none", "dumbbell", "beginner", "free_weights_accessories", "00:30", ["Rest forearms on a bench, palms facing down.", "Extend the wrists upward against the weight.", "Lower slowly under control."]),
-    makeExercise("wrist-roller", "Wrist Roller", "Forearms", [], "isolation_pull", "none", "none", "beginner", "free_weights_accessories", "00:30", ["Hold the roller at arm's length with palms down.", "Roll the weight up by alternating wrist flexion and extension.", "Reverse the direction to lower."]),
-    makeExercise("plate-pinch", "Plate Pinch", "Forearms", ["Traps"], "carry", "none", "none", "beginner", "free_weights_accessories", "01:00", ["Pinch a plate between thumb and fingers at the side.", "Hold without letting the plate slip.", "Switch hands after each set."]),
-
-    // ── CARDIO / CONDITIONING ─────────────────────────────────────────────────
-    makeExercise("rowing-machine", "Rowing Machine", "Back", ["Hamstrings", "Core", "Shoulders"], "cardio", "none", "machine", "beginner", "machine", "00:30", ["Drive through the legs first, then lean back, then pull arms.", "Return in the opposite order — arms, body, legs.", "Keep a steady rhythm and a braced core."]),
-    makeExercise("jump-rope", "Jump Rope", "Calves", ["Shoulders", "Core"], "cardio", "none", "none", "beginner", "bodyweight_only", "00:30", ["Keep elbows close to the body, wrists doing the turning.", "Land lightly on the balls of your feet.", "Keep a consistent rhythm."]),
-    makeExercise("double-under", "Double Under", "Calves", ["Shoulders", "Core"], "cardio", "none", "none", "intermediate", "bodyweight_only", "00:30", ["Jump higher than a single under to allow two rope passes.", "Keep the wrist rotation fast and tight.", "Land softly absorbing through the ankles and knees."]),
-    makeExercise("elliptical", "Elliptical", "Quads", ["Glutes", "Calves"], "cardio", "none", "machine", "beginner", "machine", "00:30", ["Set resistance before stepping on.", "Drive through the full foot and engage the arms.", "Maintain upright posture throughout."]),
-    makeExercise("assault-bike", "Assault Bike", "Quads", ["Shoulders", "Core"], "cardio", "none", "machine", "intermediate", "machine", "00:30", ["Push and pull the handles equally.", "Drive through the full pedal stroke.", "Set a pace you can sustain through the interval."]),
-    makeExercise("stair-climber", "Stair Climber", "Glutes", ["Quads", "Calves"], "cardio", "none", "machine", "beginner", "machine", "00:30", ["Set a steady pace before letting go of the rails.", "Push through the full step keeping the torso upright.", "Avoid leaning heavily on the handrails."]),
-    makeExercise("sled-push", "Sled Push", "Quads", ["Glutes", "Core"], "cardio", "none", "none", "intermediate", "bodyweight_only", "01:00", ["Lean forward from the ankles maintaining a rigid core.", "Drive through the legs with short powerful steps.", "Keep the arms straight into the sled."]),
-    makeExercise("sled-pull", "Sled Pull", "Hamstrings", ["Glutes", "Back"], "cardio", "none", "none", "intermediate", "bodyweight_only", "01:00", ["Face away from the sled with the rope over the shoulder.", "Drive forward with power steps pulling the sled.", "Keep the core braced and the torso upright."]),
-    makeExercise("box-step-up", "Box Step-Up", "Quads", ["Glutes"], "lunge", "none", "dumbbell", "beginner", "free_weights_accessories", "01:00", ["Hold dumbbells at sides, step onto the box with one foot.", "Drive through the heel to lift the full body.", "Step back down under control and switch."]),
-    makeExercise("jump-box", "Depth Jump", "Quads", ["Glutes", "Calves"], "squat", "none", "bodyweight", "advanced", "bodyweight_only", "01:30", ["Step off a box, land softly and immediately rebound up.", "Minimize ground contact time.", "Land softly again after the jump."]),
-  ];
-
-  const _etIds = new Set(exerciseTemplates.map((e) => e.id));
-  exerciseTemplates.push(
-    ...smartReplaceCatalog.filter((e) => !_etIds.has(e.id)),
-    ..._additionalExercises.filter((e) => !_etIds.has(e.id))
-  );
-}
-
-// ── Exercise library — final top-up (gap-closing exercises) ──────────────────
-{
-  const _finalExercises: ExerciseWithTaxonomy[] = [
-    // Chest
-    makeExercise("deficit-push-up", "Deficit Push-Up", "Chest", ["Triceps", "Front Delts"], "horizontal_push", "flat", "bodyweight", "intermediate", "bodyweight_only", "00:45", ["Place hands on raised surfaces to increase range of motion.", "Lower chest past the level of the hands.", "Press away feeling the greater stretch."]),
-    makeExercise("archer-push-up", "Archer Push-Up", "Chest", ["Triceps", "Shoulders"], "horizontal_push", "flat", "bodyweight", "advanced", "bodyweight_only", "00:45", ["Wide push-up position, shift weight to one arm.", "Lower toward the bent arm while the other stays nearly straight.", "Press back to center and repeat on the other side."]),
-    makeExercise("pin-press", "Pin Press", "Chest", ["Triceps", "Front Delts"], "horizontal_push", "flat", "barbell", "advanced", "barbell", "01:30", ["Set safety pins at the sticking point of your bench press.", "Start each rep from the dead stop on the pins.", "Drive through the sticking point to lockout."]),
-
-    // Back / Pull
-    makeExercise("wide-grip-cable-row", "Wide-Grip Cable Row", "Upper Back", ["Rear Delts", "Lats"], "horizontal_pull", "flat", "cable", "beginner", "machine", "01:00", ["Attach a wide bar, sit tall with a slight lean.", "Drive elbows wide and back squeezing the upper back.", "Let the shoulder blades protract under control."]),
-    makeExercise("close-grip-cable-row", "Close-Grip Cable Row", "Lats", ["Upper Back", "Biceps"], "horizontal_pull", "flat", "cable", "beginner", "machine", "01:00", ["Use a V-bar or narrow handle.", "Pull to the lower abdomen driving elbows close to the body.", "Control the return to full stretch."]),
-    makeExercise("reverse-grip-lat-pulldown", "Reverse Grip Lat Pulldown", "Lats", ["Biceps", "Upper Back"], "vertical_pull", "overhead", "cable", "beginner", "machine", "01:00", ["Underhand grip slightly inside shoulder width.", "Pull to upper chest keeping elbows close.", "Control the return."]),
-    makeExercise("single-arm-cable-row", "Single-Arm Cable Row", "Upper Back", ["Lats", "Biceps"], "horizontal_pull", "flat", "cable", "beginner", "machine", "00:45", ["Sit side-on or face-on with one hand on the handle.", "Row to the hip rotating slightly through the torso.", "Control the return."]),
-    makeExercise("dead-hang", "Dead Hang", "Lats", ["Forearms", "Shoulders"], "vertical_pull", "overhead", "bodyweight", "beginner", "bodyweight_only", "01:00", ["Grip the bar with both hands, fully relax the body.", "Let the shoulders decompress fully.", "Breathe and hold for the target duration."]),
-    makeExercise("jefferson-curl", "Jefferson Curl", "Hamstrings", ["Lower Back", "Glutes"], "hip_hinge", "none", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Stand on a box, hold weight at arms length.", "Curl the spine down vertebra by vertebra.", "Uncurl slowly back to standing — a mobility deadlift."]),
-    makeExercise("glute-ham-raise", "Glute-Ham Raise", "Hamstrings", ["Glutes", "Lower Back"], "hip_hinge", "none", "bodyweight", "advanced", "machine", "01:30", ["Lock feet into the GHD, start horizontal.", "Curl body up using the hamstrings.", "Lower with control."]),
-    makeExercise("single-leg-leg-press", "Single-Leg Leg Press", "Quads", ["Glutes", "Hamstrings"], "squat", "none", "machine", "intermediate", "machine", "01:00", ["Place one foot in the center of the platform.", "Lower under control without the knee caving.", "Drive through the heel to full extension."]),
-
-    // Legs — missing patterns
-    makeExercise("lateral-lunge", "Lateral Lunge", "Quads", ["Glutes", "Inner Thigh"], "lunge", "none", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Stand feet together, step wide to one side.", "Sit into the bent leg while keeping the other straight.", "Push through the bent heel to return."]),
-    makeExercise("curtsy-lunge", "Curtsy Lunge", "Glutes", ["Quads", "Inner Thigh"], "lunge", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Step one foot behind and across the other.", "Lower into a curtsy keeping the front knee over the toe.", "Drive through the front heel to return."]),
-    makeExercise("cossack-squat", "Cossack Squat", "Adductors", ["Glutes", "Quads"], "lunge", "none", "bodyweight", "intermediate", "bodyweight_only", "00:45", ["Shift into one hip while keeping the other leg long.", "Sit as deep as mobility allows without rounding the trunk.", "Push through the bent leg to return to center."]),
-    makeExercise("box-squat", "Box Squat", "Quads", ["Glutes", "Hamstrings"], "squat", "none", "barbell", "intermediate", "barbell", "01:30", ["Squat to a box set at parallel or below.", "Sit on the box briefly without relaxing the core.", "Drive up explosively through the heels."]),
-    makeExercise("jump-lunge", "Jump Lunge", "Quads", ["Glutes", "Calves"], "lunge", "none", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["Start in a lunge position.", "Explosively jump switching legs in mid-air.", "Land softly and immediately into the next rep."]),
-    makeExercise("reverse-nordic-curl", "Reverse Nordic Curl", "Quads", ["Hip Flexors"], "squat", "none", "bodyweight", "advanced", "bodyweight_only", "01:30", ["Kneel with feet anchored, body upright.", "Lean backward as far as control allows.", "Pull back to upright using the quads."]),
-    makeExercise("banded-lateral-walk", "Banded Lateral Walk", "Glutes", ["Abductors"], "isolation_legs", "none", "resistance_band", "beginner", "free_weights_accessories", "00:30", ["Loop band around ankles or above knees.", "Step sideways maintaining tension on the band.", "Keep a soft knee bend and upright torso throughout."]),
-    makeExercise("banded-clamshell", "Banded Clamshell", "Glutes", ["Abductors"], "isolation_legs", "none", "resistance_band", "beginner", "free_weights_accessories", "00:30", ["Lie on your side with band above the knees.", "Open the top knee while keeping feet together.", "Return slowly without letting the hips rock."]),
-    makeExercise("cable-hip-flexor", "Cable Hip Flexor Raise", "Hip Flexors", ["Abs / Core"], "isolation_legs", "none", "cable", "beginner", "machine", "00:30", ["Attach ankle cuff to low cable, face away.", "Raise the knee to hip height in a controlled arc.", "Lower slowly and repeat."]),
-
-    // Core — final additions
-    makeExercise("hollow-body-rock", "Hollow Body Rock", "Abs / Core", [], "core_anterior", "none", "bodyweight", "intermediate", "bodyweight_only", "00:30", ["Compress into the hollow body position.", "Rock forward and back like a rocking chair.", "Maintain the compressed position throughout."]),
-    makeExercise("captain-chair-knee-raise", "Captain's Chair Knee Raise", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Brace on the captain's chair with forearms on pads.", "Raise knees to hip height keeping the back against the pad.", "Lower slowly under control."]),
-    makeExercise("windshield-wiper", "Windshield Wiper", "Obliques", ["Abs / Core"], "core_rotational", "none", "bodyweight", "advanced", "bodyweight_only", "00:45", ["Hang from a bar, raise legs to vertical.", "Rotate legs side to side in a controlled arc.", "Control the rotation — do not swing."]),
-
-    // Olympic / Power
-    makeExercise("hang-clean", "Hang Clean", "Hamstrings", ["Traps", "Shoulders", "Glutes"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Start with bar at the hang above knees.", "Extend the hips explosively and shrug.", "Receive in a front squat or power position at the shoulders."]),
-    makeExercise("clean-pull", "Clean Pull", "Hamstrings", ["Traps", "Glutes"], "hip_hinge", "none", "barbell", "advanced", "barbell", "02:00", ["Pull the bar as in a clean but don't receive it.", "Finish with triple extension — ankles, knees, hips.", "Lower under control to the floor."]),
-    makeExercise("sumo-deadlift-high-pull", "Sumo Deadlift High Pull", "Hamstrings", ["Traps", "Shoulders", "Glutes"], "hip_hinge", "none", "barbell", "advanced", "barbell", "01:30", ["Sumo stance, grip inside the legs.", "Pull the bar and lead the elbows high finishing at chin level.", "Lower under control."]),
-    makeExercise("med-ball-slam", "Med Ball Slam", "Core", ["Shoulders", "Back"], "core_rotational", "none", "none", "intermediate", "free_weights_accessories", "01:00", ["Hold the ball overhead fully extended.", "Slam it into the ground with maximum force.", "Pick it up and repeat without hesitation."]),
-    makeExercise("box-jump-weighted", "Weighted Box Jump", "Quads", ["Glutes", "Calves"], "squat", "none", "dumbbell", "advanced", "free_weights_accessories", "01:30", ["Hold light dumbbells, stand arm's length from the box.", "Swing arms and explode up.", "Land softly and step back down."]),
-
-    // Weighted bodyweight variations
-    makeExercise("weighted-dip", "Weighted Dip", "Chest", ["Triceps", "Front Delts"], "vertical_push", "decline", "bodyweight", "advanced", "bodyweight_weighted", "01:30", ["Attach weight via belt and hang still before starting.", "Lower with slight forward lean for chest emphasis.", "Press back up to full lockout."]),
-    makeExercise("kipping-pull-up", "Kipping Pull-Up", "Lats", ["Shoulders", "Core"], "vertical_pull", "overhead", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["Use a controlled hip drive to generate momentum.", "Pull as the hips swing forward.", "Cycle smoothly between reps."]),
-    makeExercise("assisted-tricep-dip", "Assisted Tricep Dip", "Triceps", ["Chest"], "vertical_push", "decline", "bodyweight", "beginner", "machine", "00:45", ["Set the assistance weight, grip the handles.", "Lower until elbows hit 90 degrees.", "Press back to full extension."]),
-    makeExercise("machine-preacher-curl", "Machine Preacher Curl", "Biceps", ["Forearms"], "isolation_pull", "incline", "machine", "beginner", "machine", "00:45", ["Adjust pad height, grip the handles.", "Curl through full range without swinging.", "Lower slowly to full extension."]),
-    makeExercise("cable-preacher-curl", "Cable Preacher Curl", "Biceps", ["Forearms"], "isolation_pull", "incline", "cable", "beginner", "machine", "00:45", ["Set low cable, brace arm on the angled pad.", "Curl to full contraction under constant tension.", "Lower slowly."]),
-    makeExercise("banded-pull-through", "Banded Pull-Through", "Glutes", ["Hamstrings"], "hip_hinge", "none", "resistance_band", "beginner", "free_weights_accessories", "00:45", ["Stand facing away from anchor, band between legs.", "Hinge forward letting the band pull through.", "Drive hips forward to stand squeezing the glutes."]),
-    makeExercise("landmine-hip-thrust", "Landmine Hip Thrust", "Glutes", ["Hamstrings"], "hip_hinge", "none", "landmine", "beginner", "barbell", "01:00", ["Sit with upper back on bench, bar end over hips.", "Drive through heels squeezing glutes at the top.", "Lower slowly."]),
-    makeExercise("single-arm-dumbbell-press", "Single-Arm Dumbbell Press", "Chest", ["Triceps", "Core"], "horizontal_push", "flat", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Lie flat with one dumbbell, non-working arm to the side.", "Press the dumbbell up keeping the torso stable.", "Lower under control."]),
-  ];
-
-  const _topUpIds = new Set(exerciseTemplates.map((e) => e.id));
-  exerciseTemplates.push(..._finalExercises.filter((e) => !_topUpIds.has(e.id)));
-}
-
-// ── Strong-app gap-fill ───────────────────────────────────────────────────────
-{
-  const _strongExercises: ExerciseWithTaxonomy[] = [
-    // ── Core ─────────────────────────────────────────────────────────────────
-    makeExercise("reverse-crunch", "Reverse Crunch", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie flat, knees bent at 90 degrees.", "Curl the hips up and toward the chest using the lower abs.", "Lower slowly without letting the lower back arch."]),
-    makeExercise("hanging-knee-raise", "Hanging Knee Raise", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Dead hang from a pull-up bar with ribs down.", "Drive knees toward the chest without swinging.", "Lower slowly under control."]),
-    makeExercise("oblique-crunch", "Oblique Crunch", "Obliques", ["Abs / Core"], "core_rotational", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie on your side, knees bent, hand behind head.", "Crunch the top elbow toward the top hip.", "Lower under control and repeat."]),
-    makeExercise("jackknife-sit-up", "Jackknife Sit-Up", "Abs / Core", ["Hip Flexors"], "core_anterior", "none", "bodyweight", "intermediate", "bodyweight_only", "00:30", ["Lie flat, arms overhead, legs straight.", "Simultaneously raise arms and legs meeting in the middle.", "Lower both back to the floor under control."]),
-    makeExercise("decline-sit-up", "Decline Sit-Up", "Abs / Core", ["Hip Flexors"], "core_anterior", "decline", "bodyweight", "intermediate", "bodyweight_only", "00:30", ["Anchor feet on decline bench, hands behind ears.", "Curl all the way up to vertical.", "Lower under control to flat."]),
-    makeExercise("superman", "Superman", "Lower Back", ["Glutes", "Hamstrings"], "hip_hinge", "prone", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Lie face down, arms extended overhead.", "Raise arms and legs simultaneously squeezing the glutes.", "Hold briefly and lower."]),
-    makeExercise("hip-circle", "Hip Circle", "Hip Flexors", ["Glutes", "Abs / Core"], "isolation_legs", "none", "none", "beginner", "bodyweight_only", "00:30", ["Stand upright, hands on hips.", "Rotate the hips in a large circle keeping the torso still.", "Complete full circles each direction."]),
-
-    // ── Triceps ───────────────────────────────────────────────────────────────
-    makeExercise("ez-bar-skull-crusher", "EZ Bar Skull Crusher", "Triceps", [], "isolation_push", "flat", "barbell", "intermediate", "free_weights_accessories", "01:00", ["Lie flat, EZ bar over face with a close grip.", "Lower by bending only at the elbows toward the forehead.", "Press back through the triceps keeping elbows pinned."]),
-    makeExercise("reverse-grip-pushdown", "Reverse Grip Tricep Pushdown", "Triceps", [], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Underhand grip on the straight bar at the cable.", "Lock elbows at the sides and push down to full extension.", "Return slowly keeping elbows fixed."]),
-    makeExercise("one-arm-cable-pushdown", "One-Arm Cable Pushdown", "Triceps", [], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Single handle on a high cable, elbow at the side.", "Push down to full extension and squeeze.", "Return slowly."]),
-    makeExercise("v-bar-pushdown", "V-Bar Pushdown", "Triceps", [], "isolation_push", "none", "cable", "beginner", "machine", "00:45", ["Attach V-bar to high cable, grip with neutral hands.", "Lock elbows at sides and press to full extension.", "Control the return without letting elbows flare."]),
-    makeExercise("overhead-ez-bar-extension", "Overhead EZ Bar Tricep Extension", "Triceps", [], "isolation_push", "none", "barbell", "beginner", "free_weights_accessories", "00:45", ["Hold EZ bar overhead with a close grip, elbows pointing up.", "Lower behind the head bending only at the elbows.", "Extend back to lockout."]),
-    makeExercise("incline-tricep-extension", "Incline Tricep Extension", "Triceps", [], "isolation_push", "incline", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Lie on an incline bench, dumbbells over face.", "Lower by bending only the elbows.", "Press back up through the triceps."]),
-
-    // ── Biceps ────────────────────────────────────────────────────────────────
-    makeExercise("barbell-21s", "Barbell 21s", "Biceps", ["Forearms"], "isolation_pull", "none", "barbell", "intermediate", "barbell", "00:45", ["7 reps lower half (bottom to 90°), 7 reps upper half (90° to top), 7 full reps.", "Keep elbows pinned throughout all 21 reps.", "Use a lighter weight than a standard curl."]),
-    makeExercise("single-leg-curl", "Single-Leg Curl", "Hamstrings", [], "isolation_legs", "prone", "machine", "beginner", "machine", "00:45", ["Set pad above the ankle of one leg.", "Curl the heel toward the glute without letting the hip rise.", "Lower slowly to full extension."]),
-
-    // ── Shoulders ─────────────────────────────────────────────────────────────
-    makeExercise("cuban-press", "Cuban Press", "Shoulders", ["Rotator Cuff", "Traps"], "isolation_push", "overhead", "dumbbell", "intermediate", "free_weights_accessories", "00:45", ["Upright row to 90°, then externally rotate forearms to vertical.", "Press overhead from the rotated position.", "Reverse the sequence on the way down."]),
-    makeExercise("bradford-press", "Bradford Press", "Shoulders", ["Traps", "Triceps"], "vertical_push", "overhead", "barbell", "intermediate", "barbell", "01:00", ["Start with bar at upper chest.", "Press just over the top of the head and lower behind the neck.", "Alternate front and back without stopping at lockout."]),
-
-    // ── Chest ─────────────────────────────────────────────────────────────────
-    makeExercise("low-to-high-cable-fly", "Low-to-High Cable Fly", "Upper Chest", ["Front Delts"], "isolation_push", "incline", "cable", "beginner", "machine", "00:45", ["Set cables low, lean slightly forward.", "Arc handles upward and together toward upper chest.", "Control the return with a full stretch."]),
-    makeExercise("high-to-low-cable-fly", "High-to-Low Cable Fly", "Lower Chest", ["Front Delts"], "isolation_push", "decline", "cable", "beginner", "machine", "00:45", ["Set cables high, lean slightly forward.", "Arc handles downward and together toward lower chest.", "Control the return to full stretch."]),
-    makeExercise("dumbbell-squeeze-press", "Dumbbell Squeeze Press", "Chest", ["Triceps"], "isolation_push", "flat", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hold dumbbells pressed together over the chest.", "Maintain inward pressure throughout the entire rep.", "Press and lower keeping the dumbbells in contact."]),
-
-    // ── Back / Hips ───────────────────────────────────────────────────────────
-    makeExercise("banded-deadlift", "Banded Deadlift", "Hamstrings", ["Glutes", "Lower Back", "Traps"], "hip_hinge", "none", "resistance_band", "intermediate", "free_weights_accessories", "01:30", ["Stand on bands with feet hip-width, grip at sides.", "Brace and stand — resistance increases as you rise.", "Lower under control against the band tension."]),
-    makeExercise("seated-good-morning", "Seated Good Morning", "Hamstrings", ["Lower Back", "Glutes"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "01:00", ["Sit on a bench, bar across upper back.", "Hinge forward at the hips keeping the back neutral.", "Drive back to upright using the hamstrings."]),
-    makeExercise("cable-leg-curl", "Cable Leg Curl", "Hamstrings", [], "isolation_legs", "none", "cable", "beginner", "machine", "00:45", ["Attach ankle cuff to a low cable, lie face down or stand.", "Curl the heel toward the glute through full range.", "Lower slowly under control."]),
-
-    // ── Quads / Legs ──────────────────────────────────────────────────────────
-    makeExercise("split-squat", "Split Squat", "Quads", ["Glutes", "Hamstrings"], "lunge", "none", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Take a long stride forward, both feet flat.", "Lower the back knee toward the floor in a static split.", "Drive through the front heel to return."]),
-    makeExercise("pendulum-squat", "Pendulum Squat", "Quads", ["Glutes"], "squat", "none", "machine", "intermediate", "machine", "01:30", ["Load the machine, lean back against the pad.", "Lower into a deep squat with an upright torso.", "Drive up through the heels."]),
-    makeExercise("high-knees", "High Knees", "Quads", ["Hip Flexors", "Calves"], "cardio", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Run in place driving knees up to hip height.", "Pump arms in opposition to the legs.", "Keep a fast rhythm and stay on the balls of the feet."]),
-  ];
-
-  const _strongIds = new Set(exerciseTemplates.map((e) => e.id));
-  exerciseTemplates.push(..._strongExercises.filter((e) => !_strongIds.has(e.id)));
-}
-
-// ── User-requested exercise additions ─────────────────────────────────────────
-{
-  const _userExercises: ExerciseWithTaxonomy[] = [
-    // ── Chest ──────────────────────────────────────────────────────────────────
-    makeExercise("bear-walk", "Bear Walk", "Chest", ["Shoulders", "Core", "Triceps"], "horizontal_push", "flat", "bodyweight", "beginner", "bodyweight_only", "00:45", ["Start on all fours with knees hovering an inch off the floor.", "Walk forward by moving opposite hand and foot simultaneously.", "Keep hips level and core braced throughout."]),
-    makeExercise("butterfly-machine", "Butterfly Machine", "Chest", ["Front Delts"], "isolation_push", "flat", "machine", "beginner", "machine", "00:45", ["Adjust the seat so arms open at chest height.", "Squeeze the pads together through the full arc.", "Return with control — don't let the stack crash."]),
-    makeExercise("dumbbell-pullover-chest", "Dumbbell Pullover (Chest)", "Chest", ["Lats", "Triceps"], "horizontal_push", "flat", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Lie perpendicular on a bench, hips below bench level.", "Lower the dumbbell behind your head with a slight elbow bend.", "Pull back over the chest by squeezing the pecs — not the lats."]),
-    makeExercise("pause-bench-press", "Pause Bench Press", "Chest", ["Front Delts", "Triceps"], "horizontal_push", "flat", "barbell", "intermediate", "barbell", "02:00", ["Lower the bar to mid-chest and hold for 2–3 seconds with full muscle tension.", "No bounce — eliminate all stretch reflex before pressing.", "Drive up explosively once the pause is complete."]),
-    // ── Arms ───────────────────────────────────────────────────────────────────
-    makeExercise("axe-hold", "Axe Hold", "Forearms", ["Shoulders", "Biceps"], "carry", "flat", "dumbbell", "beginner", "free_weights_accessories", "00:30", ["Hold a dumbbell at arm's length in front of you at shoulder height.", "Keep the wrist neutral and the shoulder packed.", "Hold for the target duration without letting the elbow bend or dip."]),
-    makeExercise("deadhang", "Deadhang", "Forearms", ["Lats", "Shoulders"], "vertical_pull", "overhead", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Grip the bar slightly wider than shoulder width.", "Let the body hang completely — no engagement in the shoulder girdle.", "Breathe steadily and hold for the target time."]),
-    makeExercise("australian-pull-up", "Australian Pull-Up", "Upper Back", ["Biceps", "Rear Delts"], "horizontal_pull", "flat", "bodyweight", "beginner", "bodyweight_only", "01:00", ["Set a bar at hip height, hang underneath with straight body.", "Pull your chest to the bar driving elbows back.", "Lower slowly to full arm extension keeping the body rigid."]),
-    makeExercise("drag-pushdown", "Drag Pushdown", "Triceps", ["Lats"], "isolation_push", "none", "cable", "intermediate", "free_weights_accessories", "00:45", ["Grip a straight bar at a high cable, pin elbows at the sides.", "Drag the bar down the body — elbows travel back as they extend.", "Squeeze the triceps at the bottom before returning."]),
-    makeExercise("kong-curl", "Kong Curl", "Biceps", ["Forearms", "Brachialis"], "isolation_pull", "flat", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hold dumbbells supinated, curl both arms simultaneously.", "Lean the torso very slightly forward as you curl.", "Squeeze at the top and lower under full control."]),
-    // ── Back ───────────────────────────────────────────────────────────────────
-    makeExercise("rack-deadlift", "Rack Deadlift", "Lower Back", ["Glutes", "Hamstrings", "Traps"], "hip_hinge", "none", "barbell", "intermediate", "barbell", "02:00", ["Set the safety pins at knee or mid-shin height.", "Brace hard before every rep — treat each pull as a max effort.", "Lock out with hips and knees simultaneously, don't hyperextend."]),
-    makeExercise("kroc-row", "Kroc Row", "Lats", ["Upper Back", "Biceps", "Rear Delts"], "horizontal_pull", "flat", "dumbbell", "advanced", "free_weights_accessories", "01:30", ["Brace on a bench, heavy dumbbell in one hand.", "Row explosively to the hip allowing slight torso rotation.", "Lower under control and repeat for high reps."]),
-    makeExercise("high-row-cable", "High Row (Cable)", "Upper Back", ["Rear Delts", "Biceps", "Rhomboids"], "horizontal_pull", "flat", "cable", "beginner", "free_weights_accessories", "01:00", ["Set the cable above head height with a rope or wide handle.", "Pull to the upper chest driving elbows wide and back.", "Control the return letting the shoulder blades protract fully."]),
-    makeExercise("reverse-cable-flye", "Reverse Cable Flye", "Rear Delts", ["Rhomboids", "Traps"], "horizontal_pull", "flat", "cable", "beginner", "free_weights_accessories", "00:45", ["Cross cables at chest height, grab opposite handles.", "Open arms wide in a reverse fly arc squeezing the rear delts.", "Control the return without letting the cables yank you forward."]),
-    makeExercise("dumbbell-pullover-back", "Dumbbell Pullover (Back)", "Lats", ["Chest", "Serratus", "Triceps"], "vertical_pull", "flat", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Lie perpendicular on a bench, hips dropped for a full stretch.", "Lower the dumbbell behind the head pulling from the lats.", "Think elbows toward hips to bias the lats over the chest."]),
-    makeExercise("straight-arm-lat-pulldown-cable", "Straight Arm Lat Pulldown (Cable)", "Lats", ["Core", "Rear Delts"], "vertical_pull", "overhead", "cable", "intermediate", "free_weights_accessories", "01:00", ["Set a high cable, grip a straight bar with arms extended.", "Pull down in an arc keeping arms straight throughout.", "Squeeze the lats at the bottom before returning with control."]),
-    makeExercise("straight-arm-lat-pulldown-rope", "Straight Arm Lat Pulldown (Rope)", "Lats", ["Core", "Rear Delts"], "vertical_pull", "overhead", "cable", "intermediate", "free_weights_accessories", "01:00", ["Set a high cable with a rope, split the ends at the bottom.", "Pull down and slightly back keeping arms straight.", "Control the return to feel the full lat stretch at the top."]),
-    // ── Shoulders ──────────────────────────────────────────────────────────────
-    makeExercise("rear-delt-raise", "Rear Delt Raise", "Rear Delts", ["Upper Back", "Rhomboids"], "isolation_pull", "prone", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Hinge forward until torso is near parallel, or lie prone on incline.", "Raise arms out to the sides with a soft elbow bend.", "Control the lowering — don't let momentum take over."]),
-    makeExercise("dumbbell-scaption", "Dumbbell Scaption", "Shoulders", ["Rotator Cuff", "Serratus"], "isolation_push", "incline", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Stand tall, thumbs pointing up and arms at 30–45 degrees from the front plane.", "Raise to shoulder height in the scapular plane — not directly in front.", "Lower slowly maintaining the 30-degree angle throughout."]),
-    makeExercise("wall-angels", "Wall Angels", "Shoulders", ["Rotator Cuff", "Upper Back", "Thoracic Spine"], "isolation_push", "flat", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stand flat against a wall — head, upper back and lower back all in contact.", "Slide arms up and down the wall like a snow angel motion.", "Maintain full wall contact throughout — don't let the lower back arch off."]),
-    makeExercise("handstand", "Handstand", "Shoulders", ["Triceps", "Core", "Upper Back"], "vertical_push", "overhead", "bodyweight", "advanced", "bodyweight_only", "00:30", ["Kick up against a wall for support, hands shoulder-width.", "Stack wrists, shoulders, hips and heels in one vertical line.", "Spread the fingers and press actively through the floor to stabilise."]),
-    makeExercise("seated-dumbbell-lateral-raise", "Seated Dumbbell Lateral Raise", "Side Delts", ["Traps"], "isolation_push", "none", "dumbbell", "beginner", "free_weights_accessories", "00:45", ["Sit upright at the edge of a bench, dumbbells at sides.", "Raise laterally to shoulder height with a soft elbow — no momentum from legs.", "Lower slowly keeping shoulder blades neutral."]),
-    // ── Legs ───────────────────────────────────────────────────────────────────
-    makeExercise("barbell-walking-lunge", "Barbell Walking Lunge", "Quads", ["Glutes", "Hamstrings", "Core"], "lunge", "none", "barbell", "intermediate", "barbell", "01:30", ["Place the bar across the upper back, brace core before stepping.", "Step forward, lower the back knee toward the floor.", "Drive through the front heel and step the back foot forward — do not stop between reps."]),
-    makeExercise("wall-squat", "Wall Squat", "Quads", ["Glutes", "Hamstrings"], "squat", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stand with back flat against a wall, feet 12–18 inches out.", "Slide down until thighs are parallel to the floor.", "Hold with arms crossed or extended, breathing normally."]),
-    makeExercise("dumbbell-thruster", "Dumbbell Thruster", "Quads", ["Shoulders", "Glutes", "Triceps"], "squat", "overhead", "dumbbell", "intermediate", "free_weights_accessories", "01:00", ["Hold dumbbells at shoulder height, squat to parallel.", "Drive up explosively and press overhead in one fluid motion.", "Lock out overhead before bringing the dumbbells back to shoulders."]),
-    makeExercise("hamstring-kicks", "Hamstring Kicks", "Hamstrings", ["Glutes", "Hip Flexors"], "hip_hinge", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Stand on one leg or use a wall for balance.", "Kick the heel toward the glute in a controlled arc.", "Pause briefly at the top and lower with control."]),
-    makeExercise("leg-swings-front-back", "Leg Swings (Front-Back)", "Hip Flexors", ["Hamstrings", "Glutes"], "hip_hinge", "none", "bodyweight", "beginner", "bodyweight_only", "00:20", ["Hold a wall or post for balance on one leg.", "Swing the free leg forward and back through its natural range.", "Gradually increase amplitude over each rep — keep the torso still."]),
-    // ── Abs / Core ─────────────────────────────────────────────────────────────
-    makeExercise("weighted-crunch", "Weighted Crunch", "Abs", ["Obliques"], "core_anterior", "none", "dumbbell", "intermediate", "bodyweight_weighted", "00:30", ["Hold a weight plate or dumbbell against the chest or behind the head.", "Curl the rib cage toward the pelvis, not the head toward the knees.", "Lower under full control to avoid momentum."]),
-    makeExercise("dumbbell-side-bend", "Dumbbell Side Bend", "Obliques", ["Core", "Quadratus Lumborum"], "core_rotational", "none", "dumbbell", "beginner", "free_weights_accessories", "00:30", ["Hold a dumbbell in one hand, stand tall.", "Bend laterally toward the dumbbell side, then return upright.", "Avoid leaning forward or back — movement is purely lateral."]),
-    makeExercise("plank-shoulder-taps", "Plank Shoulder Taps", "Core", ["Shoulders", "Obliques"], "core_anterior", "none", "bodyweight", "beginner", "bodyweight_only", "00:30", ["Set a high plank position, feet slightly wider for stability.", "Tap one shoulder with the opposite hand, then alternate.", "Resist rotation — keep hips level and square throughout."]),
-    // ── Cardio ─────────────────────────────────────────────────────────────────
-    makeExercise("zone-2-running", "Zone 2 Running", "Cardio", ["Quads", "Calves", "Glutes"], "cardio", "none", "none", "beginner", "freestyle_cardio", "00:00", ["Keep heart rate in zone 2 (60–70% max HR) — conversational pace.", "Maintain a natural midfoot strike and relaxed arm swing.", "Log duration and distance rather than pace — consistency is the goal."]),
-    makeExercise("swimming", "Swimming", "Cardio", ["Lats", "Shoulders", "Core", "Legs"], "cardio", "none", "none", "beginner", "freestyle_cardio", "00:00", ["Choose a stroke and maintain controlled breathing rhythm.", "Focus on long, efficient pulls and a steady kick.", "Log laps and duration to track aerobic improvement."]),
-    makeExercise("cycling", "Cycling", "Cardio", ["Quads", "Glutes", "Calves"], "cardio", "none", "none", "beginner", "freestyle_cardio", "00:00", ["Set seat height so the knee has a slight bend at the bottom of the pedal stroke.", "Maintain a cadence of 70–100 rpm for aerobic training.", "Log duration, distance, or average power."]),
-    makeExercise("jumping-jacks", "Jumping Jacks", "Cardio", ["Shoulders", "Legs", "Calves"], "cardio", "none", "bodyweight", "beginner", "bodyweight_only", "00:20", ["Start standing, jump feet out while raising arms overhead.", "Jump back to starting position and repeat rhythmically.", "Land softly on the balls of the feet to absorb impact."]),
-    makeExercise("recumbent-bike", "Recumbent Bike", "Cardio", ["Quads", "Hamstrings", "Glutes"], "cardio", "none", "machine", "beginner", "machine", "00:00", ["Adjust the seat so the knee has a slight bend at full extension.", "Push through the full pedal stroke — don't just push the top.", "Log duration and distance; adjust resistance to target heart rate zone."]),
-    makeExercise("box-jump", "Box Jump", "Quads", ["Glutes", "Calves", "Hamstrings"], "squat", "none", "bodyweight", "intermediate", "bodyweight_only", "01:00", ["Stand an arm's length from the box, feet hip width.", "Swing arms back, dip briefly and explode upward.", "Land softly with knees tracking the toes, then step back down."]),
-    makeExercise("outdoor-run", "Outdoor Run", "Cardio", ["Quads", "Calves", "Glutes", "Hamstrings"], "cardio", "none", "none", "beginner", "freestyle_cardio", "00:00", ["Start at an easy pace and warm up for the first few minutes.", "Maintain relaxed shoulders and natural arm swing.", "Log distance, duration, or pace depending on the session goal."]),
-    makeExercise("hiit-cardio", "HIIT Cardio", "Cardio", ["Full Body"], "cardio", "none", "none", "intermediate", "freestyle_cardio", "00:00", ["Alternate between max-effort intervals and active recovery.", "Work intervals: 20–40 s all-out; rest intervals: 20–60 s easy.", "Log total rounds and total duration."]),
-  ];
-  const _userIds = new Set(exerciseTemplates.map((e) => e.id));
-  exerciseTemplates.push(..._userExercises.filter((e) => !_userIds.has(e.id)));
+  const _existingIds = new Set(exerciseTemplates.map((e) => e.id));
+  exerciseTemplates.push(...allCatalogExercises.filter((e) => !_existingIds.has(e.id)));
 }
 
 const defaultState: FlowState = {
@@ -3188,261 +2602,23 @@ function formatSessionDate(date: string) {
   });
 }
 
-function getStoredSavedWorkouts(): SavedWorkoutData[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(savedWorkoutsStorageKey);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
+// ── Storage functions — see storage.ts ───────────────────────────────────────
 
-function persistSavedWorkout(workout: SavedWorkoutData): void {
-  try {
-    const existing = getStoredSavedWorkouts();
-    // newest first, keep last 200
-    const updated = [workout, ...existing].slice(0, 200);
-    window.localStorage.setItem(savedWorkoutsStorageKey, JSON.stringify(updated));
-  } catch {
-    // storage full or unavailable — ignore
-  }
-}
-
-function persistSavedWorkoutsList(workouts: SavedWorkoutData[]): void {
-  try {
-    window.localStorage.setItem(savedWorkoutsStorageKey, JSON.stringify(workouts));
-  } catch {
-    // storage full or unavailable — ignore
-  }
-}
-
-// ── Psychological data storage ───────────────────────────────────────────────
-
-function getStoredPsychProfile(): UserPsychProfile {
-  try {
-    const raw = window.localStorage.getItem(psychProfileStorageKey);
-    if (!raw) return { ...DEFAULT_PSYCH_PROFILE };
-    return { ...DEFAULT_PSYCH_PROFILE, ...JSON.parse(raw) };
-  } catch { return { ...DEFAULT_PSYCH_PROFILE }; }
-}
-
-function persistPsychProfile(profile: UserPsychProfile): void {
-  try { window.localStorage.setItem(psychProfileStorageKey, JSON.stringify(profile)); } catch {}
-}
-
-function getStoredRepIQPlan(): RepIQPlan | null {
-  try {
-    const raw = window.localStorage.getItem(repiqPlanStorageKey);
-    if (!raw) return null;
-    const plan = JSON.parse(raw) as RepIQPlan;
-    // Migrate: ensure all days have completedAt field (added in schema v2)
-    const migrated: RepIQPlan = {
-      ...plan,
-      weeks: plan.weeks.map((week) => ({
-        ...week,
-        days: week.days.map((day) => ({
-          ...day,
-          completedAt: day.completedAt ?? null,
-        })),
-      })),
-    };
-    return migrated;
-  } catch { return null; }
-}
-
-function persistRepIQPlan(plan: RepIQPlan): void {
-  try { window.localStorage.setItem(repiqPlanStorageKey, JSON.stringify(plan)); } catch {}
-}
-
-function getStoredPostWorkoutPsych(): PostWorkoutPsych[] {
-  try {
-    const raw = window.localStorage.getItem(postWorkoutPsychStorageKey);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
-}
-
-function persistPostWorkoutPsych(entry: PostWorkoutPsych): void {
-  try {
-    const existing = getStoredPostWorkoutPsych();
-    // Upsert: replace existing entry for same sessionId if re-capturing
-    const updated = [entry, ...existing.filter(e => e.sessionId !== entry.sessionId)].slice(0, 500);
-    window.localStorage.setItem(postWorkoutPsychStorageKey, JSON.stringify(updated));
-  } catch {}
-}
-
-function getStoredDailyReadiness(): DailyReadiness[] {
-  try {
-    const raw = window.localStorage.getItem(dailyReadinessStorageKey);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
-}
-
-function persistDailyReadiness(entry: DailyReadiness): void {
-  try {
-    const existing = getStoredDailyReadiness();
-    // Upsert by date
-    const updated = [entry, ...existing.filter(e => e.date !== entry.date)].slice(0, 365);
-    window.localStorage.setItem(dailyReadinessStorageKey, JSON.stringify(updated));
-  } catch {}
+// ── Age helper — always derived from DOB, never stored directly ──────────────
+function getAge(dateOfBirth: string | null): number | null {
+  if (!dateOfBirth) return null;
+  const dob = new Date(dateOfBirth);
+  if (isNaN(dob.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age--;
+  return age;
 }
 
 function getTodayReadiness(): DailyReadiness | null {
   const today = new Date().toISOString().slice(0, 10);
   return getStoredDailyReadiness().find(e => e.date === today) ?? null;
-}
-
-function getStoredSessionBehavior(): SessionBehaviorSignals[] {
-  try {
-    const raw = window.localStorage.getItem(sessionBehaviorStorageKey);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
-}
-
-function persistSessionBehavior(entry: SessionBehaviorSignals): void {
-  try {
-    const existing = getStoredSessionBehavior();
-    const updated = [entry, ...existing.filter(e => e.sessionId !== entry.sessionId)].slice(0, 500);
-    window.localStorage.setItem(sessionBehaviorStorageKey, JSON.stringify(updated));
-  } catch {}
-}
-
-// ── Workout plans storage ────────────────────────────────────────────────────
-
-const SAMPLE_WORKOUT_PLANS: WorkoutPlan[] = [
-  {
-    id: "sample-push",
-    name: "Push Day A",
-    tag: "Push",
-    userTags: ["PPL", "Heavy"],
-    note: "Chest, shoulders and triceps — heavy day",
-    exercises: [
-      { exerciseId: "bench-press", setCount: 4, restTimer: "120" },
-      { exerciseId: "incline-dumbbell-press", setCount: 3, restTimer: "90" },
-      { exerciseId: "shoulder-press", setCount: 3, restTimer: "90" },
-      { exerciseId: "cable-lateral-raise", setCount: 3, restTimer: "60" },
-      { exerciseId: "rope-pushdown", setCount: 3, restTimer: "60" }
-    ],
-    createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
-    updatedAt: new Date(Date.now() - 7 * 86400000).toISOString()
-  },
-  {
-    id: "sample-pull",
-    name: "Pull Day A",
-    tag: "Pull",
-    userTags: ["PPL"],
-    note: "Back and biceps",
-    exercises: [
-      { exerciseId: "lat-pulldown", setCount: 4, restTimer: "120" },
-      { exerciseId: "seated-cable-row", setCount: 3, restTimer: "90" },
-      { exerciseId: "ez-bar-curl", setCount: 3, restTimer: "60" }
-    ],
-    createdAt: new Date(Date.now() - 6 * 86400000).toISOString(),
-    updatedAt: new Date(Date.now() - 6 * 86400000).toISOString()
-  },
-  {
-    id: "sample-legs",
-    name: "Legs",
-    tag: "Legs",
-    userTags: ["PPL"],
-    note: "Quads, hamstrings and glutes",
-    exercises: [
-      { exerciseId: "barbell-squat", setCount: 4, restTimer: "180" },
-      { exerciseId: "romanian-deadlift", setCount: 3, restTimer: "120" },
-      { exerciseId: "leg-press", setCount: 3, restTimer: "120" },
-      { exerciseId: "hamstring-curl", setCount: 3, restTimer: "90" }
-    ],
-    createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-    updatedAt: new Date(Date.now() - 5 * 86400000).toISOString()
-  },
-  {
-    id: "sample-upper",
-    name: "Upper Body",
-    tag: "Upper",
-    userTags: ["Maintenance"],
-    note: "Balanced push/pull for maintenance days",
-    exercises: [
-      { exerciseId: "bench-press", setCount: 3, restTimer: "90" },
-      { exerciseId: "lat-pulldown", setCount: 3, restTimer: "90" },
-      { exerciseId: "shoulder-press", setCount: 3, restTimer: "90" }
-    ],
-    createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
-    updatedAt: new Date(Date.now() - 3 * 86400000).toISOString()
-  }
-];
-
-const SAMPLE_PLAN_IDS = new Set(SAMPLE_WORKOUT_PLANS.map((p) => p.id));
-
-function getStoredWorkoutPlans(): WorkoutPlan[] {
-  if (typeof window === "undefined") return SAMPLE_WORKOUT_PLANS;
-  try {
-    const raw = window.localStorage.getItem(workoutPlansStorageKey);
-    if (!raw) return SAMPLE_WORKOUT_PLANS;
-    const parsed = JSON.parse(raw);
-    // Strip any sample plans that may have been accidentally mixed into stored data
-    const userPlans = Array.isArray(parsed) ? parsed.filter((p: WorkoutPlan) => !SAMPLE_PLAN_IDS.has(p.id)) : [];
-    return userPlans.length > 0 ? userPlans : SAMPLE_WORKOUT_PLANS;
-  } catch {
-    return SAMPLE_WORKOUT_PLANS;
-  }
-}
-
-function persistWorkoutPlans(plans: WorkoutPlan[]): void {
-  try {
-    // Never persist sample plans — they are always shown dynamically when no user plans exist
-    const userPlans = plans.filter((p) => !SAMPLE_PLAN_IDS.has(p.id));
-    window.localStorage.setItem(workoutPlansStorageKey, JSON.stringify(userPlans));
-  } catch {
-    // storage full or unavailable — ignore
-  }
-}
-
-function getStoredPlanBuilderDraft():
-  | {
-      draft: WorkoutPlan;
-      mode: PlanBuilderMode;
-    }
-  | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(planBuilderDraftStorageKey);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as { draft?: WorkoutPlan; mode?: PlanBuilderMode };
-    if (!parsed?.draft) {
-      return null;
-    }
-    return {
-      draft: parsed.draft,
-      mode: parsed.mode ?? "create"
-    };
-  } catch {
-    return null;
-  }
-}
-
-function persistPlanBuilderDraft(draft: WorkoutPlan | null, mode: PlanBuilderMode): void {
-  try {
-    if (!draft) {
-      window.localStorage.removeItem(planBuilderDraftStorageKey);
-      return;
-    }
-    window.localStorage.setItem(planBuilderDraftStorageKey, JSON.stringify({ draft, mode }));
-  } catch {
-    // storage full or unavailable — ignore
-  }
 }
 
 // ── Hardcoded starter templates ──────────────────────────────────────────────
@@ -3925,7 +3101,15 @@ function getExerciseMeasurementType(exercise: ExerciseDraft): MeasurementType {
   }
 
   const name = exercise.name.toLowerCase();
-  if (/(run|bike|cycle|walk|elliptical|rower|stair|stretch|mobility|yoga|plank|hold)/.test(name)) {
+
+  // Only match exercises that are genuinely timed (holds / cardio machines / stretches).
+  // "walk" removed — it false-positives on Walking Lunge, Banded Lateral Walk, etc.
+  if (/\b(run|bike|cycle|elliptical|rower|stair|stretch|mobility|yoga)\b/.test(name)) {
+    return "timed";
+  }
+
+  // Planks and holds are timed, but NOT "crunch", "lunge", "walk" etc.
+  if (/\bplank\b/.test(name) || /\bhold\b/.test(name)) {
     return "timed";
   }
 
@@ -5140,11 +4324,16 @@ function PlannerHomePage({
   onSaveSessionToLibrary,
   psychProfile,
   onToggleRepIQStatus,
+  onPausePlan,
   onDismissReview,
   savedWorkouts,
   onOpenHistoryWorkout,
   onSaveHistoryWorkout,
   onTryRepIQPlan,
+  onNavigateGlossary,
+  onApplyCustomSplit,
+  onCarryOverSessions,
+  onCompressSessions,
 }: {
   plans: WorkoutPlan[];
   library: ExerciseDraft[];
@@ -5155,7 +4344,7 @@ function PlannerHomePage({
   onBack: () => void;
   onStartEmpty: () => void;
   onCreateNew: () => void;
-  onGeneratePlan: (plan: WorkoutPlan) => void;
+  onGeneratePlan: (plan: WorkoutPlan, config: GenConfig) => void;
   onStartPlan: (plan: WorkoutPlan) => void;
   onEditPlan: (plan: WorkoutPlan) => void;
   onDuplicatePlan: (plan: WorkoutPlan) => void;
@@ -5173,16 +4362,21 @@ function PlannerHomePage({
   repiqPlan?: RepIQPlan | null;
   initialPlannerMode?: "repiq" | "custom";
   onStartRepIQSession?: (weekIdx: number, dayIdx: number) => void;
-  onRegeneratePlan?: (prefs: { goal: string; experience: string; daysPerWeek: number; sessionLength: number; planLengthWeeks: number; splitPref: string | null }) => void;
+  onRegeneratePlan?: (prefs: { goal: string; experience: string; daysPerWeek: number; cycleDays: number | null; sessionLength: number; planLengthWeeks: number; splitPref: string | null }) => void;
   onRegenerateRemaining?: () => void;
   onSaveSessionToLibrary?: (day: RepIQPlanDay, sessionLabel: string) => void;
   psychProfile?: UserPsychProfile | null;
   onToggleRepIQStatus?: () => void;
+  onPausePlan?: (pauseEndDate: string) => void;
   onDismissReview?: () => void;
   savedWorkouts?: SavedWorkoutData[];
   onOpenHistoryWorkout?: (workout: SavedWorkoutData | null, weekIdx: number, dayIdx: number, label: string, sessionNum: number) => void;
   onSaveHistoryWorkout?: (workout: SavedWorkoutData) => void;
   onTryRepIQPlan?: () => void;
+  onNavigateGlossary?: (term: string) => void;
+  onApplyCustomSplit?: (arrangement: { label: string; muscles: string[] }[]) => void;
+  onCarryOverSessions?: () => void;
+  onCompressSessions?: () => void;
 }) {
   // Generate state
   const [genGoal, setGenGoal] = useState("Hypertrophy");
@@ -5216,12 +4410,24 @@ function PlannerHomePage({
   const [prefGoal, setPrefGoal] = useState<string>(repiqPlan?.goal ?? "build_muscle");
   const [prefExp, setPrefExp] = useState<string>(repiqPlan?.experienceLevel ?? "beginner");
   const [prefDays, setPrefDays] = useState<number>(repiqPlan?.daysPerWeek ?? 3);
+  const [prefUseRotatingCycle, setPrefUseRotatingCycle] = useState<boolean>(() => (psychProfile?.cycleDays ?? null) !== null);
+  const [prefCycleDays, setPrefCycleDays] = useState<number>(() => psychProfile?.cycleDays ?? 7);
   const [prefLength, setPrefLength] = useState<number>(repiqPlan?.sessionLengthMin ?? 45);
   const [prefWeeks, setPrefWeeks] = useState<number>(repiqPlan?.mesocycleLengthWeeks ?? 12);
   const [prefSplit, setPrefSplit] = useState<string | null>(null);
   const [sessionMenuIdx, setSessionMenuIdx] = useState<string | null>(null);
   const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
   const [editingSessionName, setEditingSessionName] = useState("");
+  const [showPauseForm, setShowPauseForm] = useState(false);
+  const [pauseReturnDate, setPauseReturnDate] = useState("");
+  const [paceNudgeDismissedCycle, setPaceNudgeDismissedCycle] = useState<number>(-1);
+
+  // Customise Split overlay
+  const [showCustomSplit, setShowCustomSplit] = useState(false);
+  const [customDays, setCustomDays] = useState<{ label: string; muscles: string[] }[]>([]);
+  const [initialCustomDays, setInitialCustomDays] = useState<{ label: string; muscles: string[] }[]>([]);
+  const [selectedMuscle, setSelectedMuscle] = useState<{ dayIdx: number; muscle: string } | null>(null);
+  const [addingToDayIdx, setAddingToDayIdx] = useState<number | null>(null);
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [toggledSessionKeys, setToggledSessionKeys] = useState<Set<string>>(new Set());
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
@@ -5249,6 +4455,19 @@ function PlannerHomePage({
     });
   }, [libCategory, libLevel, libGoal, libEquipment]);
 
+  // Close session 3-dot menu on outside click
+  useEffect(() => {
+    if (!sessionMenuIdx) return;
+    function handleOutsideClick(e: MouseEvent) {
+      const wrap = document.querySelector(".repiq-session-menu-wrap");
+      if (wrap && !wrap.contains(e.target as Node)) {
+        setSessionMenuIdx(null);
+      }
+    }
+    document.addEventListener("click", handleOutsideClick, { capture: true });
+    return () => document.removeEventListener("click", handleOutsideClick, { capture: true });
+  }, [sessionMenuIdx]);
+
   useEffect(() => {
     if (activeView !== "generate") {
       lastBrowseViewRef.current = activeView;
@@ -5260,70 +4479,14 @@ function PlannerHomePage({
   }
 
   function handleGenerate() {
-    const muscleKeywords: Record<string, string[]> = {
-      Chest: ["chest", "pec"],
-      Back: ["back", "lat", "row", "rhomboid", "trap"],
-      Shoulders: ["shoulder", "delt"],
-      Arms: ["bicep", "tricep", "arm", "forearm"],
-      Legs: ["quad", "hamstring", "glute", "calf", "leg", "hip"],
-      Core: ["core", "ab", "oblique"],
-    };
-    const goalConfig: Record<string, { setCount: number; restTimer: string }> = {
-      Strength: { setCount: 5, restTimer: "180" },
-      Hypertrophy: { setCount: 3, restTimer: "90" },
-      Endurance: { setCount: 3, restTimer: "45" },
-      "Fat loss": { setCount: 4, restTimer: "60" },
-    };
-    const durationCount: Record<string, number> = {
-      "30 min": 4, "45 min": 5, "60 min": 6, "75+ min": 8,
-    };
-    const config = goalConfig[genGoal] ?? { setCount: 3, restTimer: "90" };
-    const count = durationCount[genDuration] ?? 5;
-    const keywords = genMuscles.flatMap((m) => muscleKeywords[m] ?? [m.toLowerCase()]);
-
-    let candidates = [...library];
-    if (keywords.length > 0) {
-      candidates = candidates.filter((ex) =>
-        keywords.some(
-          (kw) =>
-            ex.primaryMuscle.toLowerCase().includes(kw) ||
-            ex.primaryMuscles?.some((pm) => pm.toLowerCase().includes(kw)) ||
-            ex.secondaryMuscles.some((sm) => sm.toLowerCase().includes(kw))
-        )
-      );
-      candidates.sort((a, b) => {
-        const score = (ex: ExerciseDraft) =>
-          keywords.filter(
-            (kw) =>
-              ex.primaryMuscle.toLowerCase().includes(kw) ||
-              ex.primaryMuscles?.some((pm) => pm.toLowerCase().includes(kw))
-          ).length;
-        return score(b) - score(a);
-      });
-    }
-
-    const selected = candidates.slice(0, count);
-    if (selected.length === 0) {
+    const genConfig: GenConfig = { goal: genGoal, muscles: genMuscles, duration: genDuration, seedOffset: 0 };
+    const plan = buildGeneratedPlan(genConfig, library as ExerciseWithTaxonomy[]);
+    if (!plan) {
       setGenError("No exercises found for your selections. Try removing some filters.");
       return;
     }
     setGenError(null);
-    const plan: WorkoutPlan = {
-      id: `gen-${Date.now()}`,
-      name: genMuscles.length > 0
-        ? `${genGoal} · ${genMuscles.slice(0, 2).join(" & ")}`
-        : `${genGoal} Workout`,
-      tag: genGoal,
-      note: genMuscles.length > 0 ? `${genMuscles.join(", ")} · ${genDuration}` : genDuration,
-      exercises: selected.map((ex) => ({
-        exerciseId: ex.id,
-        setCount: config.setCount,
-        restTimer: config.restTimer,
-      })),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    onGeneratePlan(plan);
+    onGeneratePlan(plan, genConfig);
   }
 
   const trayClass = hasActiveWorkout ? " has-tray" : "";
@@ -5368,7 +4531,7 @@ function PlannerHomePage({
             <div className="generate-field">
               <label className="generate-field-label">Target muscles <span className="generate-field-hint">(optional)</span></label>
               <div className="generate-field-chips">
-                {["Chest", "Back", "Shoulders", "Arms", "Legs", "Core"].map((m) => (
+                {["Chest", "Back", "Shoulders", "Biceps", "Triceps", "Quads", "Hamstrings", "Glutes", "Calves", "Abductors", "Adductors", "Core / Abs", "Obliques"].map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -5398,7 +4561,7 @@ function PlannerHomePage({
           </div>
           {genError && <p className="generate-error">{genError}</p>}
           <p className="planner-generate-note">
-            Current generator uses goal, target muscles, and session constraints. Profile-based optimization comes next.
+            Same selections always generate the same session. Shuffle on the next screen for a fresh variation.
           </p>
         </section>
         <div className={`planner-bottom-actions${hasActiveWorkout ? " has-tray" : ""}`}>
@@ -5628,24 +4791,24 @@ function PlannerHomePage({
           <div className="planner-repiq-section">
             {/* Header */}
             <div className="repiq-plan-header">
-              <div>
-                <h2 className="repiq-plan-title">{repiqPlan.planName}</h2>
-                <div className="repiq-plan-meta-row">
-                  <span>{SPLIT_LABEL[repiqPlan.splitType]}</span>
-                  <span className="repiq-meta-dot">·</span>
-                  <span>{repiqPlan.daysPerWeek} days/week</span>
-                  <span className="repiq-meta-dot">·</span>
-                  <span>{repiqPlan.mesocycleLengthWeeks} weeks</span>
-                </div>
-              </div>
               <div className="repiq-plan-header-btns">
                 {onToggleRepIQStatus && (
                   <button
                     type="button"
                     className={`repiq-status-btn${repiqPlan.status === "paused" ? " is-paused" : ""}`}
-                    onClick={onToggleRepIQStatus}
+                    onClick={() => {
+                      if (repiqPlan.status === "paused") {
+                        onToggleRepIQStatus();
+                        setShowPauseForm(false);
+                      } else {
+                        setShowPauseForm(prev => !prev);
+                        // Default return date: 7 days from now
+                        const d = new Date(); d.setDate(d.getDate() + 7);
+                        setPauseReturnDate(d.toISOString().split("T")[0]);
+                      }
+                    }}
                   >
-                    {repiqPlan.status === "paused" ? "▶ Resume" : "⏸ Pause"}
+                    {repiqPlan.status === "paused" ? "▶ Resume" : showPauseForm ? "✕ Cancel" : "⏸ Pause"}
                   </button>
                 )}
                 {onRegeneratePlan && (
@@ -5664,6 +4827,84 @@ function PlannerHomePage({
                     ✦ Adjust Preferences
                   </button>
                 )}
+                {onApplyCustomSplit && (
+                  <button
+                    type="button"
+                    className="repiq-customise-btn"
+                    onClick={() => {
+                      const firstCycle = repiqPlan.weeks[0];
+                      if (firstCycle) {
+                        const arrangement = firstCycle.days.map(day => ({
+                          label: day.sessionLabel,
+                          muscles: day.focus.split(" · ").map(m => m.trim()).filter(Boolean),
+                        }));
+                        setCustomDays(arrangement);
+                        setInitialCustomDays(arrangement.map(d => ({ ...d, muscles: [...d.muscles] })));
+                      }
+                      setSelectedMuscle(null);
+                      setAddingToDayIdx(null);
+                      setShowCustomSplit(true);
+                    }}
+                  >
+                    ✎ Customise Split
+                  </button>
+                )}
+              </div>
+              {/* Inline pause form */}
+              {showPauseForm && repiqPlan.status !== "paused" && (
+                <div className="repiq-pause-form">
+                  <label className="repiq-pause-label">Returning on</label>
+                  <input
+                    type="date"
+                    className="repiq-pause-date"
+                    value={pauseReturnDate}
+                    min={(() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })()}
+                    max={(() => { const d = new Date(); d.setDate(d.getDate() + (repiqPlan.pauseDaysMax ?? 45)); return d.toISOString().split("T")[0]; })()}
+                    onChange={(e) => setPauseReturnDate(e.target.value)}
+                  />
+                  {pauseReturnDate && (
+                    <span className="repiq-pause-days-info">
+                      {Math.max(1, Math.round((new Date(pauseReturnDate).getTime() - Date.now()) / 86400000))} day{Math.max(1, Math.round((new Date(pauseReturnDate).getTime() - Date.now()) / 86400000)) !== 1 ? "s" : ""} pause
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="repiq-pause-confirm-btn"
+                    disabled={!pauseReturnDate}
+                    onClick={() => {
+                      if (onPausePlan && pauseReturnDate) {
+                        onPausePlan(pauseReturnDate);
+                        setShowPauseForm(false);
+                      }
+                    }}
+                  >
+                    Confirm Pause
+                  </button>
+                </div>
+              )}
+              <h2 className="repiq-plan-title">{repiqPlan.planName}</h2>
+              <div className="repiq-plan-meta-row">
+                <span>{SPLIT_LABEL[repiqPlan.splitType]}</span>
+                <span className="repiq-meta-dot">·</span>
+                <span>{repiqPlan.daysPerWeek} {psychProfile?.cycleDays ? `sessions / ${psychProfile.cycleDays}-day cycle` : "days/week"}</span>
+                <span className="repiq-meta-dot">·</span>
+                <span>{repiqPlan.mesocycleLengthWeeks} weeks</span>
+                <span className="repiq-meta-dot">·</span>
+                <span>Ends {(() => {
+                  const start = new Date(repiqPlan.startDate);
+                  const planDays = repiqPlan.mesocycleLengthWeeks * 7;
+                  const pauseDays = repiqPlan.totalPauseDaysUsed ?? 0;
+                  // If currently paused with an end date, add those planned pause days
+                  const currentPauseDays = repiqPlan.status === "paused" && repiqPlan.pauseEndDate
+                    ? Math.max(0, Math.round((new Date(repiqPlan.pauseEndDate).getTime() - new Date(repiqPlan.pausedAt ?? Date.now()).getTime()) / 86400000))
+                    : repiqPlan.status === "paused" && repiqPlan.pausedAt
+                    ? Math.round((Date.now() - new Date(repiqPlan.pausedAt).getTime()) / 86400000)
+                    : 0;
+                  // Buffer: 1 week per 4 weeks of plan (natural slack for rest days)
+                  const bufferDays = Math.floor(repiqPlan.mesocycleLengthWeeks / 4) * 7;
+                  const endDate = new Date(start.getTime() + (planDays + pauseDays + currentPauseDays + bufferDays) * 86400000);
+                  return endDate.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+                })()}</span>
               </div>
             </div>
 
@@ -5676,6 +4917,12 @@ function PlannerHomePage({
               const daysRemaining = Math.max(0, maxDays - totalUsed);
               const isNearExpiry = totalUsed >= maxDays * 0.7;
               const isExpired = totalUsed >= maxDays;
+              const returnDate = repiqPlan.pauseEndDate
+                ? new Date(repiqPlan.pauseEndDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+                : null;
+              const daysUntilReturn = repiqPlan.pauseEndDate
+                ? Math.max(0, Math.round((new Date(repiqPlan.pauseEndDate).getTime() - Date.now()) / 86400000))
+                : null;
               return (
                 <div className={`repiq-paused-banner${isNearExpiry ? " is-warning" : ""}${isExpired ? " is-expired" : ""}`}>
                   <div className="repiq-paused-top">
@@ -5686,6 +4933,10 @@ function PlannerHomePage({
                   </div>
                   {isExpired ? (
                     <span className="repiq-paused-sub">This plan has been paused too long. Archive it and start fresh to continue your progress.</span>
+                  ) : returnDate ? (
+                    <span className="repiq-paused-sub">
+                      Returning {returnDate}{daysUntilReturn !== null && daysUntilReturn > 0 ? ` (${daysUntilReturn} day${daysUntilReturn !== 1 ? "s" : ""} left)` : daysUntilReturn === 0 ? " (today!)" : ""}. Plan end date adjusted accordingly.
+                    </span>
                   ) : isNearExpiry ? (
                     <span className="repiq-paused-sub">⚠ Plan expires in {daysRemaining} day{daysRemaining !== 1 ? "s" : ""}. Resume soon or your progress will be archived.</span>
                   ) : (
@@ -5695,37 +4946,129 @@ function PlannerHomePage({
               );
             })()}
 
-            {/* Needs-review notice */}
-            {repiqPlan.needsReview && (
-              <div className="repiq-needs-review-banner">
-                <div className="repiq-needs-review-body">
-                  <p className="repiq-needs-review-title">Your remaining sessions may need a refresh</p>
-                  <p className="repiq-needs-review-sub">
-                    You logged {repiqPlan.extraVolumeCount ?? 1} session{(repiqPlan.extraVolumeCount ?? 1) !== 1 ? "s" : ""} outside this plan. RepIQ can regenerate your remaining sessions to account for the extra volume and avoid overlap.
-                  </p>
-                </div>
-                <div className="repiq-needs-review-actions">
-                  {onRegenerateRemaining && (
-                    <button
-                      type="button"
-                      className="repiq-needs-review-regen-btn"
-                      onClick={onRegenerateRemaining}
-                    >
-                      Regenerate remaining sessions
-                    </button>
-                  )}
-                  {onDismissReview && (
-                    <button
-                      type="button"
-                      className="repiq-needs-review-dismiss-btn"
-                      onClick={onDismissReview}
-                    >
-                      Dismiss
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* ── Plan health nudges (needs-review + pace) ── */}
+            {(() => {
+              // Compute pace info for both banners
+              let isBehindPace = false;
+              let sessionsRemaining = 0;
+              let daysRemaining = 0;
+              let cycleLabel = "this week";
+              if (repiqPlan.status !== "paused") {
+                const currentWeek = repiqPlan.weeks[repiqPlan.currentWeekIndex];
+                if (currentWeek && !currentWeek.isCompleted) {
+                  const completedTimestamps = currentWeek.days
+                    .map(d => d.completedAt ? new Date(d.completedAt).getTime() : null)
+                    .filter((t): t is number => t !== null);
+                  if (completedTimestamps.length > 0) {
+                    const cycleStartMs = Math.min(...completedTimestamps);
+                    const cycleLengthDays = repiqPlan.cycleDays ?? 7;
+                    const cycleEndMs = cycleStartMs + cycleLengthDays * 86400000;
+                    daysRemaining = Math.max(0, Math.floor((cycleEndMs - Date.now()) / 86400000));
+                    sessionsRemaining = currentWeek.days.filter(d => !d.completedAt).length;
+                    isBehindPace = sessionsRemaining > 0 && daysRemaining < sessionsRemaining;
+                    cycleLabel = repiqPlan.cycleDays ? `${cycleLengthDays}-day cycle` : "this week";
+                  }
+                }
+              }
+              const paceNudgeDismissed = paceNudgeDismissedCycle === repiqPlan.currentWeekIndex;
+              const showPace = isBehindPace && !paceNudgeDismissed;
+              const showReview = !!repiqPlan.needsReview;
+
+              // ── Combined: both review + pace active ──
+              if (showReview && showPace) {
+                return (
+                  <div className="repiq-needs-review-banner repiq-combined-nudge">
+                    <div className="repiq-needs-review-body">
+                      <p className="repiq-needs-review-title">Plan needs attention</p>
+                      <p className="repiq-needs-review-sub">
+                        You logged {repiqPlan.extraVolumeCount ?? 1} session{(repiqPlan.extraVolumeCount ?? 1) !== 1 ? "s" : ""} outside this plan, and you have {sessionsRemaining} session{sessionsRemaining !== 1 ? "s" : ""} left with {daysRemaining === 0 ? "no days" : `${daysRemaining} day${daysRemaining !== 1 ? "s" : ""}`} remaining in {cycleLabel}.
+                      </p>
+                      <p className="repiq-needs-review-sub" style={{ marginTop: 4, fontStyle: "italic" }}>
+                        Regenerating will recalculate volumes and adjust pacing for the remaining sessions.
+                      </p>
+                    </div>
+                    <div className="repiq-needs-review-actions">
+                      {onRegenerateRemaining && sessionsRemaining > daysRemaining && (
+                        <button type="button" className="repiq-needs-review-regen-btn" onClick={() => { onRegenerateRemaining(); setPaceNudgeDismissedCycle(repiqPlan.currentWeekIndex); }}>
+                          Regenerate &amp; Rebalance
+                        </button>
+                      )}
+                      {onDismissReview && (
+                        <button type="button" className="repiq-needs-review-dismiss-btn" onClick={() => { onDismissReview(); setPaceNudgeDismissedCycle(repiqPlan.currentWeekIndex); }}>
+                          Dismiss
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              // ── Review only (no pacing issue) ──
+              if (showReview) {
+                return (
+                  <div className="repiq-needs-review-banner">
+                    <div className="repiq-needs-review-body">
+                      <p className="repiq-needs-review-title">Your remaining sessions may need a refresh</p>
+                      <p className="repiq-needs-review-sub">
+                        You logged {repiqPlan.extraVolumeCount ?? 1} session{(repiqPlan.extraVolumeCount ?? 1) !== 1 ? "s" : ""} outside this plan. RepIQ can regenerate your remaining sessions to account for the extra volume and avoid overlap.
+                      </p>
+                    </div>
+                    <div className="repiq-needs-review-actions">
+                      {onRegenerateRemaining && (
+                        <button type="button" className="repiq-needs-review-regen-btn" onClick={onRegenerateRemaining}>
+                          Regenerate remaining sessions
+                        </button>
+                      )}
+                      {onDismissReview && (
+                        <button type="button" className="repiq-needs-review-dismiss-btn" onClick={onDismissReview}>
+                          Dismiss
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              // ── Pace nudge only (no review needed) ──
+              if (showPace) {
+                return (
+                  <div className="repiq-pace-nudge">
+                    <div className="repiq-pace-nudge-body">
+                      <span className="repiq-pace-nudge-icon">⚡</span>
+                      <div>
+                        <p className="repiq-pace-nudge-title">
+                          {sessionsRemaining} session{sessionsRemaining !== 1 ? "s" : ""} left, {daysRemaining === 0 ? "last day" : `${daysRemaining} day${daysRemaining !== 1 ? "s" : ""} remaining`}
+                        </p>
+                        <p className="repiq-pace-nudge-sub">
+                          Choose how to adjust {cycleLabel}:
+                        </p>
+                      </div>
+                    </div>
+                    <div className="repiq-pace-nudge-actions">
+                      {onCarryOverSessions && (
+                        <button type="button" className="repiq-pace-action-btn" onClick={() => { onCarryOverSessions(); setPaceNudgeDismissedCycle(repiqPlan.currentWeekIndex); }}>
+                          Carry over to next cycle
+                        </button>
+                      )}
+                      {onCompressSessions && sessionsRemaining > daysRemaining && (
+                        <button type="button" className="repiq-pace-action-btn" onClick={() => { onCompressSessions(); setPaceNudgeDismissedCycle(repiqPlan.currentWeekIndex); }}>
+                          Compress remaining
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="repiq-pace-nudge-dismiss-btn"
+                        onClick={() => setPaceNudgeDismissedCycle(repiqPlan.currentWeekIndex)}
+                      >
+                        Ignore &amp; continue
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return null;
+            })()}
 
             {/* Plan context — why this plan was chosen */}
             <div className="repiq-plan-context">
@@ -5831,30 +5174,12 @@ function PlannerHomePage({
                 );
               })}
 
-              {/* Locked upcoming sessions — 1 cycle preview, capped so total visible ≤ 8 */}
-              {(() => {
-                const lockedToShow = Math.min(sessionsPerWeek, Math.max(0, 8 - sessionsPerWeek));
-                const hiddenCount = lockedSessions.length - lockedToShow;
-                return (
-                  <>
-                    {lockedSessions.slice(0, lockedToShow).map((s) => (
-                      <div key={s.key} className="repiq-session-card is-locked">
-                        <div className="repiq-session-header">
-                          <div className="repiq-session-meta">
-                            <span className="repiq-session-num">Session {s.sessionNum}</span>
-                          </div>
-                          <span className="repiq-session-lock">🔒</span>
-                        </div>
-                        <p className="repiq-session-name">{s.label}</p>
-                        {s.focus && <p className="repiq-session-focus">{s.focus}</p>}
-                      </div>
-                    ))}
-                    {hiddenCount > 0 && (
-                      <p className="repiq-more-locked">🔒 And {hiddenCount} more locked session{hiddenCount !== 1 ? "s" : ""} — unlock by completing each week</p>
-                    )}
-                  </>
-                );
-              })()}
+              {/* Locked sessions — count only, no cards */}
+              {lockedSessions.length > 0 && (
+                <p className="repiq-locked-count">
+                  🔒 {lockedSessions.length} session{lockedSessions.length !== 1 ? "s" : ""} locked · complete upcoming sessions to unlock
+                </p>
+              )}
             </div>
 
             {/* Completed sessions — last 2 weeks shown inline */}
@@ -5976,9 +5301,11 @@ function PlannerHomePage({
                       </div>
                     </div>
 
-                    {/* Days per week */}
+                    {/* Sessions per week / cycle */}
                     <div className="ob-field">
-                      <label className="ob-field-label">Days per week</label>
+                      <label className="ob-field-label">
+                        {prefUseRotatingCycle ? "Sessions per cycle" : "Days per week"}
+                      </label>
                       <div className="ob-chip-row">
                         {[1, 2, 3, 4, 5, 6, 7].map(d => (
                           <button
@@ -5992,6 +5319,32 @@ function PlannerHomePage({
                           </button>
                         ))}
                       </div>
+                      <label className="ob-rotating-toggle" style={{ marginTop: 10 }}>
+                        <input
+                          type="checkbox"
+                          checked={prefUseRotatingCycle}
+                          onChange={e => setPrefUseRotatingCycle(e.target.checked)}
+                        />
+                        <span className="ob-checkbox-label">I follow a rotating cycle (not a fixed weekly schedule)</span>
+                      </label>
+                      {prefUseRotatingCycle && (
+                        <div style={{ marginTop: 10 }}>
+                          <label className="ob-field-label" style={{ fontSize: "0.8rem", marginBottom: 6 }}>Cycle length</label>
+                          <div className="ob-chip-row" style={{ flexWrap: "wrap" }}>
+                            {[3, 4, 5, 6, 7, 8, 9, 10, 12, 14].map(d => (
+                              <button
+                                key={d}
+                                type="button"
+                                className={`ob-chip${prefCycleDays === d ? " is-active" : ""}`}
+                                onClick={() => setPrefCycleDays(d)}
+                              >
+                                <span className="ob-chip-check" style={{ visibility: prefCycleDays === d ? "visible" : "hidden" }}>✓</span>
+                                {d}d
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Session length */}
@@ -6029,6 +5382,45 @@ function PlannerHomePage({
                         ))}
                       </div>
                     </div>
+
+                    {/* Workout split — smart recommendations based on day count */}
+                    <div className="ob-field">
+                      <label className="ob-field-label">Workout Split <InfoIcon onClick={(e) => { e.stopPropagation(); onNavigateGlossary?.("workout split"); }} /></label>
+                      <p className="ob-field-hint" style={{ marginBottom: 8 }}>Recommended for {prefDays} day{prefDays !== 1 ? "s" : ""}. Or customise the muscle arrangement from the plan header.</p>
+                      <div className="ob-split-grid">
+                        {(() => {
+                          const VALID_SPLITS_FOR_DAYS_PREF: Record<number, SplitType[]> = {
+                            1: ["full_body"],
+                            2: ["push_pull", "full_body", "upper_lower"],
+                            3: ["ppl", "arnold", "full_body"],
+                            4: ["upper_lower", "phul", "ppl_fb", "arnold_fb"],
+                            5: ["ppl_ul", "arnold_ul", "body_part"],
+                            6: ["ppl", "arnold", "ppl_arnold", "body_part"],
+                            7: ["body_part"],
+                          };
+                          const validSplits: SplitType[] = VALID_SPLITS_FOR_DAYS_PREF[prefDays] ?? ["full_body"];
+                          const autoRec = pickSplitType(prefDays, (prefExp as ExperienceLevel) ?? "beginner");
+                          return validSplits.map(s => {
+                            const isRec = s === autoRec;
+                            const isActive = prefSplit === s || (prefSplit === null && isRec);
+                            return (
+                              <button
+                                key={s}
+                                type="button"
+                                className={`ob-split-btn${isActive ? " is-active" : ""}`}
+                                onClick={() => setPrefSplit(isActive && isRec ? null : s)}
+                              >
+                                <div className="ob-split-text">
+                                  <span className="ob-split-name">{SPLIT_LABEL[s]}</span>
+                                  <span className="ob-split-desc">{SPLIT_DESC[s]}</span>
+                                </div>
+                                {isRec && <span className="ob-split-rec">Recommended</span>}
+                              </button>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="repiq-prefs-footer">
@@ -6036,7 +5428,7 @@ function PlannerHomePage({
                       type="button"
                       className="primary-button"
                       onClick={() => {
-                        onRegeneratePlan?.({ goal: prefGoal, experience: prefExp, daysPerWeek: prefDays, sessionLength: prefLength, planLengthWeeks: prefWeeks, splitPref: prefSplit });
+                        onRegeneratePlan?.({ goal: prefGoal, experience: prefExp, daysPerWeek: prefDays, cycleDays: prefUseRotatingCycle ? prefCycleDays : null, sessionLength: prefLength, planLengthWeeks: prefWeeks, splitPref: prefSplit });
                         setShowPrefsOverlay(false);
                       }}
                     >
@@ -6046,6 +5438,216 @@ function PlannerHomePage({
                 </div>
               </div>
             )}
+
+            {/* ── Customise Split overlay ── */}
+            {showCustomSplit && (() => {
+              const ALL_MUSCLES = ["Chest", "Back", "Shoulders", "Biceps", "Triceps", "Quads", "Hamstrings", "Glutes", "Core", "Calves"] as const;
+              // Muscles "covered" by composite focus labels like "Upper Body", "Full Body"
+              const COMPOSITE_COVERAGE: Record<string, string[]> = {
+                "Upper Body":  ["Chest", "Back", "Shoulders", "Biceps", "Triceps"],
+                "Lower Body":  ["Quads", "Hamstrings", "Glutes", "Calves"],
+                "Full Body":   ["Chest", "Back", "Shoulders", "Biceps", "Triceps", "Quads", "Hamstrings", "Glutes", "Core", "Calves"],
+                "Upper Body · Strength": ["Chest", "Back", "Shoulders", "Biceps", "Triceps"],
+                "Upper Body · Hypertrophy": ["Chest", "Back", "Shoulders", "Biceps", "Triceps"],
+              };
+              const coveredMuscles = new Set<string>();
+              customDays.forEach(d => {
+                d.muscles.forEach(m => coveredMuscles.add(m));
+                // Check if day focus or label implies composite coverage
+                const focusParts = d.muscles;
+                if (focusParts.length === 0) return;
+                // Also check known composite names in the label
+                Object.entries(COMPOSITE_COVERAGE).forEach(([key, muscles]) => {
+                  if (d.label === key || d.muscles.some(mm => mm === key)) {
+                    muscles.forEach(mm => coveredMuscles.add(mm));
+                  }
+                });
+              });
+              const assignedMuscles = new Set(customDays.flatMap(d => d.muscles));
+              const unassignedMuscles = ALL_MUSCLES.filter(m => !assignedMuscles.has(m));
+              const hasChanges = JSON.stringify(customDays) !== JSON.stringify(initialCustomDays);
+
+              return (
+                <div className="cs-overlay" onClick={() => { setShowCustomSplit(false); setSelectedMuscle(null); setAddingToDayIdx(null); }}>
+                  <div className="cs-sheet" onClick={e => e.stopPropagation()}>
+                    <div className="cs-header">
+                      <button type="button" className="cs-back" onClick={() => { setShowCustomSplit(false); setSelectedMuscle(null); setAddingToDayIdx(null); }}>← Back</button>
+                      <h3 className="cs-title">Customise Split</h3>
+                      <button
+                        type="button"
+                        className={`cs-reset${!hasChanges ? " is-disabled" : ""}`}
+                        disabled={!hasChanges}
+                        onClick={() => {
+                          setCustomDays(initialCustomDays.map(d => ({ ...d, muscles: [...d.muscles] })));
+                          setSelectedMuscle(null);
+                          setAddingToDayIdx(null);
+                        }}
+                      >
+                        Reset
+                      </button>
+                    </div>
+                    <p className="cs-hint">Tap a muscle to select it, then tap another day to move it. Remove with ×. Drag unassigned muscles into any day.</p>
+
+                    <div className="cs-days-list">
+                      {customDays.map((day, dayIdx) => (
+                        <div
+                          key={dayIdx}
+                          className={`cs-day-card${selectedMuscle && selectedMuscle.dayIdx !== dayIdx ? " cs-day-drop-target" : ""}`}
+                          onClick={() => {
+                            if (selectedMuscle && selectedMuscle.dayIdx !== dayIdx) {
+                              const updated = customDays.map((d, i) => {
+                                if (i === selectedMuscle.dayIdx) return { ...d, muscles: d.muscles.filter(m => m !== selectedMuscle.muscle) };
+                                if (i === dayIdx) return { ...d, muscles: [...d.muscles, selectedMuscle.muscle] };
+                                return d;
+                              });
+                              setCustomDays(updated);
+                              setSelectedMuscle(null);
+                            }
+                          }}
+                          onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("cs-day-drop-target"); }}
+                          onDragLeave={(e) => { e.currentTarget.classList.remove("cs-day-drop-target"); }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.currentTarget.classList.remove("cs-day-drop-target");
+                            const muscle = e.dataTransfer.getData("text/plain");
+                            if (muscle && !day.muscles.includes(muscle)) {
+                              // Remove from source day if it was assigned
+                              const updated = customDays.map((d, i) => {
+                                const filtered = d.muscles.filter(m => m !== muscle);
+                                if (i === dayIdx) return { ...d, muscles: [...filtered, muscle] };
+                                return { ...d, muscles: filtered };
+                              });
+                              setCustomDays(updated);
+                            }
+                          }}
+                        >
+                          <div className="cs-day-header">
+                            <span className="cs-day-label">{day.label}</span>
+                            <span className="cs-day-count">{day.muscles.length} muscle{day.muscles.length !== 1 ? "s" : ""}</span>
+                          </div>
+                          <div className="cs-muscle-chips">
+                            {day.muscles.map(muscle => {
+                              const isSelected = selectedMuscle?.dayIdx === dayIdx && selectedMuscle?.muscle === muscle;
+                              return (
+                                <span
+                                  key={muscle}
+                                  className={`cs-muscle-chip${isSelected ? " is-selected" : ""}`}
+                                  draggable
+                                  onDragStart={(e) => e.dataTransfer.setData("text/plain", muscle)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (isSelected) {
+                                      setSelectedMuscle(null);
+                                    } else {
+                                      setSelectedMuscle({ dayIdx, muscle });
+                                      setAddingToDayIdx(null);
+                                    }
+                                  }}
+                                >
+                                  {muscle}
+                                  <button
+                                    type="button"
+                                    className="cs-chip-remove"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const updated = customDays.map((d, i) =>
+                                        i === dayIdx ? { ...d, muscles: d.muscles.filter(m => m !== muscle) } : d
+                                      );
+                                      setCustomDays(updated);
+                                      setSelectedMuscle(null);
+                                    }}
+                                    aria-label={`Remove ${muscle}`}
+                                  >×</button>
+                                </span>
+                              );
+                            })}
+                            {/* Add muscle button */}
+                            <button
+                              type="button"
+                              className="cs-add-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedMuscle(null);
+                                setAddingToDayIdx(addingToDayIdx === dayIdx ? null : dayIdx);
+                              }}
+                            >+</button>
+                          </div>
+                          {/* Add muscle dropdown */}
+                          {addingToDayIdx === dayIdx && (() => {
+                            const availableMuscles = ALL_MUSCLES.filter(m => !day.muscles.includes(m));
+                            return availableMuscles.length > 0 ? (
+                              <div className="cs-dropdown">
+                                {availableMuscles.map(m => (
+                                  <button
+                                    key={m}
+                                    type="button"
+                                    className="cs-dropdown-item"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const updated = customDays.map((d, i) =>
+                                        i === dayIdx ? { ...d, muscles: [...d.muscles, m] } : d
+                                      );
+                                      setCustomDays(updated);
+                                      setAddingToDayIdx(null);
+                                    }}
+                                  >
+                                    {m}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="cs-add-empty">All muscles already assigned to this day.</p>
+                            );
+                          })()}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Unassigned muscles — draggable back into any day */}
+                    {unassignedMuscles.length > 0 && (
+                      <div className="cs-unassigned">
+                        <p className="cs-unassigned-label">Not assigned — drag into a day or tap to select a destination:</p>
+                        <div className="cs-muscle-chips">
+                          {unassignedMuscles.map(m => (
+                            <span
+                              key={m}
+                              className={`cs-muscle-chip is-unassigned${selectedMuscle?.muscle === m && selectedMuscle?.dayIdx === -1 ? " is-selected" : ""}`}
+                              draggable
+                              onDragStart={(e) => e.dataTransfer.setData("text/plain", m)}
+                              onClick={() => {
+                                if (selectedMuscle?.muscle === m && selectedMuscle?.dayIdx === -1) {
+                                  setSelectedMuscle(null);
+                                } else {
+                                  setSelectedMuscle({ dayIdx: -1, muscle: m });
+                                }
+                              }}
+                            >
+                              {m}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="cs-footer">
+                      <button
+                        type="button"
+                        className={`primary-button${unassignedMuscles.length > 0 ? " is-disabled" : ""}`}
+                        disabled={unassignedMuscles.length > 0}
+                        onClick={() => {
+                          onApplyCustomSplit?.(customDays);
+                          setShowCustomSplit(false);
+                          setSelectedMuscle(null);
+                          setAddingToDayIdx(null);
+                        }}
+                      >
+                        {unassignedMuscles.length > 0 ? `Assign all muscles first (${unassignedMuscles.length} remaining)` : "Apply & Regenerate"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         );
       })()}
@@ -6452,7 +6054,9 @@ function PlanBuilderPage({
   onChange,
   onAddExercise,
   onSavePlan,
+  onStartNow,
   onDeletePlan,
+  onShuffle,
   onOpenExerciseDetails,
   resolvedTheme,
   onToggleTheme,
@@ -6465,12 +6069,23 @@ function PlanBuilderPage({
   onChange: (plan: WorkoutPlan) => void;
   onAddExercise: () => void;
   onSavePlan: (plan: WorkoutPlan) => void;
+  onStartNow?: (plan: WorkoutPlan) => void;
   onDeletePlan?: () => void;
+  onShuffle?: () => void;
   onOpenExerciseDetails: (exerciseId: string) => void;
   resolvedTheme: string;
   onToggleTheme: () => void;
 }) {
   const [dragExerciseId, setDragExerciseId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  // Collapse all cards when the exercise list is replaced (e.g. shuffle regenerates)
+  const prevDraftIdRef = useRef(draft.id);
+  useEffect(() => {
+    if (draft.id !== prevDraftIdRef.current) {
+      setExpandedIds(new Set());
+      prevDraftIdRef.current = draft.id;
+    }
+  }, [draft.id]);
   const resolvedTitle =
     mode === "generate" ? "Review Workout" : mode === "edit" ? "Edit Workout" : "New Workout";
   const canSave = draft.exercises.length > 0;
@@ -6565,14 +6180,37 @@ function PlanBuilderPage({
       </header>
 
       <div className="plan-detail-actions-top">
-        <button
-          className="primary-button plan-detail-action-btn"
-          type="button"
-          disabled={!canSave}
-          onClick={() => onSavePlan(draft)}
-        >
-          {mode === "edit" ? "Save Changes" : "Save Workout"}
-        </button>
+        {/* Generate mode: primary action is Start Now, secondary is Save */}
+        {mode === "generate" && onStartNow ? (
+          <>
+            <button
+              className="secondary-button plan-detail-action-btn"
+              type="button"
+              disabled={!canSave}
+              onClick={() => onSavePlan(draft)}
+            >
+              Save
+            </button>
+            <button
+              className="primary-button plan-detail-action-btn"
+              type="button"
+              disabled={!canSave}
+              onClick={() => onStartNow(draft)}
+              style={{ flex: 2 }}
+            >
+              ▶ Start Now
+            </button>
+          </>
+        ) : (
+          <button
+            className="primary-button plan-detail-action-btn"
+            type="button"
+            disabled={!canSave}
+            onClick={() => onSavePlan(draft)}
+          >
+            {mode === "edit" ? "Save Changes" : "Save Workout"}
+          </button>
+        )}
         {mode === "edit" && onDeletePlan && (
           <button
             type="button"
@@ -6623,6 +6261,16 @@ function PlanBuilderPage({
           <p className="planner-routine-count">
             {draft.exercises.length} {draft.exercises.length === 1 ? "exercise" : "exercises"}
           </p>
+          {mode === "generate" && onShuffle && (
+            <button
+              className="builder-shuffle-btn"
+              type="button"
+              onClick={onShuffle}
+              title="Get a different set of exercises"
+            >
+              ↻ Shuffle
+            </button>
+          )}
         </div>
 
         {resolvedExercises.length === 0 ? (
@@ -6632,72 +6280,103 @@ function PlanBuilderPage({
           </div>
         ) : (
           <div className="plan-list">
-            {resolvedExercises.map(({ planned, exercise }) => {
+            {resolvedExercises.map(({ planned, exercise }, cardIdx) => {
               const setTypes = getEffectiveSetTypes(planned);
+              const isExpanded = expandedIds.has(planned.exerciseId);
+              const workingSets = setTypes.filter(t => t !== "warmup").length;
+              const warmupSets = setTypes.filter(t => t === "warmup").length;
+              const setsSummary = warmupSets > 0
+                ? `${warmupSets}W + ${workingSets} sets`
+                : `${workingSets} set${workingSets !== 1 ? "s" : ""}`;
+              const restSummary = planned.restTimer
+                ? `${planned.restTimer}s rest`
+                : "";
               return (
                 <article
                   key={planned.exerciseId}
-                  className="builder-exercise-card"
-                  draggable={true}
-                  onDragStart={() => setDragExerciseId(planned.exerciseId)}
+                  className={`builder-exercise-card${isExpanded ? " is-expanded" : ""}`}
+                  draggable={!isExpanded}
+                  onDragStart={() => !isExpanded && setDragExerciseId(planned.exerciseId)}
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={() => {
                     if (dragExerciseId) moveExercise(dragExerciseId, planned.exerciseId);
                     setDragExerciseId(null);
                   }}
                 >
-                  <div className="builder-ex-header">
+                  <div className="builder-ex-header" onClick={() => {
+                    setExpandedIds(prev => {
+                      const next = new Set(prev);
+                      if (next.has(planned.exerciseId)) next.delete(planned.exerciseId);
+                      else next.add(planned.exerciseId);
+                      return next;
+                    });
+                  }} style={{ cursor: "pointer" }}>
                     <div className="builder-ex-title-area">
-                      <span className="builder-ex-drag" aria-hidden="true">⋮⋮</span>
+                      {!isExpanded && <span className="builder-ex-drag" aria-hidden="true">⋮⋮</span>}
                       <div className="builder-ex-copy">
-                        <button
-                          type="button"
-                          className="builder-ex-name"
-                          onClick={() => onOpenExerciseDetails(exercise.id)}
-                        >
-                          {exercise.name}
-                        </button>
+                        <div className="builder-ex-name-row">
+                          <span className="builder-ex-num">{cardIdx + 1}</span>
+                          <button
+                            type="button"
+                            className="builder-ex-name"
+                            onClick={(e) => { e.stopPropagation(); onOpenExerciseDetails(exercise.id); }}
+                          >
+                            {exercise.name}
+                          </button>
+                        </div>
                         <p className="builder-ex-muscle">{exercise.primaryMuscles?.join(", ") || exercise.primaryMuscle}</p>
+                        {!isExpanded && (
+                          <p className="builder-ex-summary">{setsSummary}{restSummary ? ` · ${restSummary}` : ""}</p>
+                        )}
                       </div>
                     </div>
-                    <button className="builder-remove-btn" type="button" onClick={() => removeExercise(planned.exerciseId)} aria-label="Remove exercise">×</button>
-                  </div>
-
-                  <div className="builder-ex-rest-row">
-                    <span className="builder-ex-rest-label">Rest</span>
-                    <input
-                      className="builder-ex-rest-input"
-                      type="text"
-                      inputMode="numeric"
-                      value={planned.restTimer}
-                      onChange={(e) => updatePlannedExercise(planned.exerciseId, { restTimer: e.target.value.replace(/\D/g, "") })}
-                      aria-label="Rest seconds"
-                    />
-                    <span className="builder-ex-rest-unit">sec</span>
-                  </div>
-
-                  <div className="builder-set-list">
-                    <div className="builder-set-header">
-                      <span>SET</span>
-                      <span>TYPE</span>
+                    <div className="builder-ex-header-right">
+                      {isExpanded && (
+                        <button className="builder-remove-btn" type="button" onClick={(e) => { e.stopPropagation(); removeExercise(planned.exerciseId); }} aria-label="Remove exercise">×</button>
+                      )}
+                      <span className="builder-ex-chevron" aria-hidden="true">{isExpanded ? "∧" : "∨"}</span>
                     </div>
-                    {setTypes.map((type, i) => (
-                      <div key={i} className="builder-set-row">
-                        <button
-                          type="button"
-                          className={`builder-set-label builder-set-label--${type}`}
-                          onClick={() => cycleSetType(planned.exerciseId, i)}
-                          title="Tap to change set type"
-                        >
-                          {builderSetLabel(setTypes, i)}
-                        </button>
-                        <span className="builder-set-type-name">{setTypeOptions.find((o) => o.value === type)?.label ?? "Working set"}</span>
-                        <button type="button" className="builder-set-remove" onClick={() => removeSet(planned.exerciseId, i)} aria-label="Remove set">−</button>
-                      </div>
-                    ))}
                   </div>
 
-                  <button type="button" className="builder-add-set-btn" onClick={() => addSet(planned.exerciseId)}>+ Add Set</button>
+                  {isExpanded && (
+                    <>
+                      <div className="builder-ex-rest-row">
+                        <span className="builder-ex-rest-label">Rest</span>
+                        <input
+                          className="builder-ex-rest-input"
+                          type="text"
+                          inputMode="numeric"
+                          value={planned.restTimer}
+                          onChange={(e) => updatePlannedExercise(planned.exerciseId, { restTimer: e.target.value.replace(/\D/g, "") })}
+                          aria-label="Rest seconds"
+                        />
+                        <span className="builder-ex-rest-unit">sec</span>
+                      </div>
+
+                      <div className="builder-set-list">
+                        <div className="builder-set-header">
+                          <span>SET</span>
+                          <span>TYPE</span>
+                        </div>
+                        {setTypes.map((type, i) => (
+                          <div key={i} className="builder-set-row">
+                            <button
+                              type="button"
+                              className={`builder-set-label builder-set-label--${type}`}
+                              onClick={() => cycleSetType(planned.exerciseId, i)}
+                              title="Tap to change set type"
+                            >
+                              {builderSetLabel(setTypes, i)}
+                            </button>
+                            <span className="builder-set-type-name">{setTypeOptions.find((o) => o.value === type)?.label ?? "Working set"}</span>
+                            <button type="button" className="builder-set-remove" onClick={() => removeSet(planned.exerciseId, i)} aria-label="Remove set">−</button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button type="button" className="builder-add-set-btn" onClick={() => addSet(planned.exerciseId)}>+ Add Set</button>
+                    </>
+                  )}
                 </article>
               );
             })}
@@ -7662,6 +7341,8 @@ function FinishWorkoutPage({
   const finishVideoEnabled = false;
   const [exercisesExpanded, setExercisesExpanded] = useState(false);
   const [rewardsExpanded, setRewardsExpanded] = useState(false);
+  const [cooldownExpanded, setCooldownExpanded] = useState(false);
+  const [cooldownDismissed, setCooldownDismissed] = useState(false);
   // Each photo stores the original src (for re-editing) and the adjusted display URL
   const [photos, setPhotos] = useState<{ name: string; src: string; display: string }[]>([]);
   const [pendingCrop, setPendingCrop] = useState<{ name: string; src: string; index: number | null } | null>(null);
@@ -8263,6 +7944,58 @@ function FinishWorkoutPage({
           </section>
         )}
 
+        {/* ── Cool-down / static stretching guidance ── */}
+        {!cooldownDismissed && (() => {
+          const sessionMuscles = [...new Set(draft.exercises.map(e => e.primaryMuscle).filter(Boolean))];
+          if (sessionMuscles.length === 0) return null;
+          const STRETCH_MAP: Record<string, string[]> = {
+            "Chest":      ["Doorway chest stretch (30s each)", "Cross-body arm stretch (20s each)"],
+            "Back":       ["Child's pose (30s)", "Seated spinal twist (20s each)"],
+            "Shoulders":  ["Cross-body shoulder stretch (20s each)", "Overhead tricep/shoulder stretch (20s each)"],
+            "Biceps":     ["Wall bicep stretch (20s each)"],
+            "Triceps":    ["Overhead tricep stretch (20s each)"],
+            "Quads":      ["Standing quad stretch (30s each)", "Couch stretch (20s each)"],
+            "Hamstrings": ["Standing toe touch (30s)", "Seated hamstring stretch (30s each)"],
+            "Glutes":     ["Pigeon pose (30s each)", "Seated figure-4 stretch (20s each)"],
+            "Calves":     ["Wall calf stretch (30s each)", "Downward dog (30s)"],
+            "Core":       ["Cobra stretch (20s)", "Cat-cow (10 reps)"],
+            "Abs":        ["Cobra stretch (20s)", "Lying spinal twist (20s each)"],
+            "Obliques":   ["Standing side bend (20s each)", "Lying spinal twist (20s each)"],
+          };
+          const stretches: string[] = [];
+          const seen = new Set<string>();
+          for (const m of sessionMuscles) {
+            for (const s of STRETCH_MAP[m] ?? []) {
+              if (!seen.has(s)) { seen.add(s); stretches.push(s); }
+            }
+          }
+          if (stretches.length === 0) return null;
+          return (
+            <section className={`cooldown-guidance-block${cooldownExpanded ? " is-expanded" : ""}`}>
+              <button
+                type="button"
+                className="cooldown-guidance-toggle"
+                onClick={() => setCooldownExpanded(prev => !prev)}
+              >
+                <span className="cooldown-guidance-icon">🧊</span>
+                <span className="cooldown-guidance-title">Cool Down</span>
+                <span className="cooldown-guidance-hint">{stretches.length} stretches · ~3 min</span>
+                <span className="cooldown-guidance-chevron">{cooldownExpanded ? "▾" : "›"}</span>
+              </button>
+              {cooldownExpanded && (
+                <div className="cooldown-guidance-content">
+                  <p className="cooldown-guidance-sub">Static stretches for {sessionMuscles.slice(0, 3).join(", ")}{sessionMuscles.length > 3 ? "…" : ""}</p>
+                  <ul className="cooldown-guidance-list">
+                    {stretches.slice(0, 8).map((s) => (
+                      <li key={s} className="cooldown-guidance-item">{s}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+          );
+        })()}
+
         <div className="finish-workout-actions">
           <button className="primary-button logger-finish-button" type="button" onClick={() => void handleSaveClick()} disabled={isSaving}>
             {isSaving ? "Saving..." : "Save Workout"}
@@ -8334,21 +8067,54 @@ const PLAN_GOAL_LABEL: Record<string, string> = {
 };
 
 const SPLIT_LABEL: Record<SplitType, string> = {
-  full_body:   "Full Body",
-  upper_lower: "Upper / Lower",
-  ppl:         "Push · Pull · Legs",
-  body_part:   "Body Part Split",
+  full_body:       "Full Body",
+  upper_lower:     "Upper / Lower",
+  push_pull:       "Push / Pull",
+  push_pull_legs:  "Push / Pull / Legs",
+  ppl:             "Push · Pull · Legs",
+  ppl_ul:          "PPL + Upper / Lower",
+  ppl_arnold:      "PPL + Arnold",
+  ppl_fb:          "PPL + Full Body",
+  arnold:          "Arnold Split",
+  arnold_ul:       "Arnold + Upper / Lower",
+  arnold_fb:       "Arnold + Full Body",
+  phul:            "PHUL",
+  body_part:       "Body Part Split",
+  custom:          "Custom",
 };
+
+const SPLIT_DESC: Record<SplitType, string> = {
+  full_body:       "Train every muscle each session. Great for 2–3 days or beginners.",
+  push_pull:       "Push day (chest, shoulders, triceps, quads, calves) and Pull day (back, biceps, hamstrings, glutes). Complete 2-day split.",
+  push_pull_legs:  "Push, Pull, and Legs as separate days. Classic 3 or 6-day rotation.",
+  upper_lower:     "Alternate upper and lower body. Classic 4-day structure.",
+  ppl:             "Push, Pull, Legs — each session has a clear focus. 3 or 6 days.",
+  ppl_ul:          "Push, Pull, Legs, Upper, Lower. The standard 5-day hybrid split.",
+  ppl_arnold:      "PPL for the first 3 days, Arnold split for the next 3. Full 6-day coverage.",
+  ppl_fb:          "Push, Pull, Legs plus a Full Body day for extra frequency. 4-day split.",
+  arnold:          "Chest+Back, Shoulders+Arms, Legs. Arnold's famous 3 or 6-day rotation.",
+  arnold_ul:       "Arnold's 3-day split plus Upper and Lower days. 5-day hybrid.",
+  arnold_fb:       "Arnold's 3-day split plus a Full Body session. 4-day coverage.",
+  phul:            "Power days for strength, hypertrophy days for size. 4-day split.",
+  body_part:       "One muscle group per day. Maximum volume, 5–7 days.",
+  custom:          "Build your own split — assign muscles to each day in the Planner.",
+};
+
+const ALL_SPLIT_TYPES: SplitType[] = ["full_body", "upper_lower", "push_pull", "push_pull_legs", "ppl", "ppl_ul", "ppl_arnold", "ppl_fb", "arnold", "arnold_ul", "arnold_fb", "phul", "body_part", "custom"];
 
 function pickSplitType(
   days: number,
   exp: ExperienceLevel,
   stylePref?: string | null,
 ): SplitType {
-  if (days <= 2) return "full_body";
+  // If user explicitly chose a split, honour it
+  if (stylePref && ALL_SPLIT_TYPES.includes(stylePref as SplitType)) return stylePref as SplitType;
+  if (days === 1) return "full_body";
+  if (days === 2) return "push_pull";
   if (days === 3) return (exp === "beginner" || exp === "never") ? "full_body" : "ppl";
-  if (days === 4) return "upper_lower";
-  if (days <= 6) return (exp === "beginner") ? "ppl" : "body_part";
+  if (days === 4) return (exp === "advanced" || exp === "veteran") ? "phul" : "upper_lower";
+  if (days === 5) return "ppl_ul";
+  if (days === 6) return (exp === "beginner" || exp === "intermediate") ? "ppl" : "arnold";
   return "body_part"; // 7 days
 }
 
@@ -8439,8 +8205,103 @@ function buildDayTemplates(split: SplitType, days: number): PlanDayTemplate[] {
     ],
   };
 
+  // ── push / pull (2-day rotation) ─────────────────────────────────────────
+  const chestBack: PlanDayTemplate = {
+    label: "Chest & Back", focus: "Chest · Back",
+    slots: [
+      { patterns: ["horizontal_push"], primaryMuscle: "Chest" },
+      { patterns: ["vertical_pull"],   primaryMuscle: "Back" },
+      { patterns: ["horizontal_push"], primaryMuscle: "Upper Chest" },
+      { patterns: ["horizontal_pull"], primaryMuscle: "Upper Back" },
+      { patterns: ["isolation_push"],  primaryMuscle: "Triceps" },
+    ],
+  };
+  const shouldersArms: PlanDayTemplate = {
+    label: "Shoulders & Arms", focus: "Shoulders · Biceps · Triceps",
+    slots: [
+      { patterns: ["vertical_push"],   primaryMuscle: "Shoulders" },
+      { patterns: ["isolation_pull"],  primaryMuscle: "Biceps" },
+      { patterns: ["isolation_push"],  primaryMuscle: "Triceps" },
+      { patterns: ["vertical_push"] },
+      { patterns: ["isolation_pull"] },
+    ],
+  };
+  // ── power-hypertrophy templates (PHUL) ──────────────────────────────────
+  const upperPower: PlanDayTemplate = {
+    label: "Upper (Power)", focus: "Upper Body · Strength",
+    slots: [
+      { patterns: ["horizontal_push"], primaryMuscle: "Chest" },
+      { patterns: ["vertical_pull"],   primaryMuscle: "Back" },
+      { patterns: ["vertical_push"],   primaryMuscle: "Shoulders" },
+      { patterns: ["horizontal_pull"], primaryMuscle: "Upper Back" },
+      { patterns: ["isolation_pull"],  primaryMuscle: "Biceps" },
+    ],
+  };
+  const lowerPower: PlanDayTemplate = {
+    label: "Lower (Power)", focus: "Quads · Hamstrings · Strength",
+    slots: [
+      { patterns: ["squat"],           primaryMuscle: "Quads" },
+      { patterns: ["hip_hinge"],       primaryMuscle: "Hamstrings" },
+      { patterns: ["squat"] },
+      { patterns: ["isolation_legs"] },
+    ],
+  };
+  const upperHyp: PlanDayTemplate = {
+    label: "Upper (Volume)", focus: "Upper Body · Hypertrophy",
+    slots: [
+      { patterns: ["horizontal_push"], primaryMuscle: "Chest" },
+      { patterns: ["horizontal_pull"], primaryMuscle: "Upper Back" },
+      { patterns: ["vertical_push"],   primaryMuscle: "Shoulders" },
+      { patterns: ["isolation_push"],  primaryMuscle: "Triceps" },
+      { patterns: ["isolation_pull"],  primaryMuscle: "Biceps" },
+    ],
+  };
+  const lowerHyp: PlanDayTemplate = {
+    label: "Lower (Volume)", focus: "Quads · Glutes · Hypertrophy",
+    slots: [
+      { patterns: ["squat"],           primaryMuscle: "Quads" },
+      { patterns: ["hip_hinge"],       primaryMuscle: "Glutes" },
+      { patterns: ["squat"] },
+      { patterns: ["hip_hinge"],       primaryMuscle: "Hamstrings" },
+      { patterns: ["isolation_legs"] },
+    ],
+  };
+
+  // ── Push/Pull with integrated legs (2-day: quads+calves on push, hams+glutes on pull) ──
+  const pushWithLegs: PlanDayTemplate = {
+    label: "Push", focus: "Chest · Shoulders · Triceps · Quads · Calves",
+    slots: [
+      { patterns: ["squat"],           primaryMuscle: "Quads" },
+      { patterns: ["horizontal_push"], primaryMuscle: "Chest" },
+      { patterns: ["vertical_push"],   primaryMuscle: "Shoulders" },
+      { patterns: ["horizontal_push"], primaryMuscle: "Chest" },
+      { patterns: ["isolation_push"],  primaryMuscle: "Triceps" },
+      { patterns: ["isolation_legs"],  primaryMuscle: "Calves" },
+    ],
+  };
+  const pullWithLegs: PlanDayTemplate = {
+    label: "Pull", focus: "Back · Biceps · Hamstrings · Glutes",
+    slots: [
+      { patterns: ["hip_hinge"],       primaryMuscle: "Hamstrings" },
+      { patterns: ["vertical_pull"],   primaryMuscle: "Back" },
+      { patterns: ["horizontal_pull"], primaryMuscle: "Upper Back" },
+      { patterns: ["hip_hinge"],       primaryMuscle: "Glutes" },
+      { patterns: ["isolation_pull"],  primaryMuscle: "Biceps" },
+      { patterns: ["isolation_pull"],  primaryMuscle: "Biceps" },
+    ],
+  };
+
   if (split === "full_body") {
     return Array(days).fill(null).map((_, i) => ({ ...fullBody, label: `Day ${i + 1}` }));
+  }
+  if (split === "push_pull") {
+    // 2-day: legs integrated — quads+calves on Push, hamstrings+glutes on Pull
+    const pattern = [pushWithLegs, pullWithLegs];
+    return Array(days).fill(null).map((_, i) => ({ ...pattern[i % 2], label: `${pattern[i % 2].label} ${Math.floor(i / 2) > 0 ? Math.floor(i / 2) + 1 : ""}`.trim() }));
+  }
+  if (split === "push_pull_legs") {
+    const pattern = [push, pull, legs, push, pull, legs];
+    return pattern.slice(0, days);
   }
   if (split === "upper_lower") {
     const pattern = [upper, lower, upper, lower, upper, lower];
@@ -8450,44 +8311,91 @@ function buildDayTemplates(split: SplitType, days: number): PlanDayTemplate[] {
     const pattern = [push, pull, legs, push, pull, legs];
     return pattern.slice(0, days);
   }
-  // body_part: chest/back/shoulders/arms/legs
+  if (split === "arnold") {
+    const pattern = [chestBack, shouldersArms, legs, chestBack, shouldersArms, legs];
+    return pattern.slice(0, days);
+  }
+  if (split === "phul") {
+    const pattern = [upperPower, lowerPower, upperHyp, lowerHyp];
+    return pattern.slice(0, days);
+  }
+  if (split === "ppl_ul") {
+    return [push, pull, legs, upper, lower].slice(0, days);
+  }
+  if (split === "arnold_ul") {
+    return [chestBack, shouldersArms, legs, upper, lower].slice(0, days);
+  }
+  if (split === "ppl_arnold") {
+    return [push, pull, legs, chestBack, shouldersArms, legs].slice(0, days);
+  }
+  if (split === "ppl_fb") {
+    return [push, pull, legs, fullBody].slice(0, days);
+  }
+  if (split === "arnold_fb") {
+    return [chestBack, shouldersArms, legs, fullBody].slice(0, days);
+  }
+  if (split === "custom") {
+    return Array(days).fill(null).map((_, i) => ({
+      label: `Day ${i + 1}`,
+      focus: "Full Body",
+      slots: fullBody.slots,
+    }));
+  }
+  // body_part: one focus per day — 5/6/7 day variants
   const bodyPart: PlanDayTemplate[] = [
     { label: "Chest", focus: "Chest · Triceps", slots: [
       { patterns: ["horizontal_push"], primaryMuscle: "Chest" },
       { patterns: ["horizontal_push"], primaryMuscle: "Upper Chest" },
+      { patterns: ["horizontal_push"], primaryMuscle: "Chest" },
       { patterns: ["isolation_push"],  primaryMuscle: "Triceps" },
-      { patterns: ["isolation_push"] },
+      { patterns: ["isolation_push"],  primaryMuscle: "Triceps" },
     ]},
     { label: "Back", focus: "Back · Biceps", slots: [
       { patterns: ["vertical_pull"],   primaryMuscle: "Lats" },
       { patterns: ["horizontal_pull"], primaryMuscle: "Upper Back" },
       { patterns: ["vertical_pull"],   primaryMuscle: "Lats" },
+      { patterns: ["horizontal_pull"], primaryMuscle: "Back" },
       { patterns: ["isolation_pull"],  primaryMuscle: "Biceps" },
     ]},
     { label: "Shoulders", focus: "Shoulders · Traps", slots: [
       { patterns: ["vertical_push"],   primaryMuscle: "Shoulders" },
+      { patterns: ["vertical_push"],   primaryMuscle: "Shoulders" },
       { patterns: ["vertical_push"] },
       { patterns: ["isolation_push"] },
-      { patterns: ["isolation_pull"] },
     ]},
     { label: "Arms", focus: "Biceps · Triceps", slots: [
       { patterns: ["isolation_pull"],  primaryMuscle: "Biceps" },
       { patterns: ["isolation_push"],  primaryMuscle: "Triceps" },
-      { patterns: ["isolation_pull"] },
-      { patterns: ["isolation_push"] },
+      { patterns: ["isolation_pull"],  primaryMuscle: "Biceps" },
+      { patterns: ["isolation_push"],  primaryMuscle: "Triceps" },
     ]},
-    { label: "Legs", focus: "Quads · Hamstrings · Glutes", slots: [
-      { patterns: ["squat"],     primaryMuscle: "Quads" },
-      { patterns: ["hip_hinge"], primaryMuscle: "Hamstrings" },
-      { patterns: ["squat"] },
-      { patterns: ["hip_hinge"], primaryMuscle: "Glutes" },
+    { label: "Legs", focus: "Quads · Hamstrings · Glutes · Calves", slots: [
+      { patterns: ["squat"],      primaryMuscle: "Quads" },
+      { patterns: ["hip_hinge"],  primaryMuscle: "Hamstrings" },
+      { patterns: ["squat"],      primaryMuscle: "Quads" },
+      { patterns: ["hip_hinge"],  primaryMuscle: "Glutes" },
+      { patterns: ["isolation_legs"], primaryMuscle: "Calves" },
+    ]},
+    // Day 6 — Quads & Glutes (split legs across two days for 6–7 day variants)
+    { label: "Quads & Glutes", focus: "Quads · Glutes · Calves", slots: [
+      { patterns: ["squat"],      primaryMuscle: "Quads" },
+      { patterns: ["squat"],      primaryMuscle: "Quads" },
+      { patterns: ["hip_hinge"],  primaryMuscle: "Glutes" },
+      { patterns: ["isolation_legs"], primaryMuscle: "Calves" },
+    ]},
+    // Day 7 — Hamstrings & Core
+    { label: "Hams & Core", focus: "Hamstrings · Glutes · Core", slots: [
+      { patterns: ["hip_hinge"],      primaryMuscle: "Hamstrings" },
+      { patterns: ["hip_hinge"],      primaryMuscle: "Glutes" },
+      { patterns: ["hip_hinge"],      primaryMuscle: "Hamstrings" },
+      { patterns: ["isolation_push"], primaryMuscle: "Core" },
     ]},
   ];
   return bodyPart.slice(0, days);
 }
 
 function pickPlanExercise(
-  catalog: typeof smartReplaceCatalog,
+  catalog: typeof allCatalogExercises,
   slot: PlanExerciseSlot,
   exp: ExperienceLevel,
   used: Set<string>,
@@ -8527,14 +8435,24 @@ function generateRepIQPlan(profile: UserPsychProfile): RepIQPlan {
   const days = profile.daysPerWeekPref ?? 3;
   const equipment: EquipmentAccess = profile.equipmentAccess ?? "full_gym";
   const sessionLen = profile.sessionLengthPref ?? 45;
+  const cycleDays = profile.cycleDays ?? null;   // null = standard weekly
 
   const splitType = pickSplitType(days, exp, profile.workoutStylePref);
   const mesoWeeks = profile.planLengthWeeksPref ?? 12;
   const scheme = getPlanSetRepScheme(goal);
   const dayTemplates = buildDayTemplates(splitType, days);
 
+  // Total cycles = how many full/partial cycles fit in the mesocycle duration.
+  // For weekly schedules (cycleDays null or 7): totalCycles = mesoWeeks (1 cycle = 1 week).
+  // For rotating cycles: totalCycles = round((mesoWeeks × 7) / cycleDays).
+  // Each "week" slot in the plan = one cycle regardless of whether it's 7 days or not.
+  const effectiveCycleDays = cycleDays ?? 7;
+  const totalCycles = cycleDays && cycleDays !== 7
+    ? Math.round((mesoWeeks * 7) / effectiveCycleDays)
+    : mesoWeeks;
+
   const used = new Set<string>();
-  const weeks: RepIQPlanWeek[] = Array(mesoWeeks).fill(null).map((_, weekIdx) => ({
+  const weeks: RepIQPlanWeek[] = Array(totalCycles).fill(null).map((_, weekIdx) => ({
     weekNumber: weekIdx + 1,
     isCompleted: false,
     days: dayTemplates.map((tmpl) => ({
@@ -8542,12 +8460,17 @@ function generateRepIQPlan(profile: UserPsychProfile): RepIQPlan {
       focus: tmpl.focus,
       completedAt: null,
       exercises: tmpl.slots
-        .map((slot) => {
-          const exerciseId = pickPlanExercise(smartReplaceCatalog, slot, exp, used, equipment);
+        .map((slot, slotIdx) => {
+          const exerciseId = pickPlanExercise(allCatalogExercises, slot, exp, used, equipment);
           if (!exerciseId) return null;
+          // Warm-up sets: compound movements get 2 warm-up sets, first exercise of
+          // each session always gets at least 1 (even if isolation)
+          const isCompound = slot.patterns.some((p) => COMPOUND_PATTERNS.has(p));
+          const warmupSets = isCompound ? 2 : slotIdx === 0 ? 1 : 0;
           return {
             exerciseId,
             sets: scheme.sets,
+            ...(warmupSets > 0 ? { warmupSets } : {}),
             reps: scheme.reps,
             restSeconds: scheme.restSeconds,
           } satisfies RepIQPlanExercise;
@@ -8557,10 +8480,20 @@ function generateRepIQPlan(profile: UserPsychProfile): RepIQPlan {
   }));
 
   const splitNames: Record<SplitType, string> = {
-    full_body:   "Full Body",
-    upper_lower: "Upper / Lower",
-    ppl:         "Push · Pull · Legs",
-    body_part:   "Body Part",
+    full_body:       "Full Body",
+    upper_lower:     "Upper / Lower",
+    push_pull:       "Push / Pull",
+    push_pull_legs:  "Push / Pull / Legs",
+    ppl:             "Push · Pull · Legs",
+    ppl_ul:          "PPL + Upper / Lower",
+    ppl_arnold:      "PPL + Arnold",
+    ppl_fb:          "PPL + Full Body",
+    arnold:          "Arnold Split",
+    arnold_ul:       "Arnold + Upper / Lower",
+    arnold_fb:       "Arnold + Full Body",
+    body_part:       "Body Part",
+    phul:            "PHUL",
+    custom:          "Custom",
   };
   const goalLabel = PLAN_GOAL_LABEL[goal] ?? "Training";
   const planName = `${goalLabel} — ${splitNames[splitType]}`;
@@ -8577,6 +8510,8 @@ function generateRepIQPlan(profile: UserPsychProfile): RepIQPlan {
     secondaryGoal: profile.secondaryGoal ?? null,
     experienceLevel: exp,
     daysPerWeek: days,
+    cycleDays,
+    totalCycles,
     sessionLengthMin: sessionLen,
     splitType,
     mesocycleLengthWeeks: mesoWeeks,
@@ -8597,10 +8532,11 @@ function computeVolumeCompensation(
   if (!planDay) return plan;
 
   // Compute deficit per primary muscle — cap individual exercise deficit at +2 sets
+  // Only count working sets (exclude warm-up sets from deficit calculation)
   const muscleDeficits = new Map<string, number>();
   for (const pe of planDay.exercises) {
     const loggedEx = sessionExercises.find((e) => e.id === pe.exerciseId);
-    const actualDone = loggedEx ? loggedEx.draftSets.filter((s) => s.done).length : 0;
+    const actualDone = loggedEx ? loggedEx.draftSets.filter((s) => s.done && s.setType !== "warmup").length : 0;
     const deficit = pe.sets - actualDone;
     if (deficit > 0) {
       const template = exerciseTemplates.find((e) => e.id === pe.exerciseId);
@@ -8824,8 +8760,8 @@ function OnboardingPage({
   resolvedTheme: string;
   onToggleTheme: () => void;
 }) {
-  const TOTAL = 5;
-  const STEP_LABELS = ["You", "Body", "Goal", "Experience", "Mindset"];
+  const TOTAL = 6;
+  const STEP_LABELS = ["You", "Body", "Goal", "Experience", "Schedule", "Mindset"];
 
   const [step, setStep] = useState(1);
 
@@ -8840,7 +8776,8 @@ function OnboardingPage({
   const [heightIn, setHeightIn] = useState(8);
   const [weightKg, setWeightKg] = useState(75);
   const [weightLbs, setWeightLbs] = useState(165);
-  const [age, setAge] = useState(25);
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [dobDisplay, setDobDisplay] = useState("");
   const [bodyFatBracket, setBodyFatBracket] = useState<string | null>(null);
 
   // Step 3 — Goal
@@ -8848,18 +8785,19 @@ function OnboardingPage({
   const [secondaryGoal, setSecondaryGoal] = useState<TrainingGoal | null>(null);
   const [biggestObstacles, setBiggestObstacles] = useState<string[]>([]);
 
-  // Step 4 — Experience & Plan
+  // Step 4 — Experience
   const [equipmentAccess, setEquipmentAccess] = useState<EquipmentAccess | null>(null);
   const [experience, setExperience] = useState<ExperienceLevel | null>(null);
   const [isReturning, setIsReturning] = useState(false);
   const [breakMonths, setBreakMonths] = useState(3);
+
+  // Step 5 — Schedule & Split
   const [daysPerWeek, setDaysPerWeek] = useState(3);
-  const [useRotatingCycle, setUseRotatingCycle] = useState(false);
-  const [cycleDays, setCycleDays] = useState(7);
   const [sessionLength, setSessionLength] = useState<number>(60);
   const [bestTime, setBestTime] = useState<string | null>(null);
+  const [splitPref, setSplitPref] = useState<string | null>(null);
 
-  // Step 5 — Mindset
+  // Step 6 — Mindset
   const [preWorkoutFeeling, setPreWorkoutFeeling] = useState<string | null>(null);
   const [workoutStyle, setWorkoutStyle] = useState<string | null>(null);
   const [successVision, setSuccessVision] = useState<string | null>(null);
@@ -8867,18 +8805,131 @@ function OnboardingPage({
   const optionalSectionRef = useRef<HTMLDivElement | null>(null);
 
   const [maxStep, setMaxStep] = useState(1);
+  const [showStepError, setShowStepError] = useState(false);
+
+  // Refs for scrolling to error fields
+  const nameFieldRef = useRef<HTMLDivElement | null>(null);
+  const dobFieldRef = useRef<HTMLDivElement | null>(null);
+  const goalFieldRef = useRef<HTMLDivElement | null>(null);
+  const equipmentFieldRef = useRef<HTMLDivElement | null>(null);
+  const experienceFieldRef = useRef<HTMLDivElement | null>(null);
+  const obBodyRef = useRef<HTMLDivElement | null>(null);
+
+  // DOB masked input handler — auto-formats as DD/MM/YYYY
+  function handleDobInput(raw: string) {
+    // Strip non-digits
+    const digits = raw.replace(/\D/g, "").slice(0, 8);
+    // Build display with slashes
+    let display = "";
+    if (digits.length > 0) display += digits.slice(0, 2);
+    if (digits.length > 2) display += "/" + digits.slice(2, 4);
+    if (digits.length > 4) display += "/" + digits.slice(4, 8);
+    setDobDisplay(display);
+
+    // Parse to ISO date when complete
+    if (digits.length === 8) {
+      const dd = parseInt(digits.slice(0, 2), 10);
+      const mm = parseInt(digits.slice(2, 4), 10);
+      const yyyy = parseInt(digits.slice(4, 8), 10);
+      const minAge = 10;
+      const maxYear = new Date().getFullYear() - minAge;
+      if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= new Date(yyyy, mm, 0).getDate() && yyyy >= 1930 && yyyy <= maxYear) {
+        setDateOfBirth(`${yyyy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`);
+      } else {
+        setDateOfBirth("");
+      }
+    } else {
+      setDateOfBirth("");
+    }
+    setShowStepError(false);
+  }
+
+  // Auto-scroll to next field helper
+  function scrollToNextField(currentRef: React.RefObject<HTMLElement | null>) {
+    requestAnimationFrame(() => {
+      const el = currentRef.current;
+      if (!el) return;
+      const next = el.nextElementSibling as HTMLElement | null;
+      if (next) {
+        next.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  }
+
+  // Refs for each ob-field that needs scroll-to-next
+  const dobPickerRef = useRef<HTMLInputElement | null>(null);
+  const genderFieldRef = useRef<HTMLDivElement | null>(null);
+  const primaryGoalFieldRef = useRef<HTMLDivElement | null>(null);
+  const secondaryGoalFieldRef = useRef<HTMLDivElement | null>(null);
+  const expFieldScrollRef = useRef<HTMLDivElement | null>(null);
+  const equipFieldScrollRef = useRef<HTMLDivElement | null>(null);
+  const daysFieldRef = useRef<HTMLDivElement | null>(null);
+  const sessionLengthFieldRef = useRef<HTMLDivElement | null>(null);
 
   const canAdvance =
-    step === 1 ? true :
+    step === 1 ? name.trim().length > 0 :
+    step === 2 ? dateOfBirth.length > 0 :
     step === 3 ? goal !== null :
     step === 4 ? experience !== null && equipmentAccess !== null :
     true;
 
+  // ── Smart split recommendations based on day count ──────────────────────
+  const VALID_SPLITS_FOR_DAYS: Record<number, SplitType[]> = {
+    1: ["full_body"],
+    2: ["push_pull", "full_body", "upper_lower"],
+    3: ["ppl", "arnold", "full_body"],
+    4: ["upper_lower", "phul", "ppl_fb", "arnold_fb"],
+    5: ["ppl_ul", "arnold_ul", "body_part"],
+    6: ["ppl", "arnold", "ppl_arnold", "body_part"],
+    7: ["body_part"],
+  };
+  const recommendedSplits: SplitType[] = VALID_SPLITS_FOR_DAYS[daysPerWeek] ?? ["full_body"];
+  const autoRecommendedSplit = pickSplitType(daysPerWeek, experience ?? "beginner");
+
+  // Reset split pref when days change makes it invalid
+  useEffect(() => {
+    if (splitPref && splitPref !== "custom" && !recommendedSplits.includes(splitPref as SplitType)) {
+      setSplitPref(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [daysPerWeek]);
+
+  const stepErrorMessage: Record<number, string | null> = {
+    1: name.trim().length === 0 ? "Please enter your name to continue." : null,
+    2: dateOfBirth.length === 0 ? "Please enter your date of birth to continue." : null,
+    3: goal === null ? "Please select your primary training goal to continue." : null,
+    4: experience === null && equipmentAccess === null
+         ? "Please select your training background and where you train."
+         : experience === null
+           ? "Please select your training background."
+           : equipmentAccess === null
+             ? "Please select where you train."
+             : null,
+    5: null,
+    6: null,
+  };
+
   function advance() {
+    if (!canAdvance) {
+      setShowStepError(true);
+      // Scroll to the first missing field
+      requestAnimationFrame(() => {
+        const target =
+          step === 1 ? nameFieldRef.current :
+          step === 2 ? dobFieldRef.current :
+          step === 3 ? goalFieldRef.current :
+          step === 4 ? (experience === null ? experienceFieldRef.current : equipmentFieldRef.current) :
+          null;
+        target?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      return;
+    }
+    setShowStepError(false);
     if (step < TOTAL) {
       const next = step + 1;
       setMaxStep((m) => Math.max(m, next));
       setStep(next);
+      requestAnimationFrame(() => obBodyRef.current?.scrollTo({ top: 0 }));
       return;
     }
     const finalHeightCm = unitSystem === "metric" ? heightCm : Math.round(heightFt * 30.48 + heightIn * 2.54);
@@ -8889,7 +8940,7 @@ function OnboardingPage({
       unitSystem,
       heightCm: finalHeightCm,
       weightKg: finalWeightKg,
-      age,
+      dateOfBirth: dateOfBirth || null,
       bodyFatBracket,
       primaryGoal: goal,
       secondaryGoal,
@@ -8898,10 +8949,10 @@ function OnboardingPage({
       equipmentAccess,
       scheduleCommitment: (Math.max(2, Math.min(6, daysPerWeek))) as ScheduleCommitment,
       daysPerWeekPref: daysPerWeek,
-      cycleDays: useRotatingCycle ? cycleDays : null,
+      cycleDays: null, // rotating cycles configured in Planner
       sessionLengthPref: sessionLength,
       bestTimePref: bestTime,
-      workoutStylePref: workoutStyle,
+      workoutStylePref: splitPref,
       preWorkoutFeeling,
       isReturningAfterBreak: isReturning,
       breakMonths: isReturning ? breakMonths : null,
@@ -8928,8 +8979,9 @@ function OnboardingPage({
   const trustMessages: Record<number, { icon: string; headline: string; body: string }> = {
     2: { icon: "📏", headline: "Your body is the baseline", body: "These numbers help RepIQ set realistic starting loads and track what genuinely changes — not just the scale." },
     3: { icon: "🎯", headline: "Goals without a plan are just wishes", body: "Knowing where you want to go — and what stands in your way — lets RepIQ build a path that fits your reality." },
-    4: { icon: "📈", headline: "Where you've been shapes what's next", body: "Your history and schedule are the two biggest predictors of consistency. We take both seriously." },
-    5: { icon: "🧠", headline: "Training is 80% mental", body: "These questions help RepIQ read your patterns — so when motivation dips, the app already knows how to adapt." },
+    4: { icon: "📈", headline: "Where you've been shapes what's next", body: "Your history and equipment are the two biggest inputs for building your plan. We take both seriously." },
+    5: { icon: "📅", headline: "Consistency beats intensity", body: "How many days and how you split your training determines recovery, volume, and results. RepIQ recommends the best split for your schedule." },
+    6: { icon: "🧠", headline: "Training is 80% mental", body: "These questions help RepIQ read your patterns — so when motivation dips, the app already knows how to adapt." },
   };
 
   function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
@@ -8969,22 +9021,22 @@ function OnboardingPage({
         <div className="ob-welcome-hero">
           <div className="ob-welcome-wordmark">RepIQ</div>
           <h1 className="ob-welcome-title">Built around you,<br />from day one.</h1>
-          <p className="ob-welcome-sub">5 quick steps and RepIQ knows exactly how to train you.</p>
+          <p className="ob-welcome-sub">6 quick steps and RepIQ knows exactly how to train you.</p>
         </div>
         <div className="ob-welcome-card">
           <div className="ob-fields">
-            <div className="ob-field">
-              <label className="ob-field-label">What should we call you?</label>
+            <div className="ob-field" ref={nameFieldRef}>
+              <label className="ob-field-label">What should we call you? <span className="ob-required">*</span></label>
               <input
                 className="ob-text-input"
                 type="text"
                 placeholder="Your name or nickname"
                 value={name}
                 maxLength={32}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => { setName(e.target.value); setShowStepError(false); }}
               />
             </div>
-            <div className="ob-field">
+            <div className="ob-field" ref={genderFieldRef}>
               <label className="ob-field-label">I identify as</label>
               <div className="ob-chip-row">
                 <Chip label="Male" active={gender === "male"} onClick={() => setGender("male")} />
@@ -9007,32 +9059,79 @@ function OnboardingPage({
           </div>
         </div>
         <div className="ob-fields">
+          <div className="ob-field" ref={dobFieldRef}>
+            <label className="ob-field-label">Date of birth <span className="ob-required">*</span></label>
+            <p className="ob-field-hint">
+              Used to personalise your training intensity, recovery time, and health context. Your age updates automatically.
+            </p>
+            <div className="ob-dob-wrap">
+              <input
+                type="text"
+                inputMode="numeric"
+                className="ob-dob-input"
+                placeholder="DD/MM/YYYY"
+                value={dobDisplay}
+                maxLength={10}
+                onChange={(e) => handleDobInput(e.target.value)}
+              />
+              <input
+                ref={dobPickerRef}
+                type="date"
+                className="ob-dob-native"
+                value={dateOfBirth}
+                max={(() => { const d = new Date(); d.setFullYear(d.getFullYear() - 10); return d.toISOString().split("T")[0]; })()}
+                min="1930-01-01"
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val) {
+                    const [y, m, d] = val.split("-");
+                    setDobDisplay(`${d}/${m}/${y}`);
+                    setDateOfBirth(val);
+                  }
+                  setShowStepError(false);
+                }}
+                tabIndex={-1}
+              />
+              <button
+                type="button"
+                className="ob-dob-picker-btn"
+                onClick={() => { dobPickerRef.current?.focus(); dobPickerRef.current?.showPicker?.(); }}
+                aria-label="Open date picker"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              </button>
+            </div>
+            {dobDisplay.length === 10 && !dateOfBirth && (
+              <p className="ob-dob-error">Invalid date or age must be 10+.</p>
+            )}
+            {dateOfBirth && getAge(dateOfBirth) !== null && (
+              <p className="ob-dob-age-preview">Age: {getAge(dateOfBirth)} years old</p>
+            )}
+          </div>
           <div className="ob-field ob-field-unit-row">
             <label className="ob-field-label">Units</label>
             <UnitToggle value={unitSystem} onChange={setUnitSystem} />
           </div>
-          <div className="ob-field">
-            <label className="ob-field-label">Height</label>
-            {unitSystem === "metric" ? (
-              <Stepper value={heightCm} onChange={setHeightCm} min={120} max={230} unit="cm" />
-            ) : (
-              <div className="ob-imperial-height">
-                <Stepper value={heightFt} onChange={setHeightFt} min={3} max={7} unit="ft" />
-                <Stepper value={heightIn} onChange={setHeightIn} min={0} max={11} unit="in" />
-              </div>
-            )}
-          </div>
-          <div className="ob-field">
-            <label className="ob-field-label">Weight</label>
-            {unitSystem === "metric" ? (
-              <Stepper value={weightKg} onChange={setWeightKg} min={30} max={250} unit="kg" />
-            ) : (
-              <Stepper value={weightLbs} onChange={setWeightLbs} min={66} max={550} unit="lbs" />
-            )}
-          </div>
-          <div className="ob-field">
-            <label className="ob-field-label">Age</label>
-            <Stepper value={age} onChange={setAge} min={13} max={90} unit="yrs" />
+          <div className="ob-hw-row">
+            <div className="ob-field ob-hw-col">
+              <label className="ob-field-label">Height</label>
+              {unitSystem === "metric" ? (
+                <Stepper value={heightCm} onChange={setHeightCm} min={120} max={230} unit="cm" />
+              ) : (
+                <div className="ob-imperial-height">
+                  <Stepper value={heightFt} onChange={setHeightFt} min={3} max={7} unit="ft" />
+                  <Stepper value={heightIn} onChange={setHeightIn} min={0} max={11} unit="in" />
+                </div>
+              )}
+            </div>
+            <div className="ob-field ob-hw-col">
+              <label className="ob-field-label">Weight</label>
+              {unitSystem === "metric" ? (
+                <Stepper value={weightKg} onChange={setWeightKg} min={30} max={250} unit="kg" />
+              ) : (
+                <Stepper value={weightLbs} onChange={setWeightLbs} min={66} max={550} unit="lbs" />
+              )}
+            </div>
           </div>
           <div className="ob-field">
             <label className="ob-field-label">Body composition <span className="ob-optional">(best guess)</span></label>
@@ -9060,45 +9159,57 @@ function OnboardingPage({
     3: (
       <div className="ob-step" key="step-3">
         <div className="ob-fields">
-          <div className="ob-field">
+          <div className="ob-field" ref={goalFieldRef}>
             <label className="ob-field-label">Primary training goal <span className="ob-required">*</span></label>
             <p className="ob-field-hint">A clear goal helps RepIQ prioritise your program — pick the one that matters most right now.</p>
             <div className="ob-chip-grid">
               {([
-                { value: "build_muscle", label: "💪 Build Muscle" },
-                { value: "fat_loss", label: "🔥 Lose Fat" },
-                { value: "get_stronger", label: "🏋️ Get Stronger" },
-                { value: "improve_fitness", label: "🏃 Improve Fitness" },
-                { value: "athletic_performance", label: "⚡ Athletic Performance" },
-                { value: "stay_active", label: "🌿 Stay Active" },
+                { value: "build_muscle", label: "Build Muscle" },
+                { value: "fat_loss", label: "Lose Fat" },
+                { value: "get_stronger", label: "Get Stronger" },
+                { value: "improve_fitness", label: "Improve Fitness" },
+                { value: "athletic_performance", label: "Athletic Performance" },
+                { value: "stay_active", label: "Stay Active" },
               ] as { value: TrainingGoal; label: string }[]).map((g) => (
                 <Chip key={g.value} label={g.label} active={goal === g.value} onClick={() => {
                   setGoal(g.value);
                   if (secondaryGoal === g.value) setSecondaryGoal(null);
+                  setShowStepError(false);
+                  scrollToNextField(goalFieldRef);
                 }} />
               ))}
             </div>
           </div>
 
-          {goal && (
-            <div className="ob-field">
-              <label className="ob-field-label">Secondary goal <span className="ob-optional">(optional)</span></label>
-              <div className="ob-chip-grid">
-                {([
-                  { value: "build_muscle", label: "💪 Build Muscle" },
-                  { value: "fat_loss", label: "🔥 Lose Fat" },
-                  { value: "get_stronger", label: "🏋️ Get Stronger" },
-                  { value: "improve_fitness", label: "🏃 Improve Fitness" },
-                  { value: "athletic_performance", label: "⚡ Athletic Performance" },
-                  { value: "stay_active", label: "🌿 Stay Active" },
-                ] as { value: TrainingGoal; label: string }[])
-                  .filter((g) => g.value !== goal)
-                  .map((g) => (
-                    <Chip key={g.value} label={g.label} active={secondaryGoal === g.value} onClick={() => setSecondaryGoal(secondaryGoal === g.value ? null : g.value)} />
-                  ))}
-              </div>
+          <div className={`ob-field${!goal ? " ob-field-disabled" : ""}`}>
+            <label className="ob-field-label">Secondary goal <span className="ob-optional">(optional)</span></label>
+            {!goal && <p className="ob-field-hint">Select a primary goal first to unlock this.</p>}
+            <div className="ob-chip-grid">
+              {([
+                { value: "build_muscle", label: "Build Muscle" },
+                { value: "fat_loss", label: "Lose Fat" },
+                { value: "get_stronger", label: "Get Stronger" },
+                { value: "improve_fitness", label: "Improve Fitness" },
+                { value: "athletic_performance", label: "Athletic Performance" },
+                { value: "stay_active", label: "Stay Active" },
+              ] as { value: TrainingGoal; label: string }[]).map((g) => {
+                const isSelectedPrimary = g.value === goal;
+                const isDisabled = !goal || isSelectedPrimary;
+                return (
+                  <button
+                    key={g.value}
+                    type="button"
+                    className={`ob-chip${secondaryGoal === g.value ? " is-active" : ""}${isDisabled ? " is-disabled" : ""}`}
+                    disabled={isDisabled}
+                    onClick={() => setSecondaryGoal(secondaryGoal === g.value ? null : g.value)}
+                  >
+                    <span className="ob-chip-check" style={{ visibility: secondaryGoal === g.value ? "visible" : "hidden" }}>✓</span>
+                    {g.label}
+                  </button>
+                );
+              })}
             </div>
-          )}
+          </div>
 
         </div>
       </div>
@@ -9114,34 +9225,7 @@ function OnboardingPage({
           </div>
         </div>
         <div className="ob-fields">
-          <div className="ob-field">
-            <label className="ob-field-label">Where do you train? <span className="ob-required">*</span></label>
-            <p className="ob-field-hint">This determines which exercises RepIQ can include in your plan.</p>
-            <div className="ob-equipment-list">
-              {([
-                { value: "bodyweight",    label: "Bodyweight only",     desc: "No equipment — push-ups, pull-ups, planks",            icon: "🧘" },
-                { value: "dumbbell_pair", label: "A pair of dumbbells", desc: "Fixed or adjustable dumbbells at home",                icon: "🏠" },
-                { value: "home_setup",    label: "Home gym",            desc: "Dumbbells + barbell with plates",                      icon: "🏋️" },
-                { value: "basic_gym",     label: "Basic gym",           desc: "Barbells, dumbbells, some machines and cables",        icon: "💪" },
-                { value: "full_gym",      label: "Full gym",            desc: "All equipment — cables, machines, full selection",     icon: "🏟️" },
-              ] as { value: EquipmentAccess; label: string; desc: string; icon: string }[]).map((e) => (
-                <button
-                  key={e.value}
-                  type="button"
-                  className={`ob-equipment-btn${equipmentAccess === e.value ? " is-active" : ""}`}
-                  onClick={() => setEquipmentAccess(e.value)}
-                >
-                  <span className="ob-equipment-icon">{e.icon}</span>
-                  <div className="ob-equipment-text">
-                    <strong>{e.label}</strong>
-                    <span>{e.desc}</span>
-                  </div>
-                  {equipmentAccess === e.value && <span className="ob-exp-check">✓</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="ob-field">
+          <div className="ob-field" ref={experienceFieldRef}>
             <label className="ob-field-label">Training background <span className="ob-required">*</span></label>
             <div className="ob-exp-list">
               {([
@@ -9155,7 +9239,7 @@ function OnboardingPage({
                   key={e.value}
                   type="button"
                   className={`ob-exp-row ${experience === e.value ? "is-active" : ""}`}
-                  onClick={() => setExperience(e.value)}
+                  onClick={() => { setExperience(e.value); setShowStepError(false); scrollToNextField(experienceFieldRef); }}
                 >
                   <div className="ob-exp-row-dot" />
                   <div className="ob-exp-row-text">
@@ -9163,6 +9247,32 @@ function OnboardingPage({
                     <span>{e.desc}</span>
                   </div>
                   {experience === e.value && <span className="ob-exp-check">✓</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="ob-field" ref={equipmentFieldRef}>
+            <label className="ob-field-label">Where do you train? <span className="ob-required">*</span></label>
+            <p className="ob-field-hint">This determines which exercises RepIQ can include in your plan.</p>
+            <div className="ob-equipment-list">
+              {([
+                { value: "bodyweight",    label: "Bodyweight only",     desc: "No equipment — push-ups, pull-ups, planks" },
+                { value: "dumbbell_pair", label: "A pair of dumbbells", desc: "Fixed or adjustable dumbbells at home" },
+                { value: "home_setup",    label: "Home gym",            desc: "Dumbbells + barbell with plates" },
+                { value: "basic_gym",     label: "Basic gym",           desc: "Barbells, dumbbells, some machines and cables" },
+                { value: "full_gym",      label: "Full gym",            desc: "All equipment — cables, machines, full selection" },
+              ] as { value: EquipmentAccess; label: string; desc: string }[]).map((e) => (
+                <button
+                  key={e.value}
+                  type="button"
+                  className={`ob-equipment-btn${equipmentAccess === e.value ? " is-active" : ""}`}
+                  onClick={() => { setEquipmentAccess(e.value); setShowStepError(false); scrollToNextField(equipmentFieldRef); }}
+                >
+                  <div className="ob-equipment-text">
+                    <strong>{e.label}</strong>
+                    <span>{e.desc}</span>
+                  </div>
+                  {equipmentAccess === e.value && <span className="ob-exp-check">✓</span>}
                 </button>
               ))}
             </div>
@@ -9184,51 +9294,84 @@ function OnboardingPage({
               </div>
             )}
           </div>
-          <div className="ob-field">
-            <label className="ob-field-label">{useRotatingCycle ? "Sessions per cycle" : "Days per week"}</label>
+        </div>
+      </div>
+    ),
+
+    5: (
+      <div className="ob-step" key="step-5">
+        <div className="ob-trust-card">
+          <span className="ob-trust-icon">{trustMessages[5].icon}</span>
+          <div>
+            <strong className="ob-trust-headline">{trustMessages[5].headline}</strong>
+            <p className="ob-trust-body">{trustMessages[5].body}</p>
+          </div>
+        </div>
+        <div className="ob-fields">
+          {/* 1. Training sessions per week */}
+          <div className="ob-field" ref={daysFieldRef}>
+            <label className="ob-field-label">Training sessions per week</label>
             <div className="ob-days-strip">
               {[1, 2, 3, 4, 5, 6, 7].map((d) => (
                 <button
                   key={d}
                   type="button"
                   className={`ob-day-btn ${daysPerWeek === d ? "is-active" : ""}`}
-                  onClick={() => setDaysPerWeek(d)}
+                  onClick={() => { setDaysPerWeek(d); scrollToNextField(daysFieldRef); }}
                 >
                   {d}
                 </button>
               ))}
             </div>
-            <label className="ob-rotating-toggle">
-              <input
-                type="checkbox"
-                checked={useRotatingCycle}
-                onChange={(e) => setUseRotatingCycle(e.target.checked)}
-              />
-              <span className="ob-checkbox-label">I follow a rotating cycle (not a fixed weekly schedule)</span>
-            </label>
-            {useRotatingCycle && (
-              <div className="ob-break-stepper" style={{ marginTop: 8 }}>
-                <span className="ob-break-label">Cycle length (days)</span>
-                <Stepper value={cycleDays} onChange={setCycleDays} min={3} max={21} unit="days" />
-              </div>
-            )}
+            <p className="ob-field-hint" style={{ marginTop: 8 }}>Follow a rotating cycle instead of a fixed week? You can set that up in the Planner.</p>
           </div>
-          <div className="ob-field">
+
+          {/* 2. Session length */}
+          <div className="ob-field" ref={sessionLengthFieldRef}>
             <label className="ob-field-label">Session length</label>
             <div className="ob-chip-row">
               {[30, 45, 60, 75, 90].map((m) => (
-                <Chip key={m} label={m === 90 ? "90+ min" : `${m} min`} active={sessionLength === m} onClick={() => setSessionLength(m)} />
+                <Chip key={m} label={m === 90 ? "90+ min" : `${m} min`} active={sessionLength === m} onClick={() => { setSessionLength(m); scrollToNextField(sessionLengthFieldRef); }} />
               ))}
             </div>
           </div>
+
+          {/* 3. Workout split */}
+          <div className="ob-field">
+            <label className="ob-field-label">Workout split</label>
+            <p className="ob-field-hint">Based on {daysPerWeek} session{daysPerWeek !== 1 ? "s" : ""}.{daysPerWeek === 7 ? " No rest days — recommended for advanced trainees." : ""} You can customise the muscle arrangement per day in the Planner later.</p>
+            <div className="ob-split-grid">
+              {recommendedSplits.map((s) => {
+                const isRecommended = s === autoRecommendedSplit;
+                const isActive = splitPref === s || (splitPref === null && isRecommended);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`ob-split-btn${isActive ? " is-active" : ""}`}
+                    onClick={() => setSplitPref(isActive && isRecommended ? null : s)}
+                  >
+                    <div className="ob-split-text">
+                      <span className="ob-split-name">{SPLIT_LABEL[s]}</span>
+                      <span className="ob-split-desc">{SPLIT_DESC[s]}</span>
+                    </div>
+                    {isRecommended && <span className="ob-split-rec">Recommended</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 4. Best time to train — optional, at end */}
           <div className="ob-field">
             <label className="ob-field-label">Best time to train <span className="ob-optional">(optional)</span></label>
+            <p className="ob-field-hint">We'll use this to send reminders at the right time.</p>
             <div className="ob-chip-row">
               {[
-                { value: "morning", label: "🌅 Morning" },
-                { value: "afternoon", label: "☀️ Afternoon" },
-                { value: "evening", label: "🌆 Evening" },
-                { value: "varies", label: "🔀 Varies" },
+                { value: "morning", label: "Morning" },
+                { value: "afternoon", label: "Afternoon" },
+                { value: "evening", label: "Evening" },
+                { value: "varies", label: "Varies" },
               ].map((t) => (
                 <Chip key={t.value} label={t.label} active={bestTime === t.value} onClick={() => setBestTime(bestTime === t.value ? null : t.value)} />
               ))}
@@ -9238,19 +9381,26 @@ function OnboardingPage({
       </div>
     ),
 
-    5: (
-      <div className="ob-step" key="step-5">
+    6: (
+      <div className="ob-step" key="step-6">
+        <div className="ob-trust-card">
+          <span className="ob-trust-icon">{trustMessages[6].icon}</span>
+          <div>
+            <strong className="ob-trust-headline">{trustMessages[6].headline}</strong>
+            <p className="ob-trust-body">{trustMessages[6].body}</p>
+          </div>
+        </div>
         <div className="ob-fields">
-          {/* Mandatory — Biggest challenge */}
+          {/* Biggest challenge */}
           <div className="ob-field">
             <label className="ob-field-label">Biggest challenge right now <span className="ob-optional">(pick all that apply)</span></label>
             <div className="ob-chip-grid">
               {[
-                { value: "time",        label: "⏱ Not enough time" },
-                { value: "motivation",  label: "😴 Staying motivated" },
-                { value: "knowledge",   label: "📚 Not sure what to do" },
-                { value: "injury",      label: "🩹 Recovery / injury" },
-                { value: "consistency", label: "🔁 Staying consistent" },
+                { value: "time",        label: "Not enough time" },
+                { value: "motivation",  label: "Staying motivated" },
+                { value: "knowledge",   label: "Not sure what to do" },
+                { value: "injury",      label: "Recovery / injury" },
+                { value: "consistency", label: "Staying consistent" },
               ].map((o) => (
                 <Chip
                   key={o.value}
@@ -9260,85 +9410,46 @@ function OnboardingPage({
                     setBiggestObstacles((prev) =>
                       prev.includes(o.value) ? prev.filter((x) => x !== o.value) : [...prev, o.value]
                     );
-                    if (!optionalOpen) {
-                      setOptionalOpen(true);
-                      setTimeout(() => optionalSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
-                    }
                   }}
                 />
               ))}
             </div>
           </div>
 
-          {/* Optional section toggle / expanded */}
-          {!optionalOpen ? (
-            <button
-              type="button"
-              className="ob-optional-toggle"
-              onClick={() => {
-                setOptionalOpen(true);
-                setTimeout(() => optionalSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
-              }}
-            >
-              <span className="ob-optional-toggle-label">Optional · 3 more questions</span>
-              <span className="ob-optional-toggle-arrow">›</span>
-            </button>
-          ) : (
-            <div ref={optionalSectionRef} className="ob-optional-section">
-              {/* Pre-workout feeling */}
-              <div className="ob-field ob-field-revealed">
-                <label className="ob-field-label">Before a workout, you usually feel <span className="ob-optional">(optional)</span></label>
-                <div className="ob-chip-grid">
-                  {[
-                    { value: "energised", label: "⚡ Energised & ready" },
-                    { value: "neutral",   label: "😐 Neutral" },
-                    { value: "reluctant", label: "😤 Reluctant, but I go" },
-                    { value: "tired",     label: "😴 Usually tired" },
-                  ].map((f) => (
-                    <Chip key={f.value} label={f.label} active={preWorkoutFeeling === f.value} onClick={() =>
-                      setPreWorkoutFeeling(preWorkoutFeeling === f.value ? null : f.value)
-                    } />
-                  ))}
-                </div>
-              </div>
-
-              {/* Workout style */}
-              <div className="ob-field ob-field-revealed">
-                <label className="ob-field-label">Preferred workout style <span className="ob-optional">(optional)</span></label>
-                <div className="ob-chip-grid">
-                  {[
-                    { value: "full_body",   label: "🔄 Full Body" },
-                    { value: "upper_lower", label: "↕️ Upper / Lower" },
-                    { value: "ppl",         label: "🔀 Push · Pull · Legs" },
-                    { value: "body_part",   label: "🎯 Body Part Split" },
-                    { value: "any",         label: "🤷 No preference" },
-                  ].map((s) => (
-                    <Chip key={s.value} label={s.label} active={workoutStyle === s.value} onClick={() =>
-                      setWorkoutStyle(workoutStyle === s.value ? null : s.value)
-                    } />
-                  ))}
-                </div>
-              </div>
-
-              {/* Success vision */}
-              <div className="ob-field ob-field-revealed">
-                <label className="ob-field-label">In 3 months, success means <span className="ob-optional">(optional)</span></label>
-                <div className="ob-chip-grid">
-                  {[
-                    { value: "look_different", label: "🪞 I look noticeably different" },
-                    { value: "stronger",       label: "💪 I'm significantly stronger" },
-                    { value: "consistent",     label: "📅 I've trained consistently" },
-                    { value: "healthier",      label: "❤️ I feel healthier overall" },
-                    { value: "habit",          label: "🔥 I've built a real habit" },
-                  ].map((v) => (
-                    <Chip key={v.value} label={v.label} active={successVision === v.value} onClick={() =>
-                      setSuccessVision(successVision === v.value ? null : v.value)
-                    } />
-                  ))}
-                </div>
-              </div>
+          {/* Pre-workout feeling */}
+          <div className="ob-field">
+            <label className="ob-field-label">Before a workout, you usually feel <span className="ob-optional">(optional)</span></label>
+            <div className="ob-chip-grid">
+              {[
+                { value: "energised", label: "Energised & ready" },
+                { value: "neutral",   label: "Neutral" },
+                { value: "reluctant", label: "Reluctant, but I go" },
+                { value: "tired",     label: "Usually tired" },
+              ].map((f) => (
+                <Chip key={f.value} label={f.label} active={preWorkoutFeeling === f.value} onClick={() =>
+                  setPreWorkoutFeeling(preWorkoutFeeling === f.value ? null : f.value)
+                } />
+              ))}
             </div>
-          )}
+          </div>
+
+          {/* Success vision */}
+          <div className="ob-field">
+            <label className="ob-field-label">In 3 months, success means <span className="ob-optional">(optional)</span></label>
+            <div className="ob-chip-grid">
+              {[
+                { value: "look_different", label: "I look noticeably different" },
+                { value: "stronger",       label: "I'm significantly stronger" },
+                { value: "consistent",     label: "I've trained consistently" },
+                { value: "healthier",      label: "I feel healthier overall" },
+                { value: "habit",          label: "I've built a real habit" },
+              ].map((v) => (
+                <Chip key={v.value} label={v.label} active={successVision === v.value} onClick={() =>
+                  setSuccessVision(successVision === v.value ? null : v.value)
+                } />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     ),
@@ -9371,6 +9482,8 @@ function OnboardingPage({
                       onClick={() => {
                         if (n > maxStep) setMaxStep(n);
                         setStep(n);
+                        setShowStepError(false);
+                        requestAnimationFrame(() => obBodyRef.current?.scrollTo({ top: 0 }));
                       }}
                       aria-label={done ? `Go back to ${lbl}` : lbl}
                     >{done ? "✓" : n}</button>
@@ -9394,22 +9507,26 @@ function OnboardingPage({
         </div>
       </header>
 
-      <div className="ob-body">
+      <div className="ob-body" ref={obBodyRef}>
         {stepContent[step]}
       </div>
 
       <div className="ob-footer">
         {step > 1 && (
-          <button type="button" className="ob-back" onClick={() => setStep((s) => s - 1)}>← Back</button>
+          <button type="button" className="ob-back" onClick={() => { setStep((s) => s - 1); setShowStepError(false); requestAnimationFrame(() => obBodyRef.current?.scrollTo({ top: 0 })); }}>← Back</button>
         )}
-        <button
-          type="button"
-          className={`ob-cta ${!canAdvance ? "is-disabled" : ""}`}
-          onClick={canAdvance ? advance : undefined}
-          disabled={!canAdvance}
-        >
-          {step === TOTAL ? "I'm Ready →" : step === 1 ? "Get Started →" : "Continue →"}
-        </button>
+        <div className="ob-cta-wrap">
+          {showStepError && stepErrorMessage[step] && (
+            <p className="ob-step-error">⚠ {stepErrorMessage[step]}</p>
+          )}
+          <button
+            type="button"
+            className="ob-cta"
+            onClick={advance}
+          >
+            {step === TOTAL ? "I'm Ready →" : step === 1 ? "Get Started →" : "Continue →"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -9428,6 +9545,7 @@ function AddExercisePage({
   onToggleTheme,
   preFilterMuscle,
   replaceMode,
+  smartReplacementMeta,
 }: {
   templates: ExerciseDraft[];
   existingExerciseNames: string[];
@@ -9441,6 +9559,7 @@ function AddExercisePage({
   onToggleTheme?: () => void;
   preFilterMuscle?: string;
   replaceMode?: boolean;
+  smartReplacementMeta?: Record<string, { rank: number; score: number; matchReason: string }>;
 }) {
   const isEditingCustomExercise = Boolean(editorExercise);
   const [mode, setMode] = useState<AddExerciseMode>(editorExercise ? "create" : "browse");
@@ -9453,7 +9572,7 @@ function AddExercisePage({
   const [sortMode, setSortMode] = useState<"alphabetical" | "frequency" | "library">("alphabetical");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [query, setQuery] = useState(preFilterMuscle ?? "");
+  const [query, setQuery] = useState(replaceMode ? "" : (preFilterMuscle ?? ""));
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
   const [showInWorkoutOnly, setShowInWorkoutOnly] = useState(false);
   const [showSelectedOnly, setShowSelectedOnly] = useState(false);
@@ -9568,6 +9687,21 @@ function AddExercisePage({
     });
 
     const sorted = [...narrowed].sort((left, right) => {
+      const leftReplacementMeta = smartReplacementMeta?.[left.id];
+      const rightReplacementMeta = smartReplacementMeta?.[right.id];
+      if (replaceMode && (leftReplacementMeta || rightReplacementMeta)) {
+        if (leftReplacementMeta && rightReplacementMeta) {
+          if (leftReplacementMeta.rank !== rightReplacementMeta.rank) {
+            return leftReplacementMeta.rank - rightReplacementMeta.rank;
+          }
+          if (leftReplacementMeta.score !== rightReplacementMeta.score) {
+            return rightReplacementMeta.score - leftReplacementMeta.score;
+          }
+        } else {
+          return leftReplacementMeta ? -1 : 1;
+        }
+      }
+
       if (sortMode === "library") {
         const orderDelta = (templateOrder.get(left.id) ?? 0) - (templateOrder.get(right.id) ?? 0);
         return sortDirection === "asc" ? orderDelta : -orderDelta;
@@ -9588,7 +9722,7 @@ function AddExercisePage({
     });
 
     return sorted;
-  }, [existingExerciseNames, query, selectedTemplateIds, showInWorkoutOnly, showSelectedOnly, sortDirection, sortMode, templateOrder, templates]);
+  }, [existingExerciseNames, query, replaceMode, selectedTemplateIds, showInWorkoutOnly, showSelectedOnly, smartReplacementMeta, sortDirection, sortMode, templateOrder, templates]);
 
   function selectSortMode(nextMode: "alphabetical" | "frequency" | "library") {
     if (nextMode === sortMode) {
@@ -9908,6 +10042,7 @@ function AddExercisePage({
   const renderTemplateCard = (template: ExerciseDraft) => {
     const alreadyInWorkout = existingExerciseNames.includes(template.name);
     const selectionIndex = selectedTemplateIds.indexOf(template.id);
+    const replacementHint = smartReplacementMeta?.[template.id]?.matchReason;
 
     return (
       <article
@@ -9936,6 +10071,9 @@ function AddExercisePage({
                 )}
               </div>
             </div>
+            {replaceMode && replacementHint && (
+              <p className="template-card-match-reason">{replacementHint}</p>
+            )}
             <p className="template-card-meta">
               <strong>{formatPrimaryMuscles(template)}</strong>
               {template.secondaryMuscles.length > 0 ? (
@@ -9992,7 +10130,9 @@ function AddExercisePage({
               ? isEditingCustomExercise
                 ? "Edit Exercise"
                 : "Create Exercise"
-              : "Add Exercise"}
+              : replaceMode
+                ? "Replace Exercise"
+                : "Add Exercise"}
           </h1>
         </div>
         <div className="detail-topbar-actions">
@@ -10130,7 +10270,9 @@ function AddExercisePage({
                 ) : (
                   <>
                     {browseTab === "all" && (
-                      <div className="template-list">{filteredTemplates.map(renderTemplateCard)}</div>
+                      <>
+                        <div className="template-list">{filteredTemplates.map(renderTemplateCard)}</div>
+                      </>
                     )}
 
                     {browseTab === "muscle" && (
@@ -11274,19 +11416,263 @@ function MuscleCoverageCard({
   );
 }
 
+// ── Pre-Workout Readiness Check Sheet ────────────────────────────────────────
+const READINESS_CHIPS: { value: MoodRating; emoji: string; label: string }[] = [
+  { value: 1, emoji: "😫", label: "Rough" },
+  { value: 2, emoji: "😕", label: "Low" },
+  { value: 3, emoji: "😐", label: "OK" },
+  { value: 4, emoji: "🙂", label: "Good" },
+  { value: 5, emoji: "💪", label: "Great" },
+];
+
+const MOOD_MESSAGES: Record<MoodRating, string[]> = {
+  1: [
+    "Showing up on a rough day? That's real discipline.",
+    "The fact you're here says everything.",
+    "Hard days build the strongest habits.",
+    "You don't have to crush it today — just move.",
+    "Some days the win is simply walking through the door.",
+    "Every rep today counts double. It takes more grit.",
+    "Low energy days still build the machine.",
+    "Even a short session beats skipping entirely.",
+    "Your future self will thank you for being here.",
+    "Champions train when it's hard too.",
+  ],
+  2: [
+    "A low-energy session is still a session.",
+    "Momentum is built on days exactly like this.",
+    "You might surprise yourself once you warm up.",
+    "Start slow — the body often catches up.",
+    "Consistency on tough days compounds fast.",
+    "Half effort beats zero effort every single time.",
+    "Not every session has to be your best one.",
+    "Progress doesn't wait for perfect conditions.",
+    "Showing up low is still showing up.",
+    "The warm-up will shift things. Trust the process.",
+  ],
+  3: [
+    "Steady days are where gains quietly stack.",
+    "Not every session needs to be epic.",
+    "Consistent and present — that's the formula.",
+    "Average sessions over time create exceptional results.",
+    "You're here. You're ready enough.",
+    "Keep the rhythm. That's the whole game.",
+    "The body doesn't need fire every day — just fuel.",
+    "Solid effort leads to solid results.",
+    "Middle-of-the-road today, progress tomorrow.",
+    "OK is a perfectly solid place to build from.",
+  ],
+  4: [
+    "Good energy — let's put it to work.",
+    "You've got what you need today.",
+    "Feeling good is a signal. Use it.",
+    "Strong foundation — now go build on it.",
+    "This is your window. Make it count.",
+    "Good days like this are why you stay consistent.",
+    "Body's ready. Mind's ready. Let's go.",
+    "Great sessions start exactly like this.",
+    "You're dialled in — stay in it.",
+    "This is the zone. Protect it.",
+  ],
+  5: [
+    "You're in the zone. Own every rep.",
+    "Days like this don't come every week — maximise it.",
+    "Prime condition. Make every set count.",
+    "This is your best self showing up.",
+    "Full tank. No excuses. Just results.",
+    "Channel this energy into something you'll remember.",
+    "Whatever you planned today — go beyond it.",
+    "This is why you put in the work on hard days.",
+    "Feel this. Remember this. Chase this.",
+    "Elite sessions start with exactly this mindset.",
+  ],
+};
+
+function pickMoodMessage(rating: MoodRating): string {
+  const pool = MOOD_MESSAGES[rating];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function ReadinessCheckSheet({
+  onSelect,
+  onSkip,
+  onDontAskAgain,
+}: {
+  onSelect: (rating: MoodRating) => void;
+  onSkip: () => void;
+  onDontAskAgain: () => void;
+}) {
+  return (
+    <div className="readiness-overlay" onClick={onSkip}>
+      <div className="readiness-sheet" onClick={(e) => e.stopPropagation()}>
+        <p className="readiness-q">How's your energy?</p>
+        <p className="readiness-hint">Sleep, food, mood combined — how charged are you?</p>
+        <div className="readiness-chips">
+          {READINESS_CHIPS.map((c) => (
+            <button key={c.value} className="readiness-chip" onClick={() => onSelect(c.value)}>
+              <span className="readiness-emoji">{c.emoji}</span>
+              <span className="readiness-label">{c.label}</span>
+            </button>
+          ))}
+        </div>
+        <button className="readiness-skip" onClick={onSkip}>Skip for now</button>
+        <button className="readiness-dont-ask" onClick={onDontAskAgain}>Don't ask again</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Post-Workout Psych Capture Card ──────────────────────────────────────────
+function PsychCaptureCard({
+  sessionId,
+  profile,
+  onSave,
+}: {
+  sessionId: string;
+  profile: UserPsychProfile;
+  onSave: (entry: PostWorkoutPsych) => void;
+}) {
+  const showMood   = profile.capturePostWorkoutMood   !== false;
+  const showEnergy = profile.capturePostWorkoutEnergy !== false;
+  const showRPE    = profile.captureSessionRPE        !== false;
+
+  // Check if already captured for this session
+  const [saved, setSaved] = useState<boolean>(() => {
+    try {
+      const entries = getStoredPostWorkoutPsych();
+      return entries.some((e) => e.sessionId === sessionId);
+    } catch { return false; }
+  });
+  const [mood,   setMood]   = useState<MoodRating | null>(null);
+  const [energy, setEnergy] = useState<EnergyRating | null>(null);
+  const [rpe,    setRpe]    = useState<RPERating | null>(null);
+
+  if (!showMood && !showEnergy && !showRPE) return null;
+
+  const MOOD_OPTIONS: { value: MoodRating; emoji: string; label: string }[] = [
+    { value: 1, emoji: "😫", label: "Rough" },
+    { value: 2, emoji: "😕", label: "Low"   },
+    { value: 3, emoji: "😐", label: "OK"    },
+    { value: 4, emoji: "🙂", label: "Good"  },
+    { value: 5, emoji: "😄", label: "Great" },
+  ];
+  const ENERGY_OPTIONS: { value: EnergyRating; emoji: string; label: string }[] = [
+    { value: 1, emoji: "🪫", label: "Empty" },
+    { value: 2, emoji: "😴", label: "Low"   },
+    { value: 3, emoji: "⚡", label: "OK"    },
+    { value: 4, emoji: "🔥", label: "High"  },
+    { value: 5, emoji: "💪", label: "Max"   },
+  ];
+  const RPE_VALUES: RPERating[] = [1,2,3,4,5,6,7,8,9,10];
+
+  if (saved) {
+    return (
+      <section className="finish-workout-card psych-capture-saved-card">
+        <span className="psych-capture-saved-icon">✓</span>
+        <span className="psych-capture-saved-text">Feeling logged</span>
+      </section>
+    );
+  }
+
+  return (
+    <section className="finish-workout-card psych-capture-card">
+      <p className="label" style={{ marginBottom: 14 }}>How did it feel?</p>
+
+      {showMood && (
+        <div className="psych-capture-row">
+          <p className="psych-capture-row-label">Mood after</p>
+          <div className="psych-chip-row">
+            {MOOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`psych-chip${mood === opt.value ? " is-selected" : ""}`}
+                onClick={() => setMood(mood === opt.value ? null : opt.value)}
+              >
+                <span className="psych-chip-emoji">{opt.emoji}</span>
+                <span className="psych-chip-label">{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showEnergy && (
+        <div className="psych-capture-row">
+          <p className="psych-capture-row-label">Energy left</p>
+          <div className="psych-chip-row">
+            {ENERGY_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`psych-chip${energy === opt.value ? " is-selected" : ""}`}
+                onClick={() => setEnergy(energy === opt.value ? null : opt.value)}
+              >
+                <span className="psych-chip-emoji">{opt.emoji}</span>
+                <span className="psych-chip-label">{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showRPE && (
+        <div className="psych-capture-row">
+          <p className="psych-capture-row-label">Session effort (RPE)</p>
+          <div className="psych-rpe-row">
+            {RPE_VALUES.map((v) => (
+              <button
+                key={v}
+                type="button"
+                className={`psych-rpe-chip${rpe === v ? " is-selected" : ""}`}
+                onClick={() => setRpe(rpe === v ? null : v)}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        className="psych-save-btn"
+        onClick={() => {
+          const entry: PostWorkoutPsych = {
+            schemaVersion: 1,
+            sessionId,
+            capturedAt: new Date().toISOString(),
+            postMood:    mood,
+            postEnergy:  energy,
+            sessionRPE:  rpe,
+            psychNote:   null,
+          };
+          onSave(entry);
+          setSaved(true);
+        }}
+      >
+        Save
+      </button>
+    </section>
+  );
+}
+
 // ── Workout Report Page ───────────────────────────────────────────────────────
 function WorkoutReportPage({
   data,
   onBack,
-  onShare,
   resolvedTheme,
   onToggleTheme,
+  psychCapture,
 }: {
   data: SavedWorkoutData;
   onBack: () => void;
-  onShare: () => void;
   resolvedTheme?: string;
   onToggleTheme?: () => void;
+  psychCapture?: {
+    profile: UserPsychProfile;
+    onSave: (entry: PostWorkoutPsych) => void;
+  };
 }) {
   const rewardLevelIcon: Record<LoggerReward["level"], string> = { session: "🏆", exercise: "⭐", set: "✓" };
 
@@ -11317,6 +11703,9 @@ function WorkoutReportPage({
       </div>
 
       <div className="finish-workout-body">
+        {/* Share cards — directly visible, no extra button needed */}
+        <ShareCardsStrip draft={data} />
+
         <MuscleCoverageCard coverage={sessionToMuscleCoverage(data.exercises)} mode="session" />
 
         {data.rewards.length > 0 && (
@@ -11357,9 +11746,14 @@ function WorkoutReportPage({
           </section>
         )}
 
-        <button className="primary-button finish-save-btn" type="button" onClick={onShare}>
-          Share Summary
-        </button>
+        {/* ── Psych capture — How did it feel? ── */}
+        {psychCapture && (
+          <PsychCaptureCard
+            sessionId={data.savedAt}
+            profile={psychCapture.profile}
+            onSave={psychCapture.onSave}
+          />
+        )}
       </div>
     </main>
   );
@@ -11574,15 +11968,26 @@ function InsightsPage({
             ) : (
               <div className="plan-list">
                 {savedWorkouts.map((w) => {
-                  const isRepIQ = !!w.repiqSourceKey;
+                  const isRepIQ = !!w.repiqSourceKey || w.workoutSource === "repiq";
                   const alreadySaved = savedToast === w.savedAt;
+                  // Determine source label + style
+                  const src = w.workoutSource ?? (isRepIQ ? "repiq" : undefined);
+                  const sourceTag: { label: string; cls: string } | null =
+                    src === "repiq"      ? { label: "✦ RepIQ Plan",   cls: "src-repiq" }
+                    : src === "saved"    ? { label: "My Workout",     cls: "src-saved" }
+                    : src === "library"  ? { label: "Library",        cls: "src-library" }
+                    : src === "generated"? { label: "Generated",      cls: "src-generated" }
+                    : src === "history"  ? { label: "Redo",           cls: "src-history" }
+                    : null;
                   return (
                     <article key={w.savedAt} className="report-card">
                       <div className="report-card-header" onClick={() => onOpenReport(w)}>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
                             <p className="report-card-meta">{new Date(w.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</p>
-                            {isRepIQ && <span className="report-card-repiq-badge">RepIQ Plan</span>}
+                            {sourceTag && (
+                              <span className={`report-card-source-badge ${sourceTag.cls}`}>{sourceTag.label}</span>
+                            )}
                           </div>
                           <p className="report-card-name">{w.sessionName}</p>
                           <p className="report-card-stats">{w.duration} · {w.totalSets} sets · {w.exerciseCount} exercises</p>
@@ -11590,7 +11995,7 @@ function InsightsPage({
                         <span className="report-card-chevron">›</span>
                       </div>
                       <div className="report-card-actions">
-                        {!isRepIQ && onRedoWorkout && (
+                        {onRedoWorkout && (
                           <button
                             type="button"
                             className="report-card-action-btn"
@@ -11647,11 +12052,25 @@ function ProfilePage({
   onBack,
   resolvedTheme,
   onToggleTheme,
+  hiddenSuggestionIds,
+  allExerciseTemplates,
+  onRestoreHidden,
+  onRestoreAllHidden,
 }: {
   onBack: () => void;
   resolvedTheme?: string;
   onToggleTheme?: () => void;
+  hiddenSuggestionIds: Set<string>;
+  allExerciseTemplates: ExerciseDraft[];
+  onRestoreHidden: (exerciseId: string) => void;
+  onRestoreAllHidden: () => void;
 }) {
+  const [showHiddenSection, setShowHiddenSection] = useState(false);
+
+  const hiddenExercises = [...hiddenSuggestionIds]
+    .map(id => allExerciseTemplates.find(e => e.id === id))
+    .filter((e): e is ExerciseDraft => e != null);
+
   return (
     <main className="profile-page" data-theme={resolvedTheme}>
       <header className="profile-header">
@@ -11682,6 +12101,63 @@ function ProfilePage({
               <span className="profile-row-chevron">›</span>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* ── Exercise customisation ─────────────────────────────────────────── */}
+      <div className="profile-section">
+        <p className="profile-section-label">Customisation</p>
+        <div className="profile-list">
+          <button
+            type="button"
+            className="profile-row"
+            onClick={() => setShowHiddenSection(v => !v)}
+          >
+            <div>
+              <p style={{ margin: 0, fontWeight: 600, fontSize: "0.92rem" }}>Hidden from suggestions</p>
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+                {hiddenExercises.length === 0
+                  ? "No exercises hidden yet"
+                  : `${hiddenExercises.length} exercise${hiddenExercises.length !== 1 ? "s" : ""} hidden`}
+              </p>
+            </div>
+            <span className="profile-row-chevron" style={{ transform: showHiddenSection ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>›</span>
+          </button>
+
+          {showHiddenSection && (
+            <div className="profile-hidden-list">
+              {hiddenExercises.length === 0 ? (
+                <p className="profile-hidden-empty">
+                  You haven't hidden any exercises yet. Tap ✕ on a Smart Replace suggestion to hide it.
+                </p>
+              ) : (
+                <>
+                  {hiddenExercises.map(ex => (
+                    <div key={ex.id} className="profile-hidden-row">
+                      <div className="profile-hidden-info">
+                        <span className="profile-hidden-name">{ex.name}</span>
+                        <span className="profile-hidden-muscle">{ex.primaryMuscle}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="profile-hidden-restore-btn"
+                        onClick={() => onRestoreHidden(ex.id)}
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="profile-hidden-restore-all-btn"
+                    onClick={onRestoreAllHidden}
+                  >
+                    Restore all
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </main>
@@ -12240,7 +12716,8 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
     duration: string,
     durationSeconds: number,
     exercises: FinishedExerciseSummary[],
-    takeawayTitle: string
+    takeawayTitle: string,
+    workoutSource: SavedWorkoutData["workoutSource"] = "saved"
   ): SavedWorkoutData => ({
     sessionName, note,
     date: date.slice(0, 10),
@@ -12255,6 +12732,7 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
     rewardSummary: { set: 0, exercise: 0, session: 0, total: 0 },
     takeawayTitle, takeawayBody: "", images: [],
     savedAt: date,
+    workoutSource,
   });
 
   return [
@@ -12529,6 +13007,7 @@ function buildSeedRepIQData(): { plan: RepIQPlan; workouts: SavedWorkoutData[] }
     ignoredIncompleteSets: 0, exercises,
     rewards: [], rewardSummary: { set: 0, exercise: 0, session: 0, total: 0 },
     takeawayTitle, takeawayBody: "", images: [], savedAt: date,
+    workoutSource: "repiq",
   });
 
   // 5 day plan exercises (plan schema — just IDs + reps)
@@ -12597,7 +13076,7 @@ function buildSeedRepIQData(): { plan: RepIQPlan; workouts: SavedWorkoutData[] }
     planName: "5-Day Hypertrophy",
     goal: "build_muscle", secondaryGoal: null,
     experienceLevel: "intermediate",
-    daysPerWeek: 5, sessionLengthMin: 60,
+    daysPerWeek: 5, cycleDays: null, totalCycles: 8, sessionLengthMin: 60,
     splitType: "body_part",
     mesocycleLengthWeeks: 8,
     currentWeekIndex: 2, // 0-indexed → week 3
@@ -12833,10 +13312,31 @@ const GLOSSARY_DATA: { section: string; terms: { name: string; def: string }[] }
       },
     ],
   },
+  {
+    section: "Workout Splits",
+    terms: [
+      { name: "Full Body", def: "Every major muscle group is trained each session. Great for beginners or anyone training 2–4 days per week. High frequency per muscle, moderate volume per session." },
+      { name: "Push / Pull", def: "Day 1 trains all pushing muscles (chest, shoulders, triceps). Day 2 trains all pulling muscles (back, biceps). A simple 2-day rotation that pairs naturally opposing movements." },
+      { name: "Upper / Lower", def: "Alternating upper-body and lower-body days. Classic 4-day structure — 2 upper and 2 lower sessions per week. Good balance of frequency and volume." },
+      { name: "Push · Pull · Legs (PPL)", def: "Three distinct sessions: Push (chest, shoulders, triceps), Pull (back, biceps), and Legs. Run it as a 3-day or 6-day rotation. One of the most popular intermediate splits." },
+      { name: "Arnold Split", def: "Chest + Back together, Shoulders + Arms together, then Legs. Named after Arnold Schwarzenegger. A 3-day rotation, typically run 6 days a week. Supersets between opposing muscles for efficiency." },
+      { name: "Power Hypertrophy (PHUL)", def: "Four days: Upper Power, Lower Power, Upper Hypertrophy, Lower Hypertrophy. Power days use heavy compounds (3–5 reps), hypertrophy days use moderate weight and higher reps (8–12). Best of both worlds." },
+      { name: "Body Part Split", def: "Each session dedicates maximum volume to one muscle group — e.g., Chest day, Back day, Shoulder day, Arms day, Leg day. Requires 5–7 days per week but allows very high volume per muscle." },
+      { name: "Custom Split", def: "You assign muscles to each day yourself from the Planner. Choose exactly which muscles go together. RepIQ generates exercises based on your arrangement. Best for experienced lifters with specific needs." },
+    ],
+  },
 ];
 
-function GlossaryPage({ onBack, resolvedTheme }: { onBack: () => void; resolvedTheme: string }) {
-  const [query, setQuery] = useState("");
+function GlossaryPage({ onBack, resolvedTheme, initialTerm = "" }: { onBack: () => void; resolvedTheme: string; initialTerm?: string }) {
+  const [query, setQuery] = useState(initialTerm);
+  // Sync if parent changes the term (e.g. navigating to glossary from different Info icons)
+  const prevInitialTerm = useRef(initialTerm);
+  useEffect(() => {
+    if (initialTerm !== prevInitialTerm.current) {
+      prevInitialTerm.current = initialTerm;
+      setQuery(initialTerm);
+    }
+  }, [initialTerm]);
   const q = query.trim().toLowerCase();
 
   const filtered = GLOSSARY_DATA.map((sec) => ({
@@ -12939,7 +13439,12 @@ export function App() {
   const [appView, setAppView] = useState<AppView>("home");
   const [showMoreSheet, setShowMoreSheet] = useState(false);
   const [insightsInitialTab, setInsightsInitialTab] = useState<"analyzer" | "reports">("reports");
+  const [glossaryTerm, setGlossaryTerm] = useState("");
   const [hasActiveWorkout, setHasActiveWorkout] = useState(false);
+  const [showReadinessSheet, setShowReadinessSheet] = useState(false);
+  const pendingWorkoutStartRef = useRef<(() => void) | null>(null);
+  const [moodToast, setMoodToast] = useState<string | null>(null);
+  const [showCompressDurationSheet, setShowCompressDurationSheet] = useState(false);
   const [clockTick, setClockTick] = useState(() => Date.now());
   const [themePreference, setThemePreference] = useState<ThemePreference>(getStoredThemePreference);
   const [systemTheme, setSystemTheme] = useState<"light" | "dark">(getSystemTheme);
@@ -12960,6 +13465,9 @@ export function App() {
   const [collapsedExerciseIds, setCollapsedExerciseIds] = useState<string[]>([]);
   const [focusedExpandedExerciseId, setFocusedExpandedExerciseId] = useState<string | null>(null);
   const [guidanceCollapsed, setGuidanceCollapsed] = useState(false);
+  const [warmupExpanded, setWarmupExpanded] = useState(false);
+  const [warmupDismissed, setWarmupDismissed] = useState(false);
+  const [cooldownDismissed, setCooldownDismissed] = useState(false);
   const [timingOpen, setTimingOpen] = useState(false);
   const [leavePromptOpen, setLeavePromptOpen] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
@@ -12974,6 +13482,7 @@ export function App() {
   const [planBuilderMode, setPlanBuilderMode] = useState<PlanBuilderMode>(
     storedPlanBuilderState?.mode ?? "create"
   );
+  const [lastGenConfig, setLastGenConfig] = useState<GenConfig | null>(null);
   const [plannerView, setPlannerView] = useState<"mine" | "library" | "generate">("mine");
   const [activePlanSession, setActivePlanSession] = useState<ActivePlanSession>(null);
   const [discardReturnView, setDiscardReturnView] = useState<"home" | "planner">("home");
@@ -12990,6 +13499,9 @@ export function App() {
   const [trayDiscardOpen, setTrayDiscardOpen] = useState(false);
   const [supersetSheetExerciseId, setSupersetSheetExerciseId] = useState<string | null>(null);
   const [smartReplaceExerciseId, setSmartReplaceExerciseId] = useState<string | null>(null);
+  const [smartReplaceSheetOpen, setSmartReplaceSheetOpen] = useState(false);
+  const [smartReplaceReason, setSmartReplaceReason] = useState<ReplacementReason>("preference");
+  const [hiddenSuggestionIds, setHiddenSuggestionIds] = useState<Set<string>>(getStoredHiddenSuggestions);
   const [supersetSelectionIds, setSupersetSelectionIds] = useState<string[]>([]);
   const [exerciseRestDefaults, setExerciseRestDefaults] = useState<ExerciseRestDefaults>({});
   const [customExercises, setCustomExercises] = useState<ExerciseDraft[]>(getStoredCustomExercises);
@@ -13013,6 +13525,7 @@ export function App() {
   const [repiqUpdatePrompt, setRepiqUpdatePrompt] = useState<{ weekIdx: number; dayIdx: number; completedExerciseIds: string[] } | null>(null);
   // tracks which repiq session is currently being logged, so we can tag the saved workout
   const [activeRepIQSessionKey, setActiveRepIQSessionKey] = useState<string | null>(null);
+  const [activeWorkoutIsRedo, setActiveWorkoutIsRedo] = useState(false);
   // no cross-plan modal — plan is flagged silently and user is prompted contextually
   const DEV_MODE = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("dev");
   const [showDevPage, setShowDevPage] = useState(DEV_MODE);
@@ -13290,6 +13803,10 @@ export function App() {
       images,
       savedAt: new Date().toISOString(),
       ...(activeRepIQSessionKey ? { repiqSourceKey: activeRepIQSessionKey } : {}),
+      workoutSource: activeRepIQSessionKey ? "repiq"
+        : activePlanSession ? (activePlanSession.source as "saved" | "library" | "generated" | "quick")
+        : activeWorkoutIsRedo ? "history"
+        : "quick",
     };
     persistSavedWorkout(saved);
 
@@ -13335,6 +13852,7 @@ export function App() {
     // ── RepIQ plan day completion ──────────────────────────────────────────────
     const snapshotSession = activePlanSession;
     setActivePlanSession(null);
+    setActiveWorkoutIsRedo(false);
     resetWorkout();
     setHasActiveWorkout(false);
     if (snapshotSession?.source === "repiq" && repiqPlan) {
@@ -13362,10 +13880,29 @@ export function App() {
         exercises,
         availableExerciseTemplates
       );
-      persistRepIQPlan(compensatedPlan);
-      setRepiqPlan(compensatedPlan);
-      // Check if today's exercises differ from plan
+      // Check if any planned exercise had fewer working sets done than planned (volume deficit)
+      // Warm-up sets are excluded — deleting a warm-up set should NOT trigger needsReview
       const planDay = repiqPlan.weeks[weekIdx]?.days[dayIdx];
+      let hasDeficit = false;
+      if (planDay) {
+        for (const pe of planDay.exercises) {
+          const loggedEx = exercises.find((e) => e.id === pe.exerciseId);
+          const actualWorkingDone = loggedEx ? loggedEx.draftSets.filter((s) => s.done && s.setType !== "warmup").length : 0;
+          if (actualWorkingDone < pe.sets) { hasDeficit = true; break; }
+        }
+      }
+      if (hasDeficit) {
+        const flaggedPlan: RepIQPlan = {
+          ...compensatedPlan,
+          needsReview: true,
+        };
+        persistRepIQPlan(flaggedPlan);
+        setRepiqPlan(flaggedPlan);
+      } else {
+        persistRepIQPlan(compensatedPlan);
+        setRepiqPlan(compensatedPlan);
+      }
+      // Check if today's exercises differ from plan (exercise swaps)
       const planExIds = new Set(planDay?.exercises.map((e) => e.exerciseId) ?? []);
       const actualExIds = exercises.map((e) => e.id);
       const hasDiff = actualExIds.some((id) => !planExIds.has(id)) || planExIds.size !== actualExIds.length;
@@ -13498,6 +14035,13 @@ export function App() {
 
     return () => window.clearInterval(intervalId);
   }, [hasActiveWorkout]);
+
+  // Auto-dismiss mood toast after 4 seconds
+  useEffect(() => {
+    if (!moodToast) return undefined;
+    const t = window.setTimeout(() => setMoodToast(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [moodToast]);
 
   useEffect(() => {
     if (activeRestTimer && activeRestTimer.pausedRemainingSeconds === null && activeRestSeconds <= 0) {
@@ -14224,6 +14768,7 @@ export function App() {
     resetWorkout();
     setHasActiveWorkout(false);
     setActivePlanSession(null);
+    setActiveWorkoutIsRedo(false);
     setAppView(discardReturnView);
     setWorkoutMenuOpen(false);
     setDiscardConfirmOpen(false);
@@ -14263,6 +14808,118 @@ export function App() {
     setAppView("logger");
   }
 
+  // ── Readiness check gate ──────────────────────────────────────────────────
+  function withReadinessCheck(startFn: () => void) {
+    const today = new Date().toISOString().slice(0, 10);
+    const alreadyCaptured = getStoredDailyReadiness().some((r) => r.date === today);
+    const capture = getStoredPsychProfile().captureDailyReadiness;
+    if (capture && !alreadyCaptured) {
+      pendingWorkoutStartRef.current = startFn;
+      setShowReadinessSheet(true);
+    } else {
+      startFn();
+    }
+  }
+
+  function handleReadinessSelect(rating: MoodRating) {
+    const now = new Date();
+    persistDailyReadiness({
+      schemaVersion: 1,
+      date: now.toISOString().slice(0, 10),
+      capturedAt: now.toISOString(),
+      overallReadiness: rating,
+      sleepQuality: null,
+      stressLevel: null,
+      energyLevel: null,
+      followedBySessionId: null,
+      skippedPlannedSession: false,
+    });
+    const fn = pendingWorkoutStartRef.current;
+    pendingWorkoutStartRef.current = null;
+    setShowReadinessSheet(false);
+    setMoodToast(pickMoodMessage(rating));
+    fn?.();
+  }
+
+  function handleReadinessSkip() {
+    const fn = pendingWorkoutStartRef.current;
+    pendingWorkoutStartRef.current = null;
+    setShowReadinessSheet(false);
+    fn?.();
+  }
+
+  function handleReadinessDontAskAgain() {
+    const updated = { ...psychProfile, captureDailyReadiness: false };
+    setPsychProfile(updated);
+    persistPsychProfile(updated);
+    const fn = pendingWorkoutStartRef.current;
+    pendingWorkoutStartRef.current = null;
+    setShowReadinessSheet(false);
+    fn?.();
+  }
+
+  // exercises per session based on available duration
+  const COMPRESS_DURATION_CAP: Record<number, number> = {
+    30: 3,
+    45: 4,
+    60: 5,
+    75: 6,
+    90: 8,
+  };
+
+  function handleCompressWithDuration(durationMinutes: number) {
+    setShowCompressDurationSheet(false);
+    if (!repiqPlan) return;
+    const wi = repiqPlan.currentWeekIndex;
+    const currentWeek = repiqPlan.weeks[wi];
+    if (!currentWeek) return;
+    const incompleteDays = currentWeek.days.filter(d => !d.completedAt);
+    if (incompleteDays.length <= 1) return;
+
+    const maxPerSession = COMPRESS_DURATION_CAP[durationMinutes] ?? 5;
+    const allExercises = incompleteDays.flatMap(d => d.exercises);
+    const targetCount = Math.ceil(incompleteDays.length / 2);
+
+    // Sort: compounds (multi-joint) first, isolation last
+    const COMPOUND_PATTERNS = new Set(["squat", "hinge", "push", "pull", "lunge", "carry"]);
+    const sorted = [...allExercises].sort((a, b) => {
+      const tmplA = availableExerciseTemplates.find(t => t.id === a.exerciseId);
+      const tmplB = availableExerciseTemplates.find(t => t.id === b.exerciseId);
+      const aCompound = COMPOUND_PATTERNS.has((tmplA as ExerciseWithTaxonomy | undefined)?.movementPattern ?? "") ? 0 : 1;
+      const bCompound = COMPOUND_PATTERNS.has((tmplB as ExerciseWithTaxonomy | undefined)?.movementPattern ?? "") ? 0 : 1;
+      return aCompound - bCompound;
+    });
+
+    // Cap total exercises to what fits
+    const totalCap = targetCount * maxPerSession;
+    const capped = sorted.slice(0, totalCap);
+
+    const compressedDays = Array.from({ length: targetCount }, (_, i) => {
+      const slice = capped.slice(i * maxPerSession, (i + 1) * maxPerSession);
+      const baseDay = incompleteDays[i] ?? incompleteDays[0];
+      const muscles = [...new Set(slice.map(e => {
+        const tmpl = availableExerciseTemplates.find(t => t.id === e.exerciseId);
+        return tmpl?.primaryMuscle ?? "";
+      }).filter(Boolean))];
+      return {
+        ...baseDay,
+        completedAt: null,
+        sessionLabel: muscles.length > 0 ? muscles.join(" & ") : baseDay.sessionLabel,
+        focus: muscles.join(" · "),
+        exercises: slice,
+      };
+    });
+
+    const completedDays = currentWeek.days.filter(d => d.completedAt);
+    const updatedWeeks = repiqPlan.weeks.map((week, wIdx) => {
+      if (wIdx !== wi) return week;
+      return { ...week, days: [...completedDays, ...compressedDays] };
+    });
+    const updated: RepIQPlan = { ...repiqPlan, weeks: updatedWeeks };
+    persistRepIQPlan(updated);
+    setRepiqPlan(updated);
+  }
+
   function openQuickSession(returnView: "home" | "planner" = "home") {
     setDiscardReturnView(returnView);
     resetWorkout();
@@ -14282,7 +14939,7 @@ export function App() {
     setHasActiveWorkout(true);
     setActivePlanSession({ source: "quick", planId: null, originalPlan: null });
     setActiveRepIQSessionKey(null);
-    setAppView("logger");
+    withReadinessCheck(() => setAppView("logger"));
   }
 
   function updateSetType(exerciseId: string, setIndex: number, setType: DraftSetType) {
@@ -14415,6 +15072,18 @@ export function App() {
       matchScore,
     };
     persistReplacementEvent(event);
+
+    // Save preference when the chosen replacement targets the same primary muscle.
+    // This lets us surface it at the top of future Smart Replace lists for this exercise.
+    const originalExercise = availableExerciseTemplates.find(e => e.id === originalId);
+    if (
+      originalExercise &&
+      template.primaryMuscle &&
+      originalExercise.primaryMuscle === template.primaryMuscle
+    ) {
+      persistExercisePreference(originalId, templateId);
+    }
+
     setSmartReplaceExerciseId(null);
     setAddExerciseOpen(false);
   }
@@ -14813,6 +15482,9 @@ export function App() {
     setReorderDragId(null);
     setCollapsedExerciseIds([]);
     setGuidanceCollapsed(false);
+    setWarmupExpanded(false);
+    setWarmupDismissed(false);
+    setCooldownDismissed(false);
     setFocusedExpandedExerciseId(null);
     setTimingOpen(false);
     setLeavePromptOpen(false);
@@ -15250,26 +15922,58 @@ export function App() {
 
   function startPlanWorkout(plan: WorkoutPlan, source: PlanSessionSource = "saved") {
     // Build exercises from plan, hydrating from the library
-    const planExercises: ExerciseDraft[] = plan.exercises.flatMap((pe) => {
+    const planExercises: ExerciseDraft[] = plan.exercises.flatMap((pe, exIdx) => {
       const template = availableExerciseTemplates.find((e) => e.id === pe.exerciseId);
       if (!template) return [];
-      const sets: DraftSet[] = [];
-      for (let i = 0; i < pe.setCount; i++) {
-        sets.push({
-          id: `${pe.exerciseId}-${i}`,
-          setType: pe.setTypes?.[i] ?? "normal",
+
+      // If setTypes is already specified (e.g. from generated plan), use it directly —
+      // warmup rows are already embedded. Otherwise auto-add warmups for compounds.
+      const hasExplicitSetTypes = pe.setTypes && pe.setTypes.length === pe.setCount;
+      let allSets: DraftSet[];
+
+      if (hasExplicitSetTypes) {
+        allSets = pe.setTypes!.map((setType, i) => ({
+          id: `${pe.exerciseId}-${i}-${Date.now()}`,
+          setType,
           weightInput: "",
           repsInput: "",
           rpeInput: "",
           done: false,
-          failed: false
-        });
+          failed: false,
+        }));
+      } else {
+        // Auto-add warmups: compound movements get 2, first exercise gets at least 1
+        const templateWithTaxonomy = template as ExerciseWithTaxonomy;
+        const isCompound = templateWithTaxonomy.movementPattern
+          ? COMPOUND_PATTERNS.has(templateWithTaxonomy.movementPattern as MovementPattern)
+          : false;
+        const warmupCount = isCompound ? 2 : exIdx === 0 ? 1 : 0;
+        const warmupSets: DraftSet[] = Array.from({ length: warmupCount }, (_, i) => ({
+          id: `${pe.exerciseId}-wu-${i}-${Date.now()}`,
+          setType: "warmup" as DraftSetType,
+          weightInput: "",
+          repsInput: "",
+          rpeInput: "",
+          done: false,
+          failed: false,
+        }));
+        const workingSets: DraftSet[] = Array.from({ length: pe.setCount }, (_, i) => ({
+          id: `${pe.exerciseId}-${i}-${Date.now()}`,
+          setType: pe.setTypes?.[i] ?? "normal" as DraftSetType,
+          weightInput: "",
+          repsInput: "",
+          rpeInput: "",
+          done: false,
+          failed: false,
+        }));
+        allSets = [...warmupSets, ...workingSets];
       }
+
       return [{
         ...template,
         restTimer: pe.restTimer,
         note: pe.note ?? "",
-        draftSets: sets
+        draftSets: allSets
       }];
     });
 
@@ -15296,7 +16000,7 @@ export function App() {
     setActiveRepIQSessionKey(null);
     setDiscardReturnView("planner");
     setHasActiveWorkout(true);
-    setAppView("logger");
+    withReadinessCheck(() => setAppView("logger"));
   }
 
   function redoWorkout(workout: SavedWorkoutData) {
@@ -15332,9 +16036,10 @@ export function App() {
     setShowBottomRestDock(true);
     setActivePlanSession(null);
     setActiveRepIQSessionKey(null);
+    setActiveWorkoutIsRedo(true);
     setDiscardReturnView("home");
     setHasActiveWorkout(true);
-    setAppView("logger");
+    withReadinessCheck(() => setAppView("logger"));
   }
 
   function editHistoryWorkout(workout: SavedWorkoutData) {
@@ -15471,10 +16176,12 @@ export function App() {
         return {
           ...day,
           exercises: tmpl.slots
-            .map(slot => {
-              const exerciseId = pickPlanExercise(smartReplaceCatalog, slot, exp, used);
+            .map((slot, slotIdx) => {
+              const exerciseId = pickPlanExercise(allCatalogExercises, slot, exp, used);
               if (!exerciseId) return null;
-              return { exerciseId, sets: scheme.sets, reps: scheme.reps, restSeconds: scheme.restSeconds } satisfies RepIQPlanExercise;
+              const isCompound = slot.patterns.some((p) => COMPOUND_PATTERNS.has(p));
+              const warmupSets = isCompound ? 2 : slotIdx === 0 ? 1 : 0;
+              return { exerciseId, sets: scheme.sets, ...(warmupSets > 0 ? { warmupSets } : {}), reps: scheme.reps, restSeconds: scheme.restSeconds } satisfies RepIQPlanExercise;
             })
             .filter((e): e is RepIQPlanExercise => e !== null),
         };
@@ -15539,7 +16246,17 @@ export function App() {
     const planExercises: ExerciseDraft[] = day.exercises.flatMap((pe) => {
       const template = availableExerciseTemplates.find((e) => e.id === pe.exerciseId);
       if (!template) return [];
-      const sets: DraftSet[] = Array.from({ length: pe.sets }, (_, i) => ({
+      const warmupCount = pe.warmupSets ?? 0;
+      const warmupSets: DraftSet[] = Array.from({ length: warmupCount }, (_, i) => ({
+        id: `${pe.exerciseId}-wu-${i}-${Date.now()}`,
+        setType: "warmup" as DraftSetType,
+        weightInput: "",
+        repsInput: "",
+        rpeInput: "",
+        done: false,
+        failed: false,
+      }));
+      const workingSets: DraftSet[] = Array.from({ length: pe.sets }, (_, i) => ({
         id: `${pe.exerciseId}-${i}-${Date.now()}`,
         setType: "normal" as DraftSetType,
         weightInput: "",
@@ -15548,7 +16265,7 @@ export function App() {
         done: false,
         failed: false,
       }));
-      return [{ ...template, restTimer: String(pe.restSeconds), note: "", draftSets: sets }];
+      return [{ ...template, restTimer: formatRestTimer(String(pe.restSeconds)), note: "", draftSets: [...warmupSets, ...workingSets] }];
     });
     setExercises(planExercises);
     setCollapsedExerciseIds([]);
@@ -15567,7 +16284,7 @@ export function App() {
     setActiveRepIQSessionKey(`${weekIdx}-${dayIdx}`);
     setDiscardReturnView("planner");
     setHasActiveWorkout(true);
-    setAppView("logger");
+    withReadinessCheck(() => setAppView("logger"));
   }
 
   function propagateRepIQChanges(weekIdx: number, dayIdx: number, completedExerciseIds: string[]) {
@@ -15592,7 +16309,7 @@ export function App() {
           const tmpl = dayTemplates[di % dayTemplates.length];
           const newExercises = tmpl.slots
             .map((slot) => {
-              const id = pickPlanExercise(smartReplaceCatalog, slot, exp, usedIds);
+              const id = pickPlanExercise(allCatalogExercises, slot, exp, usedIds);
               if (!id) return null;
               usedIds.add(id);
               return { exerciseId: id, sets: scheme.sets, reps: scheme.reps, restSeconds: scheme.restSeconds } satisfies RepIQPlanExercise;
@@ -15607,12 +16324,13 @@ export function App() {
     setRepiqPlan(updatedPlan);
   }
 
-  function regenerateRepIQPlan(prefs: { goal: string; experience: string; daysPerWeek: number; sessionLength: number; planLengthWeeks: number; splitPref: string | null }) {
+  function regenerateRepIQPlan(prefs: { goal: string; experience: string; daysPerWeek: number; cycleDays: number | null; sessionLength: number; planLengthWeeks: number; splitPref: string | null }) {
     const updatedProfile: UserPsychProfile = {
       ...psychProfile,
       primaryGoal: prefs.goal as TrainingGoal,
       experienceLevel: prefs.experience as ExperienceLevel,
       daysPerWeekPref: prefs.daysPerWeek,
+      cycleDays: prefs.cycleDays,
       sessionLengthPref: prefs.sessionLength,
       planLengthWeeksPref: prefs.planLengthWeeks,
       workoutStylePref: prefs.splitPref,
@@ -15640,7 +16358,7 @@ export function App() {
         resolvedTheme={resolvedTheme}
         onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         onGoTo={(view) => { setAppView(view); setShowDevPage(false); setDevBypassGate(true); }}
-        onShowPostOnboarding={() => { setShowPostOnboarding(true); setShowDevPage(false); }}
+        onShowPostOnboarding={() => { setShowPostOnboarding(true); setShowDevPage(false); setDevBypassGate(true); }}
         onResetOnboarding={() => {
           const reset: UserPsychProfile = { ...psychProfile, onboardingCompletedAt: null };
           persistPsychProfile(reset);
@@ -15653,6 +16371,7 @@ export function App() {
           setSavedWorkoutsList(workouts);
           setAppView("home");
           setShowDevPage(false);
+          setDevBypassGate(true);
         }}
         onSeedRepIQData={() => {
           const { plan, workouts } = buildSeedRepIQData();
@@ -15662,6 +16381,7 @@ export function App() {
           setSavedWorkoutsList(workouts);
           setAppView("home");
           setShowDevPage(false);
+          setDevBypassGate(true);
         }}
         onSeedMuscleGap={() => {
           const workouts = buildMuscleGapSeed();
@@ -15671,6 +16391,7 @@ export function App() {
           setSavedWorkoutsList(workouts);
           setAppView("home");
           setShowDevPage(false);
+          setDevBypassGate(true);
         }}
         onClearHistoryData={() => {
           window.localStorage.removeItem(repiqPlanStorageKey);
@@ -15797,6 +16518,33 @@ export function App() {
     const replaceTarget = smartReplaceExerciseId
       ? exercises.find(e => e.id === smartReplaceExerciseId)
       : null;
+    const smartReplaceAvailableEquipment: CustomExerciseType[] = (() => {
+      const access = psychProfile.equipmentAccess;
+      if (access === "bodyweight" || access === "dumbbell_pair") return ["bodyweight_only", "freestyle_cardio"];
+      if (access === "home_setup") return ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "barbell", "freestyle_cardio"];
+      return ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "barbell", "machine", "freestyle_cardio"];
+    })();
+    const smartReplacementResults = replaceTarget
+      ? getSmartReplacements(
+          replaceTarget as ExerciseWithTaxonomy,
+          exercises,
+          "best_match",
+          smartReplaceAvailableEquipment,
+          availableExerciseTemplates as ExerciseWithTaxonomy[],
+          psychProfile.experienceLevel
+        )
+      : [];
+    const smartReplacementMeta = smartReplacementResults.reduce<Record<string, { rank: number; score: number; matchReason: string }>>(
+      (result, entry, index) => {
+        result[entry.exercise.id] = {
+          rank: index,
+          score: entry.score,
+          matchReason: entry.matchReason,
+        };
+        return result;
+      },
+      {}
+    );
     return (
       <div data-theme={resolvedTheme}>
         <AddExercisePage
@@ -15805,7 +16553,12 @@ export function App() {
           onBack={() => { setAddExerciseOpen(false); setSmartReplaceExerciseId(null); }}
           onAddSelected={(templateIds) => {
             if (replaceTarget && templateIds[0]) {
-              replaceExerciseWithTemplate(replaceTarget.id, templateIds[0]);
+              replaceExerciseWithTemplate(
+                replaceTarget.id,
+                templateIds[0],
+                "best_match",
+                smartReplacementMeta[templateIds[0]]?.score ?? 0
+              );
             } else {
               addExercisesFromTemplates(templateIds);
             }
@@ -15815,8 +16568,8 @@ export function App() {
           onUpdateCustom={updateCustomExercise}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
-          preFilterMuscle={replaceTarget?.primaryMuscle}
           replaceMode={Boolean(replaceTarget)}
+          smartReplacementMeta={replaceTarget ? smartReplacementMeta : undefined}
         />
         <BottomNav activeView={appView} onNavigate={(view) => { setAddExerciseOpen(false); setSmartReplaceExerciseId(null); setAppView(view); }} onMore={() => setShowMoreSheet(true)} />
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
@@ -15830,9 +16583,12 @@ export function App() {
         <WorkoutReportPage
           data={reportWorkout}
           onBack={() => setAppView("home")}
-          onShare={() => setAppView("share")}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+          psychCapture={{
+            profile: psychProfile,
+            onSave: persistPostWorkoutPsych,
+          }}
         />
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
         {/* ── RepIQ plan update prompt ─────────────────────────────────────── */}
@@ -15951,6 +16707,16 @@ export function App() {
           onBack={() => setAppView("home")}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+          hiddenSuggestionIds={hiddenSuggestionIds}
+          allExerciseTemplates={availableExerciseTemplates}
+          onRestoreHidden={(id) => {
+            removeHiddenSuggestion(id);
+            setHiddenSuggestionIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+          }}
+          onRestoreAllHidden={() => {
+            [...hiddenSuggestionIds].forEach(id => removeHiddenSuggestion(id));
+            setHiddenSuggestionIds(new Set());
+          }}
         />
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
@@ -15963,7 +16729,8 @@ export function App() {
       <div data-theme={resolvedTheme} style={{ height: "100dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <GlossaryPage
           resolvedTheme={resolvedTheme}
-          onBack={() => setAppView("home")}
+          initialTerm={glossaryTerm}
+          onBack={() => { setGlossaryTerm(""); setAppView("home"); }}
         />
       </div>
     );
@@ -16076,10 +16843,11 @@ export function App() {
             }
             setAppView("plan-builder");
           }}
-          onGeneratePlan={(plan) => {
+          onGeneratePlan={(plan, config) => {
             setEditingPlan(null);
             setPlanBuilderMode("generate");
             setPlanBuilderDraft(plan);
+            setLastGenConfig(config);
             setAppView("plan-builder");
           }}
           onStartPlan={(plan) => startPlanWorkout(plan, workoutPlans.some((entry) => entry.id === plan.id) ? "saved" : "library")}
@@ -16137,26 +16905,76 @@ export function App() {
                 ...repiqPlan,
                 status: "active",
                 pausedAt: null,
+                pauseEndDate: null,
                 totalPauseDaysUsed: (repiqPlan.totalPauseDaysUsed ?? 0) + daysPaused,
               };
               persistRepIQPlan(updated);
               setRepiqPlan(updated);
             } else {
-              // Pausing: record timestamp
+              // Direct pause (no date) — fallback
               const updated: RepIQPlan = {
                 ...repiqPlan,
                 status: "paused",
                 pausedAt: new Date().toISOString(),
+                pauseEndDate: null,
               };
               persistRepIQPlan(updated);
               setRepiqPlan(updated);
             }
+          }}
+          onPausePlan={(pauseEndDate) => {
+            if (!repiqPlan) return;
+            const updated: RepIQPlan = {
+              ...repiqPlan,
+              status: "paused",
+              pausedAt: new Date().toISOString(),
+              pauseEndDate,
+            };
+            persistRepIQPlan(updated);
+            setRepiqPlan(updated);
           }}
           onDismissReview={() => {
             if (!repiqPlan) return;
             const updated = { ...repiqPlan, needsReview: false };
             persistRepIQPlan(updated);
             setRepiqPlan(updated);
+          }}
+          onCarryOverSessions={() => {
+            if (!repiqPlan) return;
+            const wi = repiqPlan.currentWeekIndex;
+            const currentWeek = repiqPlan.weeks[wi];
+            if (!currentWeek) return;
+            const nextWi = wi + 1;
+            if (nextWi >= repiqPlan.weeks.length) return; // no next cycle to carry over to
+            const incompleteDays = currentWeek.days.filter(d => !d.completedAt);
+            if (incompleteDays.length === 0) return;
+            // Mark current cycle as completed (skip remaining), prepend to next cycle
+            const updatedWeeks = repiqPlan.weeks.map((week, wIdx) => {
+              if (wIdx === wi) {
+                return {
+                  ...week,
+                  isCompleted: true,
+                  days: week.days.map(d => d.completedAt ? d : { ...d, completedAt: "skipped" }),
+                };
+              }
+              if (wIdx === nextWi) {
+                return {
+                  ...week,
+                  days: [...incompleteDays.map(d => ({ ...d, completedAt: null })), ...week.days],
+                };
+              }
+              return week;
+            });
+            const updated: RepIQPlan = {
+              ...repiqPlan,
+              weeks: updatedWeeks,
+              currentWeekIndex: nextWi,
+            };
+            persistRepIQPlan(updated);
+            setRepiqPlan(updated);
+          }}
+          onCompressSessions={() => {
+            setShowCompressDurationSheet(true);
           }}
           savedWorkouts={savedWorkoutsList}
           onOpenHistoryWorkout={(workout, weekIdx, dayIdx, label, sessionNum) => {
@@ -16171,6 +16989,93 @@ export function App() {
             persistRepIQPlan(plan);
             setRepiqPlan(plan);
             setPlannerInitialMode("repiq");
+          }}
+          onNavigateGlossary={(term) => { setGlossaryTerm(term); setAppView("glossary"); }}
+          onApplyCustomSplit={(arrangement) => {
+            if (!repiqPlan) return;
+            // Convert muscle arrangement to PlanDayTemplates
+            const MUSCLE_SLOT: Record<string, PlanExerciseSlot> = {
+              "Chest":      { patterns: ["horizontal_push"], primaryMuscle: "Chest" },
+              "Back":       { patterns: ["vertical_pull", "horizontal_pull"], primaryMuscle: "Back" },
+              "Shoulders":  { patterns: ["vertical_push"], primaryMuscle: "Shoulders" },
+              "Biceps":     { patterns: ["isolation_pull"], primaryMuscle: "Biceps" },
+              "Triceps":    { patterns: ["isolation_push"], primaryMuscle: "Triceps" },
+              "Quads":      { patterns: ["squat"], primaryMuscle: "Quads" },
+              "Hamstrings": { patterns: ["hip_hinge"], primaryMuscle: "Hamstrings" },
+              "Glutes":     { patterns: ["hip_hinge"], primaryMuscle: "Glutes" },
+              "Core":       { patterns: ["isolation_push"], primaryMuscle: "Core" },
+              "Calves":     { patterns: ["isolation_legs"], primaryMuscle: "Calves" },
+            };
+            const customTemplates: PlanDayTemplate[] = arrangement.map(day => {
+              const baseSlots = day.muscles.map(m => MUSCLE_SLOT[m]).filter(Boolean);
+              // Pad to at least 4 slots by doubling primary muscles
+              const slots = [...baseSlots];
+              let padIdx = 0;
+              while (slots.length < 4 && baseSlots.length > 0) {
+                slots.push({ ...baseSlots[padIdx % baseSlots.length] });
+                padIdx++;
+              }
+              return {
+                label: day.label,
+                focus: day.muscles.join(" · "),
+                slots: slots.slice(0, 6),
+              };
+            });
+            // Regenerate plan with custom templates
+            const goal: TrainingGoal = repiqPlan.goal;
+            const exp: ExperienceLevel = repiqPlan.experienceLevel;
+            const days = arrangement.length;
+            const equipment: EquipmentAccess = psychProfile.equipmentAccess ?? "full_gym";
+            const sessionLen = repiqPlan.sessionLengthMin;
+            const mesoWeeks = repiqPlan.mesocycleLengthWeeks;
+            const scheme = getPlanSetRepScheme(goal);
+            const cycleDaysVal = psychProfile.cycleDays ?? null;
+            const effectiveCycleDays = cycleDaysVal ?? 7;
+            const totalCycles = cycleDaysVal && cycleDaysVal !== 7
+              ? Math.round((mesoWeeks * 7) / effectiveCycleDays)
+              : mesoWeeks;
+            const used = new Set<string>();
+            const weeks: RepIQPlanWeek[] = Array(totalCycles).fill(null).map((_, weekIdx) => ({
+              weekNumber: weekIdx + 1,
+              isCompleted: false,
+              days: customTemplates.map(tmpl => ({
+                sessionLabel: tmpl.label,
+                focus: tmpl.focus,
+                exercises: tmpl.slots
+                  .map(slot => {
+                    const exId = pickPlanExercise(allCatalogExercises, slot, exp, used, equipment);
+                    if (!exId) return null;
+                    used.add(exId);
+                    return {
+                      exerciseId: exId,
+                      sets: scheme.sets,
+                      reps: scheme.reps,
+                      restSeconds: scheme.restSeconds,
+                    } satisfies RepIQPlanExercise;
+                  })
+                  .filter((e): e is RepIQPlanExercise => e !== null),
+                completedAt: null,
+              })),
+            }));
+            const now = new Date().toISOString();
+            const plan: RepIQPlan = {
+              ...repiqPlan,
+              id: `plan-${Date.now()}`,
+              generatedAt: now,
+              startDate: now.slice(0, 10),
+              lastRegeneratedAt: now,
+              planName: `Custom Split · ${days} days`,
+              daysPerWeek: days,
+              splitType: "custom" as SplitType,
+              cycleDays: cycleDaysVal,
+              totalCycles,
+              currentWeekIndex: 0,
+              weeks,
+              status: "active",
+              customSplitArrangement: arrangement,
+            };
+            persistRepIQPlan(plan);
+            setRepiqPlan(plan);
           }}
         />
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
@@ -16267,6 +17172,34 @@ export function App() {
           </section>
         )}
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
+        {showCompressDurationSheet && (
+          <section className="sheet-overlay" onClick={() => setShowCompressDurationSheet(false)}>
+            <div className="sheet-card" onClick={(e) => e.stopPropagation()}>
+              <div className="sheet-head">
+                <div>
+                  <p className="label">Compress sessions</p>
+                  <h3>How long per session?</h3>
+                  <p className="readiness-hint" style={{ textAlign: "left", marginTop: 4 }}>
+                    We'll keep the best exercises to fit your time
+                  </p>
+                </div>
+                <button className="icon-button" type="button" onClick={() => setShowCompressDurationSheet(false)}>×</button>
+              </div>
+              <div className="readiness-chips" style={{ marginTop: 16 }}>
+                {([30, 45, 60, 75, 90] as const).map((mins) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    className="readiness-chip"
+                    onClick={() => handleCompressWithDuration(mins)}
+                  >
+                    <span className="readiness-chip-label">{mins} min</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
       </div>
     );
   }
@@ -16343,6 +17276,18 @@ export function App() {
             setPlannerInitialMode("custom");
             setAppView("planner");
           }}
+          onStartNow={planBuilderMode === "generate" ? (plan) => {
+            // Start the generated session immediately (saves time vs. save → find → start)
+            setPlanBuilderDraft(null);
+            setPlanBuilderMode("create");
+            startPlanWorkout(plan, "generated");
+          } : undefined}
+          onShuffle={planBuilderMode === "generate" && lastGenConfig ? () => {
+            const nextConfig = { ...lastGenConfig, seedOffset: lastGenConfig.seedOffset + 1 };
+            setLastGenConfig(nextConfig);
+            const newPlan = buildGeneratedPlan(nextConfig, availableExerciseTemplates as ExerciseWithTaxonomy[]);
+            if (newPlan) setPlanBuilderDraft(newPlan);
+          } : undefined}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
@@ -16368,7 +17313,16 @@ export function App() {
     const weekStats = getThisWeekStats(savedWorkoutsList);
     const firstName = psychProfile.name?.split(" ")[0] ?? null;
     const greeting = getGreeting();
-    const topPR = latestWorkout?.rewards.find((r) => r.category === "pr")?.detail ?? null;
+    // Most recent PR from any workout in the last 30 days
+    const topPR = (() => {
+      const cutoff = Date.now() - 30 * 86_400_000;
+      for (const w of savedWorkoutsList) {
+        if (new Date(w.savedAt).getTime() < cutoff) break;
+        const pr = w.rewards?.find((r) => r.category === "pr");
+        if (pr?.detail) return pr.detail;
+      }
+      return null;
+    })();
     const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
     const muscleCoverage = computeMuscleCoverage(savedWorkoutsList, cycleDays);
     const goalProgress = computeGoalProgress(savedWorkoutsList, psychProfile);
@@ -16388,11 +17342,11 @@ export function App() {
     })();
     const todayDayNum = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
     const nextRepIQSession = repiqPlan ? getNextRepIQSession(repiqPlan) : null;
-    // Show last workout card only when no plan AND last workout was within 14 days
+    // Show last workout card whenever there's a recent session (≤14 days), plan or not
     const lastWorkoutDaysAgo = latestWorkout
       ? Math.floor((Date.now() - new Date(latestWorkout.savedAt).getTime()) / 86_400_000)
       : Infinity;
-    const showLastWorkout = !repiqPlan && latestWorkout && lastWorkoutDaysAgo <= 14;
+    const showLastWorkout = !!latestWorkout && lastWorkoutDaysAgo <= 14;
 
     return (
       <main className={`shell selector-shell${hasActiveWorkout ? " has-tray" : ""}`} data-theme={resolvedTheme}>
@@ -16404,17 +17358,17 @@ export function App() {
               <h1 className="home-greeting">
                 {firstName ? `${greeting}, ${firstName}` : greeting}
               </h1>
-              {(streak >= 2 || weekStreak >= 2) && (
+              {(streak >= 1 || weekStreak >= 1) && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <div className="home-streak-row">
-                    {streak >= 2 && (
+                    {streak >= 1 && (
                       <div className="home-streak-badge">
                         <span className="home-streak-fire">🔥</span>
                         <span className="home-streak-count">{streak}</span>
                         <span className="home-streak-label">day{streak !== 1 ? "s" : ""}</span>
                       </div>
                     )}
-                    {weekStreak >= 2 && (
+                    {weekStreak >= 1 && (
                       <div className="home-streak-badge home-streak-badge--week">
                         <svg className="home-streak-cal-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
@@ -16427,7 +17381,7 @@ export function App() {
                       </div>
                     )}
                   </div>
-                  <InfoIcon onClick={() => setAppView("glossary")} />
+                  <InfoIcon onClick={() => { setGlossaryTerm("streak"); setAppView("glossary"); }} />
                 </div>
               )}
             </div>
@@ -16540,7 +17494,7 @@ export function App() {
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setInsightsInitialTab("analyzer"); setAppView("insights"); } }}
             >
               <div className="home-trend-header">
-                <p className="home-goal-label">Training Trend · Overall Volume <InfoIcon onClick={(e) => { e.stopPropagation(); setAppView("glossary"); }} /></p>
+                <p className="home-goal-label">Training Trend · Overall Volume <InfoIcon onClick={(e) => { e.stopPropagation(); setGlossaryTerm("training trend"); setAppView("glossary"); }} /></p>
                 <p className={`home-trend-zone-label home-trend-zone-label--${trainingTrend.currentZone}`}>
                   {trainingTrend.zoneLabel}
                 </p>
@@ -16633,6 +17587,13 @@ export function App() {
           </section>
         )}
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
+        {showReadinessSheet && (
+          <ReadinessCheckSheet
+            onSelect={handleReadinessSelect}
+            onSkip={handleReadinessSkip}
+            onDontAskAgain={handleReadinessDontAskAgain}
+          />
+        )}
       </main>
     );
   }
@@ -16920,6 +17881,65 @@ export function App() {
               </div>
             </div>
           )}
+          {/* ── Warm-up / activation guidance ── */}
+          {exercises.length > 0 && !warmupDismissed && (() => {
+            const sessionMuscles = [...new Set(exercises.map(e => e.primaryMuscle).filter(Boolean))];
+            if (sessionMuscles.length === 0) return null;
+            const ACTIVATION_MAP: Record<string, string[]> = {
+              "Chest":      ["Arm circles (10 each)", "Band pull-aparts (15)", "Light push-ups (10)"],
+              "Back":       ["Cat-cow stretches (10)", "Band pull-aparts (15)", "Scapular retractions (10)"],
+              "Shoulders":  ["Arm circles (10 each)", "Band dislocates (10)", "Light lateral raises (10)"],
+              "Biceps":     ["Wrist circles (10 each)", "Light band curls (15)"],
+              "Triceps":    ["Arm circles (10 each)", "Light overhead extensions (10)"],
+              "Quads":      ["Bodyweight squats (15)", "Leg swings front-to-back (10 each)", "Walking lunges (10)"],
+              "Hamstrings": ["Leg swings side-to-side (10 each)", "Inchworms (8)", "Light RDL hip hinges (10)"],
+              "Glutes":     ["Glute bridges (15)", "Clamshells (10 each)", "Fire hydrants (10 each)"],
+              "Calves":     ["Ankle circles (10 each)", "Calf raises on step (15)"],
+              "Core":       ["Dead bugs (10)", "Bird dogs (8 each)", "Plank hold (20s)"],
+              "Abs":        ["Dead bugs (10)", "Bird dogs (8 each)", "Plank hold (20s)"],
+              "Obliques":   ["Side plank hold (15s each)", "Standing trunk rotations (10 each)"],
+            };
+            const movements: string[] = [];
+            const seen = new Set<string>();
+            for (const m of sessionMuscles) {
+              for (const move of ACTIVATION_MAP[m] ?? []) {
+                if (!seen.has(move)) { seen.add(move); movements.push(move); }
+              }
+            }
+            if (movements.length === 0) return null;
+            return (
+              <div className={`warmup-guidance-block${warmupExpanded ? " is-expanded" : ""}`}>
+                <button
+                  type="button"
+                  className="warmup-guidance-toggle"
+                  onClick={() => setWarmupExpanded(prev => !prev)}
+                >
+                  <span className="warmup-guidance-icon">🔥</span>
+                  <span className="warmup-guidance-title">Warm Up &amp; Activate</span>
+                  <span className="warmup-guidance-hint">{movements.length} movements · ~3 min</span>
+                  <span className="warmup-guidance-chevron">{warmupExpanded ? "▾" : "›"}</span>
+                </button>
+                {warmupExpanded && (
+                  <div className="warmup-guidance-content">
+                    <p className="warmup-guidance-sub">Dynamic stretches and activation for {sessionMuscles.slice(0, 3).join(", ")}{sessionMuscles.length > 3 ? "…" : ""}</p>
+                    <ul className="warmup-guidance-list">
+                      {movements.slice(0, 6).map((m) => (
+                        <li key={m} className="warmup-guidance-item">{m}</li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      className="warmup-guidance-dismiss"
+                      onClick={() => setWarmupDismissed(true)}
+                    >
+                      Done — start workout
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {exercises.map((exercise, exerciseIndex) => {
             const lastSession = exercise.history[exercise.history.length - 1];
             const measurementType = getExerciseMeasurementType(exercise);
@@ -17138,6 +18158,25 @@ export function App() {
                     </span>
                   )}
                   <div className="exercise-title-actions">
+                    <button
+                      className="icon-button exercise-swap-button"
+                      type="button"
+                      aria-label="Replace exercise"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSmartReplaceExerciseId(exercise.id);
+                        setSmartReplaceReason("just_change");
+                        setSmartReplaceSheetOpen(true);
+                        setMenuExerciseId(null);
+                      }}
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="17 1 21 5 17 9"/>
+                        <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                        <polyline points="7 23 3 19 7 15"/>
+                        <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                      </svg>
+                    </button>
                     <button
                       className="icon-button exercise-collapse-button"
                       type="button"
@@ -17438,22 +18477,21 @@ export function App() {
                           >
                             {setLabel}
                           </button>
-                          <button
-                            type="button"
-                            className={`previous-cell ${
-                              previousSet ? "previous-cell-button" : "previous-cell-empty"
-                            }`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (previousSet) {
+                          {previousSet ? (
+                            <button
+                              type="button"
+                              className="previous-cell previous-cell-button"
+                              onClick={(event) => {
+                                event.stopPropagation();
                                 applyPreviousValuesToDraftSet(exercise.id, index);
-                              }
-                            }}
-                            disabled={!previousSet}
-                            title={previousSet ? "Use previous values" : undefined}
-                          >
-                            {formatPreviousSet(previousSet, measurementType)}
-                          </button>
+                              }}
+                              title="Use previous values"
+                            >
+                              {formatPreviousSet(previousSet, measurementType)}
+                            </button>
+                          ) : (
+                            <span className="previous-cell previous-cell-empty" />
+                          )}
                           <input
                             className={`cell-input ${!hasWeightInput ? "cell-input-disabled" : ""}`}
                             type="text"
@@ -18025,7 +19063,8 @@ export function App() {
                   onClick={(event) => {
                     event.stopPropagation();
                     setSmartReplaceExerciseId(activeMenuExercise.id);
-                    setAddExerciseOpen(true);
+                    setSmartReplaceReason("preference");
+                    setSmartReplaceSheetOpen(true);
                     setMenuExerciseId(null);
                   }}
                 >
@@ -18618,7 +19657,161 @@ export function App() {
             </div>
           </section>
         )}
+
+        {smartReplaceSheetOpen && (() => {
+          // Draft ID is "{templateId}-{timestamp}-{n}" — use the draft directly since it carries
+          // all taxonomy from the template via spread in cloneExerciseTemplate.
+          const replaceOriginal = (
+            exercises.find(e => e.id === smartReplaceExerciseId) ??
+            availableExerciseTemplates.find(e => e.id === smartReplaceExerciseId)
+          ) as ExerciseWithTaxonomy | undefined;
+          const equipment = psychProfile?.equipmentAccess ?? "full_gym";
+          const availableEquipment = EQUIPMENT_ALLOWED_TYPES[equipment as keyof typeof EQUIPMENT_ALLOWED_TYPES] ?? EQUIPMENT_ALLOWED_TYPES.full_gym;
+          const suggestions = replaceOriginal
+            ? getSmartReplacements(
+                replaceOriginal,
+                exercises,
+                smartReplaceReason,
+                availableEquipment,
+                availableExerciseTemplates as ExerciseWithTaxonomy[],
+                psychProfile?.experienceLevel ?? null,
+              ).slice(0, 5)
+            : [];
+          const hasEnoughSuggestions = suggestions.filter(s => s.score > 0).length >= 3;
+
+          const reasonLabels: Record<ReplacementReason, string> = {
+            best_match: "Best match",
+            machine_taken: "Machine taken",
+            no_equipment: "No equipment",
+            too_difficult: "Too difficult",
+            pain_discomfort: "Pain / discomfort",
+            just_change: "Just a change",
+            preference: "Just a change",
+          };
+
+          function equipLabel(type: string | undefined): string {
+            switch (type) {
+              case "bodyweight_only": return "Bodyweight";
+              case "bodyweight_weighted": return "Weighted BW";
+              case "free_weights_accessories": return "Dumbbells";
+              case "barbell": return "Barbell";
+              case "machine": return "Machine";
+              case "freestyle_cardio": return "Cardio";
+              default: return "Any";
+            }
+          }
+
+          return (
+            <div
+              className="smart-replace-backdrop"
+              onClick={() => { setSmartReplaceSheetOpen(false); setSmartReplaceExerciseId(null); }}
+            >
+              <div
+                className="smart-replace-sheet"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="smart-replace-header">
+                  <button
+                    type="button"
+                    className="smart-replace-back-btn"
+                    onClick={() => { setSmartReplaceSheetOpen(false); setSmartReplaceExerciseId(null); }}
+                    aria-label="Close"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                  </button>
+                  <div className="smart-replace-title-wrap">
+                    <span className="smart-replace-label">Replace</span>
+                    <span className="smart-replace-title">{replaceOriginal?.name ?? "Exercise"}</span>
+                  </div>
+                </div>
+
+                <div className="smart-replace-reasons">
+                  {(Object.keys(reasonLabels) as ReplacementReason[]).filter(r => r !== "preference" && r !== "best_match").map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      className={`smart-replace-reason-chip${smartReplaceReason === r ? " is-active" : ""}`}
+                      onClick={() => setSmartReplaceReason(r)}
+                    >
+                      {reasonLabels[r]}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="smart-replace-divider">
+                  <span>Suggestions</span>
+                </div>
+
+                <div className="smart-replace-suggestions">
+                  {hasEnoughSuggestions ? (
+                    suggestions.map((s, idx) => (
+                      <div
+                        key={s.exercise.id}
+                        className={`smart-replace-suggestion-card${idx === 0 ? " is-best" : ""}`}
+                      >
+                        <div className="smart-replace-suggestion-info">
+                          {idx === 0 && (
+                            <span className="smart-replace-best-badge">✦ Best match</span>
+                          )}
+                          <span className="smart-replace-suggestion-name">{s.exercise.name}</span>
+                          <span className="smart-replace-suggestion-meta">
+                            {s.exercise.primaryMuscle ?? "—"}
+                            {" · "}
+                            {equipLabel(s.exercise.exerciseType)}
+                            {s.matchReason ? ` · ${s.matchReason}` : ""}
+                          </span>
+                        </div>
+                        <div className="smart-replace-card-actions">
+                          <button
+                            type="button"
+                            className="smart-replace-swap-btn"
+                            onClick={() => {
+                              replaceExerciseWithTemplate(smartReplaceExerciseId!, s.exercise.id, smartReplaceReason, s.score);
+                              setSmartReplaceSheetOpen(false);
+                            }}
+                          >
+                            Swap
+                          </button>
+                          <button
+                            type="button"
+                            className="smart-replace-hide-btn"
+                            title="Don't suggest this exercise"
+                            aria-label="Hide from suggestions"
+                            onClick={() => {
+                              persistHiddenSuggestion(s.exercise.id);
+                              setHiddenSuggestionIds(new Set([...hiddenSuggestionIds, s.exercise.id]));
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="smart-replace-empty">
+                      <span>Not enough great matches for this reason.</span>
+                      <span className="smart-replace-empty-sub">Try a different reason or browse all exercises.</span>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  className="smart-replace-browse-all"
+                  onClick={() => { setSmartReplaceSheetOpen(false); setAddExerciseOpen(true); }}
+                >
+                  Browse all exercises →
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </section>
+      {moodToast && (
+        <div className="mood-toast" key={moodToast}>
+          {moodToast}
+        </div>
+      )}
     </main>
   );
 }

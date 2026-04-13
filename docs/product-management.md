@@ -42,6 +42,16 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - avoid stacked-card overload outside the logger when possible
 - dark mode should preserve clarity without neon or muddy contrast
 
+### Simplicity Should Be A First-Class Mode, Not An Accident
+
+- RepIQ should support a lower-cognitive-load mode for less tech-savvy users
+- this mode should reduce visible text, decisions, and branching
+- defaults should carry more of the flow
+- advanced controls should stay available, but behind deliberate reveal points
+- the same product can support:
+  - a simple guided mode
+  - a fuller advanced mode
+
 ## Key Decisions Captured
 
 ### App Navigation And Page Roles
@@ -62,6 +72,8 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
   - custom exercise
   - finish workout
   - report detail
+- trainer workflows should not be mixed into member navigation by default
+- trainer should be treated as a distinct product path with its own home, navigation, and task hierarchy
 
 ### Home And Planner Information Architecture
 
@@ -75,6 +87,24 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - `Create Template` belongs to the `+` action, not the main heading structure
 - generated sessions should always stop at review/builder before logger entry
 - `Goal Planner` should live under `Planner`, not become its own app-level destination
+- simple-mode entry points should bias toward:
+  - `Start Workout`
+  - `Resume Workout`
+  - `History`
+- advanced planning and configuration should remain reachable without dominating the main path
+
+### Identity And Public Profile Direction
+
+- every user should have:
+  - an internal immutable `user_id`
+  - a public shareable `username` / handle
+- the product must never use the public handle as the system-of-record identity
+- all durable links and relations should be tied to `user_id`
+- usernames should be availability-checked and public-facing
+- current direction:
+  - free users receive an auto-generated username
+  - paid users can customize it, subject to availability
+- future username changes should not break trainer relationships, profile links, imports, or saved references because those remain tied to `user_id`
 
 ### Workout Builder Principles
 
@@ -258,6 +288,29 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 4. insights / reports integration
 5. profile, preferences, account, and import/export wiring
 
+### Simplicity / Role / Identity To-Dos
+
+1. define `Simple Mode` as an intentional low-text, low-choice product layer
+2. identify page-by-page simple-mode variants for:
+   - Home
+   - Logger
+   - Finish Workout
+   - Planner entry points
+   - Settings / Preferences
+3. define onboarding / auth split for:
+   - member path
+   - trainer path
+4. design trainer-first navigation and dashboard separately from member mode
+5. define identity model:
+   - immutable internal `user_id`
+   - public `username`
+   - future display name / trainer-visible profile metadata
+6. define username policy:
+   - availability
+   - free vs paid edit rules
+   - rename behavior
+   - reserved words
+
 ### Guidance Refinement Later
 
 - continue refining guidance visual hierarchy
@@ -397,6 +450,64 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - Default scope is always friends or group — global is deprioritised in UI
 - Improvement % metric is key for retention: a beginner improving 15% beats a veteran improving 2%
 
+## Plan Generation Decisions
+
+### V1: Rules-Based Only
+
+- V1 plan generation is fully rule-based: `goal + experience + days/week + split preference → template`
+- No AI API calls in V1 — zero per-generation cost, instant output, fully predictable
+- Two users with identical inputs will receive identical plan structures — accepted as a V1 limitation
+- Rules handle the skeleton: split type, days per week, mesocycle length, volume landmarks per muscle group
+- Exercise slot selection within that skeleton is drawn from the exercise catalog by movement pattern + difficulty + equipment
+
+### V2: AI-Assisted Generation (Charged Feature)
+
+- V2 upgrades plan generation to a hybrid model:
+  - Rules still own the skeleton (guarantees structural validity and fallback)
+  - AI (Claude Haiku) fills exercise slots given the user's full psych profile, equipment, injury flags, and returning-after-break context
+  - AI also writes a 2–3 sentence "why this plan" summary surfaced to the user
+- AI plan generation is a **paid feature** — gated behind a V2 subscription tier or add-on
+- Rationale: psychological parameters (motivation style, skip patterns, deload signals) only become meaningful after several months of data; charging for it aligns cost and value timing
+- Estimated cost: ~$0.01 per generation (Haiku, ~1K in / ~2K out); 1,000 users × 5 regenerations ≈ $50 — negligible until scale justifies a pricing review
+- Latency: 4–8 seconds — UI must show a "building your plan" animation (not a bare spinner)
+- Validation layer required in V2: AI output must be checked against the exercise catalog before rendering (exercise names, set/rep sanity)
+- If AI is unavailable, rules-based fallback produces a valid plan silently — no degraded UX shown to user
+
+### Plan Regeneration (Both Versions)
+
+- When a user changes split, goal, or timing in plan detail, the plan regenerates from scratch (not adjusted forward)
+- Animation shown during regeneration: "Doing science — building the best plan for you"
+- Week unlock rule: week N+1 unlocks when week N is marked completed; user can preview the next week but cannot access workouts beyond `plan_start_date + current_day + 7`
+
+## Plan Detail Page Action Hierarchy
+
+- Three actions exist on a plan detail page: Start Workout (primary), Edit, Delete
+- Start Workout is a full-width primary button occupying its own `plan-detail-actions-top` row
+- Edit and Delete are compact icon-only buttons (44×44px) placed to the right of the Start Workout button in the same row — no separate secondary row beneath
+- Edit uses a pencil outline SVG; Delete uses a simple outlined trash SVG with no fill texture; Delete button uses red (`#ef4444`) border and stroke
+- This pattern keeps three actions on one bar without creating visual hierarchy confusion from a second row
+
+## History Detail Page — Edit And Share
+
+- Completed RepIQ sessions always show both "Edit Session" and "Share Summary" buttons — no conditional hiding based on logged data
+- Reasoning: if a session appears in history, the user expects to be able to share the completion record and re-edit it
+- Edit Session opens the logger with timer pre-seeded from the original session duration
+- Share Summary opens the Workout Report page for the session
+- Editing a session currently appends a new saved-workout entry; the save-as-update (overwrite original entry) behavior is deferred to the Workout History sprint
+- The dual-button layout uses `history-detail-actions` flex row: secondary "Edit Session" + primary "Share Summary" — both `flex: 1` so they split the width equally
+
+## Finish Modal Consolidation
+
+- Blank-set warnings and incomplete-set warnings are combined into a single confirmation modal
+- Modal offers "Go Back And Finish" or "Finish Anyway" — the same options serve both empty-reps and incomplete sets
+- Rationale: two separate modals in sequence create unnecessary friction and cognitive overhead
+
+## needsReview Banner — Dismiss Action
+
+- The needsReview banner always shows a "Dismiss" button alongside "Regenerate remaining sessions"
+- Dismiss clears the `needsReview` flag without triggering a regeneration
+- Rationale: users may acknowledge the change and choose not to act — they should not be forced to regenerate or live with a permanent banner
+
 ## Progress Photo Decisions
 
 ### Privacy First
@@ -410,4 +521,139 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 - Overlay never obscures the face/body — gradient only from bottom edge
 - Tap → full-screen lightbox; session detail accessible by scrolling up
 - Compare mode: two photos side by side, one stat-diff line between them
+
+## RepIQ Planner — Intelligence & Progression Decisions
+
+### Session Card Visibility
+- Active (upcoming) session cards are capped at one cycle's worth (e.g. 3 on a 3-day/week plan)
+- Only the "Next" card is expanded by default; all others are collapsed one-liners
+- Sessions beyond the cap are hidden until the previous one is completed
+- Rationale: showing all unlocked cards creates noise; the user only needs to see what's immediately relevant
+
+### Pause Mechanics
+- `pausedAt` timestamp recorded when user pauses (not just a boolean flag)
+- Pause duration shown to user: "Plan paused · Day 12 of 45"
+- Pause limit is **user-configurable** within a system upper ceiling (default 45 days)
+- Total pause days across the plan's lifetime are capped (prevents gaming with repeated short pauses)
+- Expiration condition: `daysSincePause > pauseDaysMax AND daysSinceLastSession > 30` — both must be true
+- Active training during pause (from Library) suppresses expiration even if pause clock runs long
+- Amber warning shown at 70% of pause limit (e.g. day 30 of 45)
+- On expiration: plan auto-archives (view only, can't resume); user prompted to start fresh
+
+### Smart Resume
+- Resume experience driven by **training recency**, not pause duration alone
+- At resume, system evaluates: `daysSinceLastSession`, volume during pause vs pre-pause baseline, muscles covered
+- Tiers: Warm (≤5 days, ≥60% volume) → resume directly; Partially warm → load nudge; Cool (6–14 days) → 1 ramp session; Cold (15–30 days) → ramp week; Stale (30+ days no training) → archive
+- Resume screen shows: sessions logged during pause, muscles covered, muscles with gap, recommended action
+- User chooses "Resume with adjustments" or "Resume as-is" — no multi-step questionnaire
+
+### Library Suggestions During Pause
+- Home screen NextSessionCard switches to library recommendations when plan is paused
+- Suggestions ranked by: muscle coverage gap (highest priority) → recency of template → session length fit → avoid yesterday's session
+- Sessions logged during pause count toward training history (streak, trend, muscle coverage) but not plan progress
+- On resume, outside-plan sessions during pause trigger the `needsReview` flow as normal
+
+### Plan Refresh (Adjust This Cycle) — Pro Feature
+- Compress or expand remaining sessions within the current cycle only
+- Free tier: 1 use/month; Pro tier: 2 uses/cycle with 48h cooldown
+- Pricing specifics deferred to payments phase
+- Restrictions: min 1 session remaining; volume delta warning >30%; session length warning if exceeds preference; scope is current cycle only (future cycles unaffected)
+- "Add more sessions" path: system recommends split for extra sessions based on muscle coverage gap; sessions appended to current cycle; original remaining sessions renumbered but untouched
+- When compressing: isolation work dropped first, compound lifts preserved
+
+### Milestone-Gated Intelligence Progression
+Features unlock based on total logged exercises (not sessions — harder to game):
+- **0 exercises** (Layer 0): Logging, streaks, session tracking, workout report
+- **30 exercises** (Layer 1): Training Trend card, week streak badge, "compared to last session" in report
+- **50 exercises** (Layer 2): Muscle Coverage nudge on Home, anatomy heatmap in Analyzer, volume-per-session trend
+- **100 exercises** (Layer 3): Muscle share card in Insights, drift alerts on Home (passive observation cards), milestone check-in (one-tap: "Has anything improved?")
+- **150 exercises** (Layer 4 — Pro): Goal Planner, plan generation bias toward goals, exercise/body part goal progress cards
+- **200 exercises** (Layer 5 — Pro): Auto mode — plan adjustments happen proactively, deload suggestions, skip prediction
+
+Locked tiers are visible in Insights with one-line preview of what they unlock and progress toward the milestone.
+
+### Goal Planner (Pro, unlocks at 150 exercises)
+- Sits inside RepIQ Planner view, above session cards — not a separate destination
+- Two goal types: Exercise goal (e.g. "Bench 100kg") and Body part goal (e.g. "Build back")
+- Limit: 1 primary + max 2 secondary goals
+- Exercise goal tracks: load progression, projected date to target based on current rate
+- Body part goal tracks: volume share increase, biases plan exercise selection toward that muscle group
+- Defocus option: "Reduce direct arm work" — suppresses nudge, adjusts volume ratio baseline
+- Pricing point: deferred to payments phase
+
+### User Engagement Classification (Passive — No Interruption)
+System classifies users silently by engagement signals:
+- `insightCardTaps`, `milestoneResponseRate`, `plannerEdits`, `goalSets`
+- High engagement → richer, more frequent insights surfaced
+- Low engagement → minimal, high-confidence-only observations
+- Never interrupt low-engagement users with prompts they haven't earned
+
+### HomeMuscleNudge Visibility Rule
+- Hide when all muscles are fresh or fading (no empty "all covered" state shown)
+- Appear only when ≥1 canonical muscle is "due" — showing nothing is the correct state when training is balanced
+
+### Volume Ratio Analysis (Phase 2.5)
+- Compute each muscle's share of total volume as % (14-day window vs 8-week rolling baseline)
+- Drift signal: flag when recent share is <0.5× or >1.5× the user's own baseline
+- No external reference tables — user's own 3-month average is the ground truth
+- Thresholds intentionally proportional to cycleDays (cycle-aware)
+- Available at Layer 3 (100 exercises milestone)
+
+## Exercise Replacement — Deferred Until Exercise Repository Is Built
+
+**Decision (2026-04-11):** Smart Replace will not ship as an in-session flow until a curated exercise repository exists with verified, complete taxonomy for every exercise.
+
+**What exists today:**
+- `getSmartReplacements()` scoring engine is fully implemented (movement pattern, angle, equipment, difficulty, session fatigue)
+- `smartReplaceCatalog` has ~136 exercises with full taxonomy
+- Movement pattern is shown as an informational pill in the exercise detail Summary tab
+- "Browse all exercises →" link on the detail page lets users manually find a replacement
+
+**Why deferred:**
+- Scoring accuracy depends on complete, correct taxonomy across the full library — partial data produces misleading suggestions
+- Showing ranked suggestions creates false confidence when the ranking can be wrong
+- The user experience of "replace with a single tap" requires trust in the list; that trust can only come from a verified catalog
+
+**When to build:**
+- Phase: after the exercise repository is built with full taxonomy coverage
+- Entry point: ⋮ menu → Replace exercise → scored suggestion sheet (the scoring engine is already written)
+- The UI should show movement pattern + equipment of each suggestion, not just name
+- Reason picker (machine taken / no equipment / too difficult / pain / preference) can be added at that point to tune scoring
+
+## Deferred Topics (Separate Discussion Required)
+
+### Lazy Loading
+- Evaluate lazy loading for workout history list, exercise catalog, and any long lists in Insights
+- Priority: after core features are stable; apply where scroll jank is measurable
+- Consider virtualisation (windowed lists) for history if it grows beyond ~100 entries
+
+### Data Tiering by Package
+- Define what data is visible per tier: free / starter / pro
+- Decide cut-off points: e.g. history depth, Analyzer access, muscle gap detail, RepIQ plan features
+- Requires pricing model to be decided first
+
+### Package / Pricing Feature Segregation
+- Map every current feature to a tier (free / paid / pro)
+- Identify feature gates vs soft limits (e.g. X workouts free, then prompt)
+- Design gate UI: non-intrusive prompt, not a hard block for core logging
+- Decide: free tier keeps logging forever; plan intelligence is the paid value
+
+### Basic vs Advanced Mode
+- User chooses on first launch; can switch anytime from Settings
+- **Basic mode**: instruction-led, minimal choices, sensible defaults everywhere — designed for users who want to follow a plan without thinking about it
+- **Advanced mode**: full customisation — edit any session, modify splits, adjust rep ranges, swap exercises freely — for experienced lifters who know what they need
+- Mode affects: planner entry point (Basic hides split editor), logger (Basic hides RPE and set type), Insights (Basic shows summary only, not raw Analyzer)
+- Switching modes never deletes data; it only changes what is surfaced
+
+### Minimal Presentation Across Modes
+- Every screen should answer: "what is the one thing the user needs to do or know right now?"
+- Remove chrome that serves the developer, not the user
+- Progressive disclosure: show the action first, details on tap
+- Design principle: if a screen has more than one primary action, one of them is wrong
+
+### User Scenario Walkthroughs
+- Map realistic journeys: new user day 1, returning user 3 months in, user who skipped a week, user mid-cycle with an injury
+- For each: what does the app show? what does the user feel? what action does the app nudge?
+- Use these scenarios to stress-test mode switching, plan pacing nudges, and home screen CTAs
+- Schedule a dedicated session to walk through 3–4 scenarios before building Basic mode UI
 - No body measurement overlays or composition prompts unless user has entered them
