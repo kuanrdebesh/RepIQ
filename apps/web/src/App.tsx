@@ -740,15 +740,14 @@ const customExerciseTypeOptions: Array<{
   value: CustomExerciseType;
   label: string;
 }> = [
-  { value: "bodyweight_only", label: "Bodyweight only" },
+  { value: "bodyweight", label: "Bodyweight" },
   { value: "bodyweight_weighted", label: "Weighted bodyweight" },
-  {
-    value: "free_weights_accessories",
-    label: "Dumbbells / kettlebells / accessories"
-  },
+  { value: "dumbbell", label: "Dumbbell / Kettlebell" },
+  { value: "cable", label: "Cable" },
+  { value: "resistance_band", label: "Resistance band" },
   { value: "barbell", label: "Barbell" },
   { value: "machine", label: "Machine" },
-  { value: "freestyle_cardio", label: "Freestyle / cardio" }
+  { value: "freestyle_cardio", label: "Freestyle / cardio" },
 ];
 
 const customMeasurementOptions: Array<{
@@ -769,12 +768,14 @@ const customMovementSideOptions: Array<{
 ];
 
 const exerciseTypeDescriptions: Record<string, string> = {
-  bodyweight_only: "No equipment needed — push-ups, pull-ups, dips",
+  bodyweight: "No equipment needed — push-ups, pull-ups, dips",
   bodyweight_weighted: "Bodyweight base + optional load — weighted pull-ups",
-  free_weights_accessories: "Dumbbells, kettlebells, cables, bands",
+  dumbbell: "Dumbbells or kettlebells",
+  cable: "Cable machine movements",
+  resistance_band: "Band-based exercises",
   barbell: "Barbell movements — bench, squat, deadlift",
   machine: "Pin-loaded or plate-loaded machines",
-  freestyle_cardio: "Timed effort — runs, rows, bike intervals"
+  freestyle_cardio: "Timed effort — runs, rows, bike intervals",
 };
 
 const measurementDescriptions: Record<string, string> = {
@@ -840,7 +841,7 @@ function inferExerciseType(exercise: Pick<ExerciseDraft, "id" | "name" | "exerci
     return "freestyle_cardio";
   }
   if (/(stretch|mobility|yoga)/.test(name)) {
-    return "bodyweight_only";
+    return "bodyweight";
   }
   if (/(barbell|ez bar|trap bar|smith)/.test(name)) {
     return "barbell";
@@ -848,11 +849,17 @@ function inferExerciseType(exercise: Pick<ExerciseDraft, "id" | "name" | "exerci
   if (/(machine|leg press|selectorized|hack squat)/.test(name)) {
     return "machine";
   }
-  if (/(dumbbell|kettlebell|landmine|medicine ball|rope|cable|band)/.test(name)) {
-    return "free_weights_accessories";
+  if (/(cable)/.test(name)) {
+    return "cable";
+  }
+  if (/(band)/.test(name)) {
+    return "resistance_band";
+  }
+  if (/(dumbbell|kettlebell|landmine|medicine ball|rope)/.test(name)) {
+    return "dumbbell";
   }
   if (/(push-up|pull-up|chin-up|dip|plank|crunch|sit-up|bodyweight)/.test(name)) {
-    return "bodyweight_only";
+    return "bodyweight";
   }
   return "bodyweight_weighted";
 }
@@ -983,7 +990,7 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     name: "EZ Bar Curl",
     restTimer: "00:45",
     imageSrc: genericExerciseImage,
-    exerciseType: "free_weights_accessories",
+    exerciseType: "barbell",
     primaryMuscle: "Biceps",
     secondaryMuscles: ["Front Delts"],
     movementPattern: "isolation_pull", angle: "none", equipment: "barbell", difficultyLevel: "beginner",
@@ -1043,7 +1050,7 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     name: "Push-Up",
     restTimer: "00:45",
     imageSrc: genericExerciseImage,
-    exerciseType: "bodyweight_only",
+    exerciseType: "bodyweight",
     primaryMuscle: "Chest",
     secondaryMuscles: ["Front Delts", "Triceps"],
     movementPattern: "horizontal_push", angle: "flat", equipment: "bodyweight", difficultyLevel: "beginner",
@@ -1073,7 +1080,7 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     name: "Pull-Up",
     restTimer: "01:15",
     imageSrc: genericExerciseImage,
-    exerciseType: "bodyweight_only",
+    exerciseType: "bodyweight",
     primaryMuscle: "Lats",
     secondaryMuscles: ["Upper Back", "Biceps"],
     movementPattern: "vertical_pull", angle: "overhead", equipment: "bodyweight", difficultyLevel: "intermediate",
@@ -1165,7 +1172,7 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     name: "Hip Flexor Stretch",
     restTimer: "00:30",
     imageSrc: genericExerciseImage,
-    exerciseType: "bodyweight_only",
+    exerciseType: "bodyweight",
     primaryMuscle: "Quads",
     secondaryMuscles: ["Glutes"],
     movementPattern: "lunge", angle: "none", equipment: "bodyweight", difficultyLevel: "beginner",
@@ -1195,7 +1202,7 @@ const selectorCategorySamples: ExerciseWithTaxonomy[] = [
     name: "Chest Stretch",
     restTimer: "00:30",
     imageSrc: genericExerciseImage,
-    exerciseType: "bodyweight_only",
+    exerciseType: "bodyweight",
     primaryMuscle: "Chest",
     secondaryMuscles: ["Front Delts"],
     movementPattern: "isolation_push", angle: "none", equipment: "bodyweight", difficultyLevel: "beginner",
@@ -1258,7 +1265,7 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     id: "chest-dip",
     name: "Chest Dip",
     restTimer: "01:00",
-    exerciseType: "bodyweight_only",
+    exerciseType: "bodyweight",
     measurementType: "reps_volume",
     movementSide: "bilateral",
     primaryMuscle: "Chest",
@@ -1320,7 +1327,7 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     id: "plank",
     name: "Plank",
     restTimer: "00:30",
-    exerciseType: "bodyweight_only",
+    exerciseType: "bodyweight",
     measurementType: "timed",
     movementSide: "bilateral",
     primaryMuscle: "Abs / Core",
@@ -1413,7 +1420,7 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     id: "wall-sit",
     name: "Wall Sit",
     restTimer: "00:30",
-    exerciseType: "bodyweight_only",
+    exerciseType: "bodyweight",
     measurementType: "timed",
     movementSide: "bilateral",
     primaryMuscle: "Quads",
@@ -1506,7 +1513,7 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     id: "standing-calf-raise",
     name: "Standing Calf Raise",
     restTimer: "00:45",
-    exerciseType: "bodyweight_only",
+    exerciseType: "bodyweight",
     measurementType: "reps_volume",
     movementSide: "bilateral",
     primaryMuscle: "Calves",
@@ -1537,7 +1544,7 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     id: "wrist-curl",
     name: "Wrist Curl",
     restTimer: "00:45",
-    exerciseType: "free_weights_accessories",
+    exerciseType: "dumbbell",
     measurementType: "reps_volume",
     movementSide: "bilateral",
     primaryMuscle: "Forearms",
@@ -1568,7 +1575,7 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     id: "chest-supported-row",
     name: "Chest Supported Row",
     restTimer: "01:00",
-    exerciseType: "free_weights_accessories",
+    exerciseType: "dumbbell",
     measurementType: "reps_volume",
     movementSide: "bilateral",
     primaryMuscle: "Middle Back",
@@ -1599,7 +1606,7 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     id: "back-extension",
     name: "Back Extension",
     restTimer: "00:45",
-    exerciseType: "bodyweight_only",
+    exerciseType: "bodyweight",
     measurementType: "reps_volume",
     movementSide: "bilateral",
     primaryMuscle: "Lower Back",
@@ -1661,7 +1668,7 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     id: "dumbbell-shrug",
     name: "Dumbbell Shrug",
     restTimer: "00:45",
-    exerciseType: "free_weights_accessories",
+    exerciseType: "dumbbell",
     measurementType: "reps_volume",
     movementSide: "bilateral",
     primaryMuscle: "Traps",
@@ -1723,7 +1730,7 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     id: "hanging-leg-raise",
     name: "Hanging Leg Raise",
     restTimer: "00:45",
-    exerciseType: "bodyweight_only",
+    exerciseType: "bodyweight",
     measurementType: "reps_volume",
     movementSide: "bilateral",
     primaryMuscle: "Abs / Core",
@@ -1754,7 +1761,7 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     id: "cable-wood-chop",
     name: "Cable Wood Chop",
     restTimer: "00:45",
-    exerciseType: "free_weights_accessories",
+    exerciseType: "cable",
     measurementType: "reps_volume",
     movementSide: "unilateral",
     primaryMuscle: "Obliques",
@@ -1816,7 +1823,7 @@ const expandedExerciseSamples: ExerciseWithTaxonomy[] = [
     id: "dumbbell-front-raise",
     name: "Dumbbell Front Raise",
     restTimer: "00:45",
-    exerciseType: "free_weights_accessories",
+    exerciseType: "dumbbell",
     measurementType: "reps_volume",
     movementSide: "bilateral",
     primaryMuscle: "Front Delts",
@@ -1881,7 +1888,7 @@ const seededCustomExercises: ExerciseWithTaxonomy[] = [
     name: "Cossack Squat",
     restTimer: "00:45",
     imageSrc: genericExerciseImage,
-    exerciseType: "bodyweight_only",
+    exerciseType: "bodyweight",
     primaryMuscle: "Adductors",
     secondaryMuscles: ["Glutes", "Quads"],
     movementPattern: "lunge", angle: "none", equipment: "bodyweight", difficultyLevel: "intermediate",
@@ -1984,7 +1991,7 @@ const exerciseLibrary: ExerciseWithTaxonomy[] = [
     angle: "incline",
     equipment: "dumbbell",
     difficultyLevel: "beginner",
-    exerciseType: "free_weights_accessories",
+    exerciseType: "dumbbell",
     howTo: [
       "Set the bench incline before picking the dumbbells up into position.",
       "Lower the bells with elbows slightly tucked and wrists stacked.",
@@ -2148,7 +2155,7 @@ const exerciseTemplates: ExerciseWithTaxonomy[] = [
     imageSrc: inclineDumbbellPressImage,
     primaryMuscle: "Shoulders",
     secondaryMuscles: ["Triceps", "Upper Chest"],
-    exerciseType: "free_weights_accessories" as const,
+    exerciseType: "dumbbell" as const,
     movementPattern: "vertical_push" as const,
     angle: "overhead" as const,
     equipment: "dumbbell" as const,
@@ -9860,7 +9867,7 @@ function AddExercisePage({
     if (/(stretch|mobility|yoga)/.test(exercise.name.toLowerCase())) {
       return "Stretching";
     }
-    if (inferredType === "bodyweight_only") {
+    if (inferredType === "bodyweight") {
       return "Bodyweight";
     }
     return "Weighted";
