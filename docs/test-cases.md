@@ -257,6 +257,18 @@ Living registry of test cases across all built modules. Updated as features are 
 | HD-08 | "Share Summary" → opens share cards directly | PostSaveShareScreen shown with session data; no intermediate report page | ✅ |
 | HD-09 | Back button → returns to Planner | Planner shown (not Home) | ✅ |
 | HD-10 | Edit session → save → share summary reflects new data | ⚠️ Deferred — currently appends new entry; overwrite pending | ⚠️ |
+| HD-11 | History page background — light mode | Page and header background is white (`var(--paper)`), not grey | ✅ |
+| HD-12 | Photo slide — tap → lightbox opens | Full-screen overlay shows tapped photo | ✅ |
+| HD-13 | Lightbox in History — tap backdrop | Overlay closes | 🔲 |
+| HD-14 | Lightbox in History — close button | Overlay closes | 🔲 |
+| HD-15 | Quote slide — dark background | Slide background is `#0d0d0d` in both light and dark mode | ✅ |
+| HD-16 | Quote slide — white quoted text | `"…"` text is white | ✅ |
+| HD-17 | Quote slide — gold author name | Author line shows profile name in `#c9a84c` gold | ✅ |
+| HD-18 | Quote slide — author fallback | Shows "Me" when profile name is not set | ✅ |
+| HD-19 | Plain note slide — white background | `var(--paper)` background, no dark treatment | ✅ |
+| HD-20 | Plain note slide — no author line | No "— Name" attribution shown | ✅ |
+| HD-21 | Note slide content — personalNote preferred | `personalNote` shown; falls back to `note` if absent | ✅ |
+| HD-22 | Photo images — lazy loading | `loading="lazy"` on all workout photo `<img>` tags | ✅ |
 
 ---
 
@@ -269,6 +281,13 @@ Living registry of test cases across all built modules. Updated as features are 
 | IN-03 | Analyzer tab | Tab switches | ✅ |
 | IN-04 | Delete button removed from history cards | No delete on card; reserved for future dropdown | ✅ |
 | IN-05 | Save to My Workouts from history card | Workout saved as plan | ✅ |
+| IN-06 | Progress tab — photo grid shown | Photos from seed workouts displayed | ✅ |
+| IN-07 | Progress tab — All filter | All photos shown regardless of type | ✅ |
+| IN-08 | Progress tab — Progress filter | Only progress-flagged photos shown | ✅ |
+| IN-09 | Progress tab — tap photo → lightbox | Full-screen overlay opens with photo | ✅ |
+| IN-10 | Lightbox — tap backdrop → dismiss | Overlay closes | 🔲 |
+| IN-11 | Lightbox — close button → dismiss | Overlay closes | 🔲 |
+| IN-12 | Progress tab — compare mode | Two photos shown side by side | ✅ |
 
 ---
 
@@ -466,7 +485,7 @@ Living registry of test cases across all built modules. Updated as features are 
 | UP-02 | Home | Consent toggles in Profile → Preferences | 🚧 |
 | UP-03 | Insights | Analyzer tab real UI (Training Trend, Muscle Coverage, Goal Progress surfaced) | 🚧 |
 | UP-04 | Progress | Progress photo prompt at Finish Workout | 🚧 |
-| UP-05 | Progress | Insights → Progress tab timeline + compare mode | 🚧 |
+| UP-05 | Progress | Insights → Progress tab: photo grid + compare mode | ✅ |
 | UP-06 | History | Edit-save overwrites original entry (not duplicate) | 🚧 |
 | UP-07 | Payments | Paywall and feature gates | 🚧 |
 | UP-08 | Smart Replace | Contextual hint on 0-progress exercises after 5 min | 🚧 |

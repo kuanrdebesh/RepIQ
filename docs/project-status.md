@@ -304,6 +304,17 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
 - If no saved workout found (plan-day fallback): synthetic `SavedWorkoutData` built from plan exercises; still navigable with "not logged" placeholders
 - "Save to My Workouts" option appears on session cards when a real saved workout exists
 
+## History — Photo Lightbox and Slide Polish
+
+- Photo slides in WorkoutHistoryDetailPage and WorkoutHistoryPage are tappable (`cursor: zoom-in`)
+- Tapping a photo slide opens a full-screen lightbox overlay (`pg-lightbox-overlay`) with close button and click-outside dismiss
+- Same lightbox shared with Analytics → Progress tab photo grid
+- Quote slide: always dark background (`#0d0d0d`), white quoted text, gold author name (`#c9a84c`); author line shows profile name or "Me" fallback
+- Plain note slide: `var(--paper)` background, `var(--ink)` text, no author line
+- Note slide content: `personalNote` field with fallback to `note` field (both respected)
+- History page and header background: `var(--paper)` in light mode (was `var(--bg)`)
+- All workout photo `<img>` tags carry `loading="lazy"` to defer off-screen loads
+
 ## Edit From History — Timer And Data
 
 - `durationSeconds: number` added to `FinishWorkoutDraft` and persisted in `SavedWorkoutData`; records elapsed seconds at save time
@@ -463,6 +474,16 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
   - no active exercise highlight is required
 - Going back later and completing a non-last set should still trigger normal rest timing again
 
+## Demo Seed Data
+
+- 60-workout seed covering last 90 days (`demoData.ts`), dedup-merged on date to avoid duplicates
+- 38 seed images at `public/seed/r-*.jpg` — center-cropped 800×800 1:1, JPEG Q82, lazy-loaded
+- Images distributed across sessions; each workout carries up to 3 photos
+- Rewards on 2 of every 3 sessions: 1–10 total, deterministic mix of set / exercise / session level
+- Session highlight: quote slides (dark bg, white quoted text, gold author = profile name "Guru"); plain note slides (white bg, black text, no author)
+- Demo profile name auto-set to "Guru" on seed if profile has no name
+- Seed version flag `repiq-demo-seeded-v10`; stale flags (v3–v9) cleared automatically; old data fully replaced when stale flag detected
+
 ## Seed And Testing State
 
 - Default logger seed now starts with 5 exercises instead of 8
@@ -544,12 +565,14 @@ These are documented and should not be forgotten:
 ### Phase 2.5 — Insights Analyzer ← NEXT
 - Visualize the analytics already computed: Training Trend, Muscle Coverage, Goal Progress
 - Surface `computeTrainingTrend()`, `computeMuscleCoverage()`, `computeGoalProgress()` in Analyzer tab (currently "coming soon")
-- Volume per movement pattern, week-over-week comparison
-- Mood/energy overlays on trend chart (data now being collected)
+- Full task breakdown (A1–A15, 5 phases) in `docs/session-plan.md`
+- Volume per movement pattern, week-over-week comparison; movement balance chart (8 buckets)
+- Date range system (Rolling / To-date), Stats tab expansion, Progress sub-tabs
+- Weekly report + monthly report surfaces
 
-### Phase 3 — Progress Photos
-- Photo capture prompt at Finish Workout
-- Insights → Progress tab (timeline + compare)
+### Phase 3 — Progress Photos ✅ MOSTLY COMPLETE
+- ✅ Insights → Progress tab: photo grid (All + Progress filter), compare mode, full-screen lightbox on tap
+- ❌ Photo capture prompt at Finish Workout — still pending
 
 ### Phase 4 — Community
 - Groups, friends, leaderboard (friends/group scope first)
