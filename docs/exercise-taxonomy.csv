@@ -334,7 +334,7 @@ weighted-back-extension,Weighted Back Extension,Lower Back,Glutes | Hamstrings,h
 box-jump-weighted,Weighted Box Jump,Quads,Glutes | Calves,squat,none,dumbbell,advanced,dumbbell
 weighted-chest-dip,Weighted Chest Dip,Chest,Triceps | Front Delts,vertical_push,decline,bodyweight,advanced,bodyweight
 weighted-chin-up,Weighted Chin-Up,Lats,Biceps | Upper,vertical_pull,overhead,bodyweight,advanced,bodyweight
-weighted-crunch,Weighted Crunch,Core,Obliques,core_anterior,none,dumbbell,intermediate,dumbbell
+weighted-crunch,Weighted Crunch,Core,Obliques,core_anterior,none,dumbbell,intermediate,bodyweight_weighted
 weighted-dip,Weighted Dip,Chest,Triceps | Front Delts,vertical_push,decline,bodyweight,advanced,bodyweight
 weighted-plank,Weighted Plank,Core,Glutes | Shoulders,core_anterior,none,bodyweight,intermediate,bodyweight
 weighted-pull-up,Weighted Pull-Up,Lats,Upper | Biceps | Forearms,vertical_pull,overhead,bodyweight,intermediate,bodyweight
@@ -346,8 +346,8 @@ windshield-wiper,Windshield Wiper,Obliques,Core,core_rotational,none,bodyweight,
 woodchop,Woodchop,Core,Shoulders,core_rotational,none,cable,beginner,cable
 wrist-curl,Wrist Curl,Forearms,Biceps,isolation_pull,none,dumbbell,beginner,dumbbell
 wrist-extension,Wrist Extension,Forearms,,isolation_pull,none,dumbbell,beginner,dumbbell
-wrist-roller,Wrist Roller,Forearms,,isolation_pull,none,none,beginner,bodyweight
-yoke-carry,Yoke Carry,Traps,Glutes | Core | Quads,carry,none,none,advanced,bodyweight
+wrist-roller,Wrist Roller,Forearms,,isolation_pull,none,none,beginner,barbell
+yoke-carry,Yoke Carry,Traps,Glutes | Core | Quads,carry,none,none,advanced,barbell
 z-press,Z-Press,Shoulders,Core | Triceps,vertical_push,overhead,barbell,advanced,barbell
 zercher-squat,Zercher Squat,Quads,Glutes | Core | Upper,squat,none,barbell,advanced,barbell
 zone-2-running,Zone 2 Running,Cardio,Quads | Calves | Glutes,cardio,none,none,beginner,freestyle_cardio
