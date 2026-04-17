@@ -34,14 +34,28 @@ function getMovementFamily(pattern: MovementPattern): string {
   return "cardio";
 }
 
-// Maps user's equipment access level to the exercise types they can perform
+// Maps user's equipment tier to the exercise types they can perform.
+// resistance_band and cardio are standalone add-ons — not implied by any tier.
 const EQUIPMENT_ALLOWED_TYPES: Record<EquipmentAccess, CustomExerciseType[]> = {
   bodyweight:    ["bodyweight", "freestyle_cardio"],
   dumbbell_pair: ["bodyweight", "dumbbell", "freestyle_cardio"],
-  home_setup:    ["bodyweight", "dumbbell", "barbell", "resistance_band", "freestyle_cardio"],
-  basic_gym:     ["bodyweight", "dumbbell", "barbell", "cable", "machine", "resistance_band", "freestyle_cardio"],
-  full_gym:      ["bodyweight", "dumbbell", "barbell", "cable", "machine", "resistance_band", "freestyle_cardio"],
+  home_setup:    ["bodyweight", "dumbbell", "barbell", "freestyle_cardio"],
+  basic_gym:     ["bodyweight", "dumbbell", "barbell", "cable", "machine", "freestyle_cardio"],
+  full_gym:      ["bodyweight", "dumbbell", "barbell", "cable", "machine", "freestyle_cardio"],
 };
+
+// Merges tier types with the user's standalone add-ons.
+function buildAllowedEquipTypes(access: EquipmentAccess, additionalEquipment: string[]): CustomExerciseType[] {
+  const tier = EQUIPMENT_ALLOWED_TYPES[access] ?? EQUIPMENT_ALLOWED_TYPES.full_gym;
+  const addonMap: Record<string, CustomExerciseType> = {
+    resistance_band: "resistance_band",
+    cardio:          "freestyle_cardio",
+  };
+  const addons = additionalEquipment
+    .map((a) => addonMap[a])
+    .filter((a): a is CustomExerciseType => a != null);
+  return [...new Set([...tier, ...addons])];
+}
 
 type ReplacementEquipmentClass =
   | "machine"
@@ -56,18 +70,33 @@ type ReplacementEquipmentClass =
   | "smith_machine"
   | "cardio";
 
-function getAvailableReplacementEquipment(access: EquipmentAccess): Set<ReplacementEquipmentClass> {
+function getAvailableReplacementEquipment(
+  access: EquipmentAccess,
+  additionalEquipment: string[] = [],
+): Set<ReplacementEquipmentClass> {
+  let base: ReplacementEquipmentClass[];
   switch (access) {
     case "bodyweight":
-      return new Set(["bodyweight", "cardio"]);
+      base = ["bodyweight", "cardio"]; break;
     case "dumbbell_pair":
-      return new Set(["bodyweight", "dumbbell", "cardio"]);
+      base = ["bodyweight", "dumbbell", "cardio"]; break;
     case "home_setup":
-      return new Set(["bodyweight", "dumbbell", "barbell", "resistance_band", "trx", "cardio"]);
+      base = ["bodyweight", "dumbbell", "kettlebell", "barbell", "cardio"]; break;
     case "basic_gym":
+      base = ["bodyweight", "dumbbell", "barbell", "cable", "machine", "cardio"]; break;
     case "full_gym":
-      return new Set(["bodyweight", "dumbbell", "barbell", "cable", "machine", "resistance_band", "trx", "kettlebell", "landmine", "smith_machine", "cardio"]);
+    default:
+      base = ["bodyweight", "dumbbell", "kettlebell", "barbell", "cable", "machine", "smith_machine", "landmine", "cardio"]; break;
   }
+  const addonMap: Record<string, ReplacementEquipmentClass> = {
+    resistance_band:    "resistance_band",
+    suspension_trainer: "trx",
+    cardio:             "cardio",
+  };
+  const addons = additionalEquipment
+    .map((a) => addonMap[a])
+    .filter((a): a is ReplacementEquipmentClass => a != null);
+  return new Set([...base, ...addons]);
 }
 
 // Equipment accessibility — maps exerciseType to what the user needs available
@@ -429,13 +458,14 @@ export type GenConfig = {
   muscles: string[];
   duration: string;
   equipment: EquipmentAccess;
+  additionalEquipment: string[];
   seedOffset: number;
 };
 
 // Pure function — deterministically builds a WorkoutPlan from user inputs + library.
 // Called both by WorkoutPlannerPage (initial generate) and root App (shuffle on review).
 function buildGeneratedPlan(config: GenConfig, library: ExerciseWithTaxonomy[]): WorkoutPlan | null {
-  const { goal, muscles, duration, equipment, seedOffset } = config;
+  const { goal, muscles, duration, equipment, additionalEquipment, seedOffset } = config;
   const muscleKeywords: Record<string, string[]> = {
     Chest:      ["chest", "pec"],
     Back:       ["back", "lat", "row", "rhomboid", "trap"],
@@ -473,7 +503,7 @@ function buildGeneratedPlan(config: GenConfig, library: ExerciseWithTaxonomy[]):
     ex.exerciseType !== "freestyle_cardio" &&
     !STRETCH_IDS.has(ex.id)
   );
-  const allowedEquipTypes = EQUIPMENT_ALLOWED_TYPES[equipment] ?? EQUIPMENT_ALLOWED_TYPES.full_gym;
+  const allowedEquipTypes = buildAllowedEquipTypes(equipment, additionalEquipment ?? []);
   candidates = candidates.filter((ex) => {
     if (ex.exerciseType == null) return true;
     const neededEquipment = getEquipmentAccessibility(ex.exerciseType as CustomExerciseType);
@@ -4493,6 +4523,7 @@ function PlannerHomePage({
       muscles: genMuscles,
       duration: genDuration,
       equipment: genEquipment,
+      additionalEquipment: psychProfile?.additionalEquipment ?? [],
       seedOffset: 0
     };
     const plan = buildGeneratedPlan(genConfig, generationLibrary);
@@ -8533,6 +8564,7 @@ function pickPlanExercise(
   exp: ExperienceLevel,
   used: Set<string>,
   equipment: EquipmentAccess = "full_gym",
+  additionalEquipment: string[] = [],
 ): string | null {
   const allowedDifficulty: Record<ExperienceLevel, ExerciseDifficulty[]> = {
     never:        ["beginner"],
@@ -8543,7 +8575,7 @@ function pickPlanExercise(
   };
   const allowed = allowedDifficulty[exp] ?? ["beginner", "intermediate"];
 
-  const allowedEquipTypes = EQUIPMENT_ALLOWED_TYPES[equipment];
+  const allowedEquipTypes = buildAllowedEquipTypes(equipment, additionalEquipment);
   let candidates = catalog.filter((ex) =>
     slot.patterns.some((p) => ex.movementPattern === p) &&
     (ex.difficultyLevel == null || allowed.includes(ex.difficultyLevel as ExerciseDifficulty)) &&
@@ -8598,7 +8630,7 @@ function generateRepIQPlan(profile: UserPsychProfile): RepIQPlan {
       completedAt: null,
       exercises: tmpl.slots
         .map((slot, slotIdx) => {
-          const exerciseId = pickPlanExercise(generationCatalogExercises, slot, exp, used, equipment);
+          const exerciseId = pickPlanExercise(generationCatalogExercises, slot, exp, used, equipment, profile.additionalEquipment ?? []);
           if (!exerciseId) return null;
           // Warm-up sets: compound movements get 2 warm-up sets, first exercise of
           // each session always gets at least 1 (even if isolation)
@@ -15906,6 +15938,7 @@ export function App() {
     muscles: [],
     duration: "45 min",
     equipment: psychProfile.equipmentAccess ?? "full_gym",
+    additionalEquipment: psychProfile.additionalEquipment ?? [],
     seedOffset: 0,
   });
   const [plannerView, setPlannerView] = useState<"mine" | "library" | "generate">("mine");
@@ -18698,7 +18731,7 @@ export function App() {
           ...day,
           exercises: tmpl.slots
             .map((slot, slotIdx) => {
-              const exerciseId = pickPlanExercise(generationCatalogExercises, slot, exp, used, psychProfile.equipmentAccess ?? "full_gym");
+              const exerciseId = pickPlanExercise(generationCatalogExercises, slot, exp, used, psychProfile.equipmentAccess ?? "full_gym", psychProfile.additionalEquipment ?? []);
               if (!exerciseId) return null;
               const isCompound = slot.patterns.some((p) => COMPOUND_PATTERNS.has(p));
               const warmupSets = isCompound ? 2 : slotIdx === 0 ? 1 : 0;
@@ -18830,7 +18863,7 @@ export function App() {
           const tmpl = dayTemplates[di % dayTemplates.length];
           const newExercises = tmpl.slots
             .map((slot) => {
-              const id = pickPlanExercise(generationCatalogExercises, slot, exp, usedIds, psychProfile.equipmentAccess ?? "full_gym");
+              const id = pickPlanExercise(generationCatalogExercises, slot, exp, usedIds, psychProfile.equipmentAccess ?? "full_gym", psychProfile.additionalEquipment ?? []);
               if (!id) return null;
               usedIds.add(id);
               return { exerciseId: id, sets: scheme.sets, reps: scheme.reps, restSeconds: scheme.restSeconds } satisfies RepIQPlanExercise;
@@ -19050,7 +19083,7 @@ export function App() {
       : null;
     const smartReplaceAvailableEquipment: Set<ReplacementEquipmentClass> = (() => {
       const access = psychProfile.equipmentAccess ?? "full_gym";
-      return getAvailableReplacementEquipment(access);
+      return getAvailableReplacementEquipment(access, psychProfile.additionalEquipment ?? []);
     })();
     const replacementHistory = replaceTarget ? getStoredReplacementEvents() : [];
     const smartReplacementResults = replaceTarget
@@ -19798,7 +19831,7 @@ export function App() {
                 focus: tmpl.focus,
                 exercises: tmpl.slots
                   .map(slot => {
-                    const exId = pickPlanExercise(generationCatalogExercises, slot, exp, used, equipment);
+                    const exId = pickPlanExercise(generationCatalogExercises, slot, exp, used, equipment, psychProfile.additionalEquipment ?? []);
                     if (!exId) return null;
                     used.add(exId);
                     return {
@@ -19980,6 +20013,7 @@ export function App() {
               muscles: [],
               duration: "45 min",
               equipment: psychProfile.equipmentAccess ?? "full_gym",
+              additionalEquipment: psychProfile.additionalEquipment ?? [],
               seedOffset: 0,
             });
             startPlanWorkout(plan, "generated");

@@ -192,6 +192,7 @@ export interface UserPsychProfile {
   secondaryGoal: TrainingGoal | null;
   experienceLevel: ExperienceLevel | null;
   equipmentAccess: EquipmentAccess | null;
+  additionalEquipment: string[];          // standalone add-ons: "resistance_band" | "suspension_trainer" | "cardio"
   scheduleCommitment: ScheduleCommitment | null;
   onboardingCompletedAt: string | null;   // ISO timestamp
   // ── Personal info collected at onboarding ──
@@ -362,6 +363,7 @@ export const DEFAULT_PSYCH_PROFILE: UserPsychProfile = {
   secondaryGoal: null,
   experienceLevel: null,
   equipmentAccess: null,
+  additionalEquipment: [],
   scheduleCommitment: null,
   onboardingCompletedAt: null,
   name: null,

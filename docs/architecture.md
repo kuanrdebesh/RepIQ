@@ -156,7 +156,7 @@ Equipment access is split into two independent axes:
 | Tier | Equipment |
 |---|---|
 | `bodyweight` | bodyweight |
-| `dumbbell_pair` | bodyweight, dumbbell, kettlebell |
+| `dumbbell_pair` | bodyweight, dumbbell |
 | `home_setup` | bodyweight, dumbbell, kettlebell, barbell *(implies squat rack)* |
 | `basic_gym` | bodyweight, dumbbell, cable, machine, barbell *(no smith, no landmine, no kettlebell)* |
 | `full_gym` | bodyweight, dumbbell, kettlebell, barbell, cable, machine, smith_machine, landmine |
