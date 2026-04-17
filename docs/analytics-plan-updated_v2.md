@@ -219,6 +219,8 @@ Keep these top-level analytics tabs:
 2. `Stats`
 3. `Progress`
 
+Progress gets sub-tabs once goals and measurements land (see §10.3).
+
 Add reports as a sub-surface later, not as daily-first clutter.
 
 Future report surfaces:
@@ -232,6 +234,32 @@ These can live under:
 - Profile -> Reports
 - Insights -> Summary detail entry points
 - Home passive cards when available
+
+## 6.2 Goal tracking placement
+
+Goal-related work has three distinct jobs and they should live on three different surfaces. Mixing them creates duplicate goal presence and confuses "where do I go to do X?"
+
+| Job | Surface | Rationale |
+|---|---|---|
+| Define / edit / retire goals | `Planner → Goals` (new sub-tab) | Goals are inputs to plan generation. They belong next to plans, not in analytics. |
+| Track progress toward goals | `Insights → Progress → Goals` (new sub-view) | Goal progress is evidence — belongs next to photos and PRs. |
+| Daily awareness of goal alignment | `Insights → Summary` (3-score card: Consistency / Goal Alignment / Movement Balance) | Keeps the daily surface summary-first. |
+| Passive watch on priority goal | `Home` (optional card, later) | Same pattern as streaks and PR banner. |
+
+Goal creation and goal tracking are different mental models. Creation is a commitment act (planning). Tracking is a looking-back act (analytics). The split above honors that.
+
+Reuse of existing engine: `computeGoalAlignment` feeds the Summary score card; `computeGoalProgress` feeds the Progress → Goals sub-view. No new engine work needed to wire these.
+
+## 6.3 Planner tabs
+
+With the Goal Planner coming, Planner hosts four sub-tabs:
+
+1. `My Workouts`
+2. `Library`
+3. `Generate`
+4. `Goals` (new — create, edit, retire goals)
+
+Generated plans should read active goals so session generation is goal-aware.
 
 
 ## 7. Daily UX Rule
@@ -529,17 +557,42 @@ This is also where users can inspect the “why” behind daily takeaways withou
 
 Purpose:
 
-- exercise and body progress
+- evidence of progress across goals, body, and performance
 
-Contains:
+Structure — sub-tabs (not a scroll-wall):
 
+```
+Progress
+├── Goals        ← goal progress cards, trajectory, ETA
+├── Body         ← photos (already built), measurements (later)
+└── Performance  ← PR timeline, exercise progress, plateaus, drill-down
+```
+
+Each sub-view answers one clear question:
+
+- **Goals:** am I on track to what I said I wanted?
+- **Body:** how does my body look over time?
+- **Performance:** how are my lifts trending?
+
+Sub-view contents:
+
+**Goals** (depends on Goal Planner shipping)
+- Active goal cards: % complete, current trajectory, ETA at current pace
+- Tap into goal detail for breakdown by contributing metric
+- Reuses `computeGoalProgress`; new goal definitions come from Planner → Goals
+
+**Body**
+- Progress photo grid + compare (already built)
+- Measurements (weight, body fat, circumferences — later)
+
+**Performance**
 - PR timeline
-- Exercise progress list
+- Exercise progress list with status chips (improving / stable / stalled / plateau / regressing)
 - Plateau list
-- Exercise detail drill-down
-- Progress photos
-- Measurements
-- Later: set-record table per exercise
+- Exercise detail drill-down with set-record table
+- Later: per-exercise PR breakdown (heaviest, best 1RM, best set volume, best reps)
+
+Progress renders zero actions per the layer model — this is an evidence surface, not an instruction surface.
 
 
 ## 11. Daily vs Weekly vs Monthly Logic

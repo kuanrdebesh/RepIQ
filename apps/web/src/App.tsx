@@ -15,9 +15,10 @@ import inclineDumbbellPressImage from "./assets/incline-dumbbell-press.svg";
 import anatomyFrontImg from "./assets/anatomy-front.png";
 import anatomyBackImg from "./assets/anatomy-back.png";
 import { allCatalogExercises, generationCatalogExercises } from "./catalog";
-import { getStoredReplacementEvents, persistReplacementEvent, getStoredExercisePreferences, persistExercisePreference, getStoredHiddenSuggestions, persistHiddenSuggestion, removeHiddenSuggestion, themeStorageKey, workoutSettingsStorageKey, customExercisesStorageKey, savedWorkoutsStorageKey, workoutPlansStorageKey, planBuilderDraftStorageKey, psychProfileStorageKey, postWorkoutPsychStorageKey, dailyReadinessStorageKey, sessionBehaviorStorageKey, derivedPsychStorageKey, repiqPlanStorageKey, getStoredSavedWorkouts, persistSavedWorkout, persistSavedWorkoutsList, overwriteSavedWorkout, getStoredPsychProfile, persistPsychProfile, getStoredRepIQPlan, persistRepIQPlan, getStoredPostWorkoutPsych, persistPostWorkoutPsych, getStoredDailyReadiness, persistDailyReadiness, getStoredSessionBehavior, persistSessionBehavior, getStoredWorkoutPlans, persistWorkoutPlans, getStoredPlanBuilderDraft, persistPlanBuilderDraft, SAMPLE_WORKOUT_PLANS, SAMPLE_PLAN_IDS, seedWorkoutHistory } from "./storage";
+import { getStoredReplacementEvents, persistReplacementEvent, getStoredExercisePreferences, persistExercisePreference, getStoredHiddenSuggestions, persistHiddenSuggestion, removeHiddenSuggestion, themeStorageKey, workoutSettingsStorageKey, customExercisesStorageKey, savedWorkoutsStorageKey, workoutPlansStorageKey, planBuilderDraftStorageKey, psychProfileStorageKey, postWorkoutPsychStorageKey, dailyReadinessStorageKey, sessionBehaviorStorageKey, derivedPsychStorageKey, repiqPlanStorageKey, getStoredSavedWorkouts, persistSavedWorkout, persistSavedWorkoutsList, overwriteSavedWorkout, getStoredPsychProfile, persistPsychProfile, getStoredRepIQPlan, persistRepIQPlan, getStoredPostWorkoutPsych, persistPostWorkoutPsych, getStoredDailyReadiness, persistDailyReadiness, getStoredSessionBehavior, persistSessionBehavior, getStoredWorkoutPlans, persistWorkoutPlans, getStoredPlanBuilderDraft, persistPlanBuilderDraft, SAMPLE_WORKOUT_PLANS, SAMPLE_PLAN_IDS, seedWorkoutHistory, getStoredDateRangePrefs, persistDateRangePrefs } from "./storage";
+import { resolveDateRange, isWithinRange, ROLLING_CHIPS, TO_DATE_CHIPS, chipLabel } from "./analytics/dateRange";
 import { DEFAULT_PSYCH_PROFILE, deriveTimeOfDay, buildSessionBehaviorSignals, createInitialSwipeState, COMPOUND_PATTERNS } from "./types";
-import type { FlowState, DraftSet, ExerciseDraft, DetailTab, ThemePreference, DraftSetType, AppView, MotivationalWhy, TrainingGoal, ExperienceLevel, EquipmentAccess, ScheduleCommitment, MoodRating, EnergyRating, RPERating, ThreePointScale, TimeOfDay, SessionSource, Trend, MotivationStyle, UserPsychProfile, PostWorkoutPsych, DailyReadiness, SessionBehaviorSignals, DerivedPsychProfile, SplitType, RepIQPlanExercise, RepIQPlanDay, RepIQPlanWeek, RepIQPlan, PlannedExercise, WorkoutPlan, PlanBuilderMode, PlanSessionSource, ActivePlanSession, WorkoutSettings, WorkoutMeta, RewardCategory, RewardLevel, AddExerciseMode, CreateExerciseStep, CustomExerciseType, MeasurementType, MovementSide, MovementPattern, ExerciseDifficulty, ExerciseAngle, ExerciseEquipment, ReplacementReason, ReplacementEvent, ExerciseWithTaxonomy, ExercisePreferenceEntry, ExercisePreferenceMap, CustomExerciseInput, LoggerReward, RewardSummary, FinishedExerciseSummary, FinishWorkoutDraft, SavedWorkoutData, ExerciseRestDefaults, SwipeState, ActiveRestTimer, MuscleRegion } from "./types";
+import type { DateRangePrefs, DateRangeMode, RollingChip, ToDateChip, DateRangeChip, FlowState, DraftSet, ExerciseDraft, DetailTab, ThemePreference, DraftSetType, AppView, MotivationalWhy, TrainingGoal, ExperienceLevel, EquipmentAccess, ScheduleCommitment, MoodRating, EnergyRating, RPERating, ThreePointScale, TimeOfDay, SessionSource, Trend, MotivationStyle, UserPsychProfile, PostWorkoutPsych, DailyReadiness, SessionBehaviorSignals, DerivedPsychProfile, SplitType, RepIQPlanExercise, RepIQPlanDay, RepIQPlanWeek, RepIQPlan, PlannedExercise, WorkoutPlan, PlanBuilderMode, PlanSessionSource, ActivePlanSession, WorkoutSettings, WorkoutMeta, RewardCategory, RewardLevel, AddExerciseMode, CreateExerciseStep, CustomExerciseType, MeasurementType, MovementSide, MovementPattern, ExerciseDifficulty, ExerciseAngle, ExerciseEquipment, ReplacementReason, ReplacementEvent, ExerciseWithTaxonomy, ExercisePreferenceEntry, ExercisePreferenceMap, CustomExerciseInput, LoggerReward, RewardSummary, FinishedExerciseSummary, FinishWorkoutDraft, SavedWorkoutData, ExerciseRestDefaults, SwipeState, ActiveRestTimer, MuscleRegion } from "./types";
 
 // ── Types — see types.ts ──────────────────────────────────────────────────────
 // ── Psych types, plan types, storage functions — see types.ts / storage.ts ────
@@ -12853,6 +12854,71 @@ function ProgressPhotoTab({ savedWorkouts }: { savedWorkouts: SavedWorkoutData[]
   );
 }
 
+// ── Date Range Selector ───────────────────────────────────────────────────────
+// See docs/analytics-plan-updated_v1.md §8 and docs/analytics-insight-model.md §9.
+function DateRangeSelector({
+  mode,
+  rollingChip,
+  toDateChip,
+  onModeChange,
+  onChipChange,
+  rangeLabel,
+  comparisonLabel,
+}: {
+  mode: DateRangeMode;
+  rollingChip: RollingChip;
+  toDateChip: ToDateChip;
+  onModeChange: (mode: DateRangeMode) => void;
+  onChipChange: (chip: DateRangeChip) => void;
+  rangeLabel: string;
+  comparisonLabel?: string;
+}) {
+  const chips: DateRangeChip[] = mode === "rolling" ? ROLLING_CHIPS : TO_DATE_CHIPS;
+  const activeChip: DateRangeChip = mode === "rolling" ? rollingChip : toDateChip;
+  return (
+    <div className="dr-selector" role="group" aria-label="Date range">
+      <div className="dr-seg" role="tablist" aria-label="Range mode">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "rolling"}
+          className={`dr-seg-btn${mode === "rolling" ? " is-active" : ""}`}
+          onClick={() => onModeChange("rolling")}
+        >
+          Rolling
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "toDate"}
+          className={`dr-seg-btn${mode === "toDate" ? " is-active" : ""}`}
+          onClick={() => onModeChange("toDate")}
+        >
+          To date
+        </button>
+      </div>
+      <div className="dr-chip-row" role="tablist" aria-label="Range">
+        {chips.map((c) => (
+          <button
+            key={c}
+            type="button"
+            role="tab"
+            aria-selected={activeChip === c}
+            className={`dr-chip${activeChip === c ? " dr-chip-active" : ""}`}
+            onClick={() => onChipChange(c)}
+          >
+            {chipLabel(c)}
+          </button>
+        ))}
+      </div>
+      <div className="dr-range-meta">
+        <span className="dr-range-label">{rangeLabel}</span>
+        {comparisonLabel && <span className="dr-range-cmp">vs {comparisonLabel.toLowerCase()}</span>}
+      </div>
+    </div>
+  );
+}
+
 // ── Insights Page ─────────────────────────────────────────────────────────────
 function InsightsPage({
   savedWorkouts,
@@ -12883,22 +12949,61 @@ function InsightsPage({
   const [expandedInsight, setExpandedInsight] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
 
+  // ── Date range selector state ─────────────────────────────────────────────
+  // Controlled here; persisted per-mode to localStorage. Progress tab ignores
+  // this — photo surfaces are range-independent (see analytics-insight-model §10).
+  const [dateRangePrefs, setDateRangePrefs] = useState<DateRangePrefs>(() => getStoredDateRangePrefs());
+  const todayISO = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const resolvedRange = useMemo(
+    () => resolveDateRange(
+      dateRangePrefs.lastMode,
+      dateRangePrefs.lastMode === "rolling" ? dateRangePrefs.rollingChip : dateRangePrefs.toDateChip,
+      todayISO,
+    ),
+    [dateRangePrefs, todayISO],
+  );
+  const rangedWorkouts = useMemo(
+    () => savedWorkouts.filter((w) => isWithinRange(w.savedAt, resolvedRange)),
+    [savedWorkouts, resolvedRange],
+  );
+  function handleDateRangeModeChange(next: DateRangeMode) {
+    setDateRangePrefs((prev) => {
+      const updated = { ...prev, lastMode: next };
+      persistDateRangePrefs(updated);
+      return updated;
+    });
+  }
+  function handleDateRangeChipChange(chip: DateRangeChip) {
+    setDateRangePrefs((prev) => {
+      const updated: DateRangePrefs =
+        prev.lastMode === "rolling"
+          ? { ...prev, rollingChip: chip as RollingChip }
+          : { ...prev, toDateChip: chip as ToDateChip };
+      persistDateRangePrefs(updated);
+      return updated;
+    });
+  }
+
   // ── Analytics (all memoized) ──────────────────────────────────────────────
   const targetPerWeek = getSafeTargetPerWeek(psychProfile.scheduleCommitment, psychProfile.daysPerWeekPref);
   const cycleDays = psychProfile.cycleDays ?? 7;
 
-  const consistency = useMemo(() => computeConsistencyStats(savedWorkouts, psychProfile), [savedWorkouts, psychProfile]);
-  const sessionSummary = useMemo(() => computeSessionSummary(savedWorkouts), [savedWorkouts]);
-  const laggingMuscles = useMemo(() => computeLaggingMuscles(savedWorkouts, psychProfile, library), [savedWorkouts, psychProfile, library]);
-  const exerciseProgress = useMemo(() => computeExerciseProgress(savedWorkouts), [savedWorkouts]);
-  const plateaus = useMemo(() => computePlateauExercises(savedWorkouts), [savedWorkouts]);
-  const rotations = useMemo(() => computeExerciseRotation(savedWorkouts), [savedWorkouts]);
-  const goalAlignment = useMemo(() => computeGoalAlignment(savedWorkouts, psychProfile), [savedWorkouts, psychProfile]);
-  const movementBalance = useMemo(() => computeMovementBalance(savedWorkouts, library), [savedWorkouts, library]);
-  const muscleCoverage = useMemo(() => computeMuscleCoverage(savedWorkouts, cycleDays), [savedWorkouts, cycleDays]);
-  const trainingTrend = useMemo(() => computeTrainingTrend(savedWorkouts, cycleDays), [savedWorkouts, cycleDays]);
-  const goalProgress = useMemo(() => computeGoalProgress(savedWorkouts, psychProfile), [savedWorkouts, psychProfile]);
-  const prsHistory = useMemo(() => computePRsHistory(savedWorkouts), [savedWorkouts]);
+  // Analytics use the date-range-filtered list so selector changes reflect in
+  // Summary and Stats. weekStats + hasEnoughData below keep the full list on
+  // purpose: "this week" is definitionally the current week, and the empty-
+  // state gate should not flip just because the user narrows the window.
+  const consistency = useMemo(() => computeConsistencyStats(rangedWorkouts, psychProfile), [rangedWorkouts, psychProfile]);
+  const sessionSummary = useMemo(() => computeSessionSummary(rangedWorkouts), [rangedWorkouts]);
+  const laggingMuscles = useMemo(() => computeLaggingMuscles(rangedWorkouts, psychProfile, library), [rangedWorkouts, psychProfile, library]);
+  const exerciseProgress = useMemo(() => computeExerciseProgress(rangedWorkouts), [rangedWorkouts]);
+  const plateaus = useMemo(() => computePlateauExercises(rangedWorkouts), [rangedWorkouts]);
+  const rotations = useMemo(() => computeExerciseRotation(rangedWorkouts), [rangedWorkouts]);
+  const goalAlignment = useMemo(() => computeGoalAlignment(rangedWorkouts, psychProfile), [rangedWorkouts, psychProfile]);
+  const movementBalance = useMemo(() => computeMovementBalance(rangedWorkouts, library), [rangedWorkouts, library]);
+  const muscleCoverage = useMemo(() => computeMuscleCoverage(rangedWorkouts, cycleDays), [rangedWorkouts, cycleDays]);
+  const trainingTrend = useMemo(() => computeTrainingTrend(rangedWorkouts, cycleDays), [rangedWorkouts, cycleDays]);
+  const goalProgress = useMemo(() => computeGoalProgress(rangedWorkouts, psychProfile), [rangedWorkouts, psychProfile]);
+  const prsHistory = useMemo(() => computePRsHistory(rangedWorkouts), [rangedWorkouts]);
   const actionPlan = useMemo(() => computeActionPlan(laggingMuscles, plateaus, rotations, goalAlignment, consistency, targetPerWeek), [laggingMuscles, plateaus, rotations, goalAlignment, consistency, targetPerWeek]);
   const weekStats = useMemo(() => getThisWeekStats(savedWorkouts), [savedWorkouts]);
 
@@ -13035,6 +13140,18 @@ function InsightsPage({
             <button type="button" className={tab === "progress" ? "is-active" : ""} aria-selected={tab === "progress"} onClick={() => setTab("progress")}>Progress</button>
           </div>
         </div>
+
+        {tab !== "progress" && (
+          <DateRangeSelector
+            mode={dateRangePrefs.lastMode}
+            rollingChip={dateRangePrefs.rollingChip}
+            toDateChip={dateRangePrefs.toDateChip}
+            onModeChange={handleDateRangeModeChange}
+            onChipChange={handleDateRangeChipChange}
+            rangeLabel={resolvedRange.label}
+            comparisonLabel={resolvedRange.comparisonLabel}
+          />
+        )}
 
         {tab === "summary" && (
           <section className="planner-section az-section">

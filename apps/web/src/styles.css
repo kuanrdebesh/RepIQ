@@ -15049,3 +15049,81 @@ ol {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ── Analytics date range selector ──────────────────────────────────────── */
+/* See docs/analytics-plan-updated_v1.md §8. Layout: segmented mode control,
+   chip row underneath, range/comparison meta line below. */
+.dr-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+.dr-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  border-radius: 999px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  padding: 2px;
+  gap: 2px;
+}
+.dr-seg-btn {
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--subtle-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.dr-seg-btn.is-active {
+  background: var(--ink);
+  color: var(--paper);
+}
+.dr-chip-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.dr-chip-row::-webkit-scrollbar { display: none; }
+.dr-chip {
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--subtle-text);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.dr-chip-active {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--line));
+  color: var(--accent);
+}
+.dr-range-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.72rem;
+  color: var(--subtle-text);
+}
+.dr-range-label {
+  font-weight: 600;
+  color: var(--ink);
+}
+.dr-range-cmp {
+  font-weight: 500;
+}

@@ -44,6 +44,48 @@ export type ExerciseDraft = {
   draftSets: DraftSet[];
 };
 
+// ---------------------------------------------------------------------------
+// Analytics date range system — see docs/analytics-plan-updated_v1.md §8
+// Two modes: rolling windows ("last N days") and period-to-date windows.
+// Both produce a resolved range with an optional comparison window.
+// ---------------------------------------------------------------------------
+export type DateRangeMode = "rolling" | "toDate";
+
+export type RollingChip =
+  | "7d"
+  | "14d"
+  | "30d"
+  | "60d"
+  | "90d"
+  | "6m"
+  | "1y"
+  | "all";
+
+export type ToDateChip = "wtd" | "mtd" | "qtd" | "ytd" | "all";
+
+export type DateRangeChip = RollingChip | ToDateChip;
+
+export type ResolvedDateRange = {
+  mode: DateRangeMode;
+  chip: DateRangeChip;
+  /** ISO YYYY-MM-DD, inclusive */
+  start: string;
+  /** ISO YYYY-MM-DD, inclusive (today unless chip pins a different end) */
+  end: string;
+  /** Optional prior window for comparison. Undefined when no fair comparison exists. */
+  comparisonStart?: string;
+  comparisonEnd?: string;
+  /** Human-facing labels */
+  label: string;
+  comparisonLabel?: string;
+};
+
+export type DateRangePrefs = {
+  lastMode: DateRangeMode;
+  rollingChip: RollingChip;
+  toDateChip: ToDateChip;
+};
+
 export type DetailTab = "summary" | "history" | "howto";
 export type ThemePreference = "light" | "dark" | "system";
 export type DraftSetType = "warmup" | "normal" | "drop" | "restpause" | "failure";

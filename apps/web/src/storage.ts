@@ -6,6 +6,7 @@ import type {
   DailyReadiness, SessionBehaviorSignals, WorkoutPlan, PlanBuilderMode,
   ThemePreference, ReplacementEvent, ExercisePreferenceMap,
   FinishedExerciseSummary, LoggerReward,
+  DateRangePrefs, DateRangeMode, RollingChip, ToDateChip,
 } from "./types";
 import type { WorkoutMediaAsset } from "@repiq/shared";
 
@@ -387,6 +388,53 @@ export function getStoredThemePreference(): ThemePreference {
   return stored === "light" || stored === "dark" || stored === "system"
     ? stored
     : "system";
+}
+
+// ── Analytics date range prefs ───────────────────────────────────────────────
+const dateRangePrefsStorageKey = "repiq.dateRange.v1";
+
+const DEFAULT_DATE_RANGE_PREFS: DateRangePrefs = {
+  lastMode: "rolling",
+  rollingChip: "30d",
+  toDateChip: "mtd"
+};
+
+const ROLLING_CHIP_SET: Set<RollingChip> = new Set([
+  "7d", "14d", "30d", "60d", "90d", "6m", "1y", "all"
+]);
+const TO_DATE_CHIP_SET: Set<ToDateChip> = new Set([
+  "wtd", "mtd", "qtd", "ytd", "all"
+]);
+
+export function getStoredDateRangePrefs(): DateRangePrefs {
+  if (typeof window === "undefined") return { ...DEFAULT_DATE_RANGE_PREFS };
+  try {
+    const raw = window.localStorage.getItem(dateRangePrefsStorageKey);
+    if (!raw) return { ...DEFAULT_DATE_RANGE_PREFS };
+    const parsed = JSON.parse(raw) as Partial<DateRangePrefs>;
+    const lastMode: DateRangeMode =
+      parsed.lastMode === "toDate" ? "toDate" : "rolling";
+    const rollingChip: RollingChip =
+      parsed.rollingChip && ROLLING_CHIP_SET.has(parsed.rollingChip)
+        ? parsed.rollingChip
+        : DEFAULT_DATE_RANGE_PREFS.rollingChip;
+    const toDateChip: ToDateChip =
+      parsed.toDateChip && TO_DATE_CHIP_SET.has(parsed.toDateChip)
+        ? parsed.toDateChip
+        : DEFAULT_DATE_RANGE_PREFS.toDateChip;
+    return { lastMode, rollingChip, toDateChip };
+  } catch {
+    return { ...DEFAULT_DATE_RANGE_PREFS };
+  }
+}
+
+export function persistDateRangePrefs(prefs: DateRangePrefs): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(dateRangePrefsStorageKey, JSON.stringify(prefs));
+  } catch {
+    // quota or serialization — ignore
+  }
 }
 
 // Note: getStoredWorkoutSettings and getStoredCustomExercises remain in App.tsx
