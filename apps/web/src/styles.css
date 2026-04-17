@@ -1198,15 +1198,26 @@ ol {
   gap: 8px;
 }
 
-/* ── Photo cards (new layout) ─────────────────────────────────── */
+/* ── Photo cards — horizontal slider ──────────────────────────── */
 .finish-media-cards {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 10px;
   margin-top: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+}
+
+.finish-media-cards::-webkit-scrollbar {
+  display: none;
 }
 
 .finish-media-card {
+  flex: 0 0 160px;
+  scroll-snap-align: start;
   border-radius: 12px;
   overflow: hidden;
   border: 2px solid var(--line);
@@ -1221,7 +1232,7 @@ ol {
 .finish-media-img-wrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 3 / 4;
   cursor: pointer;
   overflow: hidden;
   background: #000;
@@ -1241,44 +1252,23 @@ ol {
   right: 0;
   background: linear-gradient(transparent, rgba(0,0,0,0.72));
   color: #f59e0b;
-  font-size: 0.8rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  padding: 20px 10px 8px;
+  padding: 18px 8px 6px;
   letter-spacing: 0.02em;
-}
-
-.finish-media-edit-hint {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(0,0,0,0.4);
-  color: white;
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 20px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  pointer-events: none;
-  white-space: nowrap;
-}
-
-.finish-media-img-wrap:hover .finish-media-edit-hint {
-  opacity: 1;
 }
 
 .finish-media-remove {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 26px;
-  height: 26px;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
   border: none;
   color: white;
-  font-size: 1rem;
+  font-size: 0.9rem;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -1288,24 +1278,26 @@ ol {
   z-index: 2;
 }
 
-/* Progress pic toggle pill — sits below the image */
+/* Progress pic toggle — compact pill below the image */
 .finish-media-progress-toggle {
   display: flex;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  gap: 5px;
   width: 100%;
-  padding: 10px 14px;
+  padding: 7px 8px;
   background: transparent;
   border: none;
-  font-size: 0.82rem;
+  font-size: 0.72rem;
   font-weight: 500;
   color: var(--subtle-text);
   cursor: pointer;
-  text-align: left;
+  text-align: center;
   transition: color 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
 }
 
-.finish-media-progress-toggle:hover {
+.finish-media-progress-toggle:active {
   background: var(--surface-alt);
 }
 
@@ -1315,8 +1307,8 @@ ol {
 }
 
 .finish-media-progress-toggle-dot {
-  width: 16px;
-  height: 16px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
   border: 2px solid currentColor;
   display: inline-flex;
@@ -1333,8 +1325,8 @@ ol {
 
 .finish-media-progress-toggle.is-active .finish-media-progress-toggle-dot::after {
   content: "";
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: white;
 }

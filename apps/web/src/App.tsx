@@ -7854,7 +7854,6 @@ function FinishWorkoutPage({
                             onClick={(e) => { e.stopPropagation(); removePhoto(index); }}
                             aria-label="Remove photo"
                           >×</button>
-                          <div className="finish-media-edit-hint">Tap to edit</div>
                         </div>
                         {/* Progress pic toggle — always visible below the image */}
                         <button
