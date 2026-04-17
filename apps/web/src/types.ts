@@ -36,6 +36,7 @@ export type ExerciseDraft = {
   supportsExternalLoad?: boolean;
   implement?: ExerciseImplement;
   movementSide?: MovementSide;
+  movementPattern?: MovementPattern;
   isCustom?: boolean;
   libraryStatus?: "active" | "archived";
   howTo: string[];

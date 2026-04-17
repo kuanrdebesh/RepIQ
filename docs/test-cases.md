@@ -300,24 +300,24 @@ Living registry of test cases across all built modules. Updated as features are 
 
 | ID | Test | Expected | Status |
 |---|---|---|---|
-| SR-01 | Replace exercise via ⋮ menu | Opens AddExercisePage in replace mode; query blank; rank hint chips visible | ✅ |
-| SR-02 | Reason — machine_taken | Exercises with machine exerciseType excluded from browse | ✅ |
-| SR-03 | Reason — no_equipment | Only bodyweight_only exercises shown | ✅ |
-| SR-04 | Reason — too_difficult | Difficulty tier weights advanced exercises down; beginner/intermediate ranked higher | 🔲 |
-| SR-05 | Reason — best_match (default) | No equipment/difficulty filter; full catalog ranked by 10-tuple | ✅ |
-| SR-06 | Reason — just_change (swap button) | No filter; all candidates scored; variety-biased by novelty tier | ✅ |
-| SR-07 | Rank hint chip per exercise row | Shows "Same pattern" / "Same muscle" / "Bodyweight alt" style chip in replace mode | ✅ |
-| SR-08 | Confirm swap — 0 sets logged | Silent swap; no confirmation modal | ✅ |
-| SR-09 | Confirm swap — sets already logged | Confirmation modal: "Clear N sets and replace?" | ✅ |
-| SR-10 | Exercise replaced in-place | Same position in session; rest timer preserved; sets reset | ✅ |
-| SR-11 | ReplacementEvent stored | Written to `repiq-replacement-events`; includes full `rankTuple` | ✅ |
-| SR-12 | `preference` reason normalised | `normalizeReplacementReason("preference")` → stored as `"best_match"` | 🔲 |
-| SR-13 | Fatigue tier — over-trained muscle | Exercise targeting already-loaded muscle ranked lower | ✅ |
-| SR-14 | Hard exclusion — same exercise | Original exercise never appears as a suggestion | ✅ |
-| SR-15 | Hard exclusion — session duplicate | Exercises already in the session are excluded | ✅ |
-| SR-16 | Swap button (⇄) visible on exercise card header | Icon present; opacity 0.55 at rest | ✅ |
-| SR-17 | Swap button tap | Opens replace mode with just_change reason; no reason picker shown | ✅ |
-| SR-18 | Replace mode query reset | Search query is "" not preFilterMuscle when replace opens | ✅ |
+| SR-01 | Replace exercise via ⋮ menu | Opens AddExercisePage directly in replace mode | ✅ |
+| SR-02 | Top-5 suggestions | Replace mode shows the 5 highest-ranked suggestions first | ✅ |
+| SR-03 | Inline reason chips | Reason choices are visible in replace mode without blocking the user first | ✅ |
+| SR-04 | Reason — machine_taken | Re-sorts replace mode for non-machine substitutes | ✅ |
+| SR-05 | Reason — no_equipment | Re-sorts replace mode with bodyweight / no-equipment options prioritized | ✅ |
+| SR-06 | Reason — too_difficult | Re-sorts replace mode with easier matched variations ranked higher | ✅ |
+| SR-07 | Reason — pain_discomfort | Re-sorts replace mode with safer same-muscle alternatives ranked higher | ✅ |
+| SR-08 | Browse all exercises | Leaves replace mode active but removes the same-muscle restriction | ✅ |
+| SR-09 | Replace mode ranking hints | Matching copy appears on exercise rows in replace mode | ✅ |
+| SR-10 | Equipment eligibility | Candidates the user cannot perform are excluded from reason-specific replace mode, including TRX-specific options when unavailable | ✅ |
+| SR-11 | Hard exclusion — same exercise | Original exercise never appears as a replacement option | ✅ |
+| SR-12 | Hard exclusion — session duplicate | Exercises already in the session are excluded | ✅ |
+| SR-13 | Confirm swap — 0 sets logged | Silent swap; no confirmation modal | ✅ |
+| SR-14 | Confirm swap — sets already logged | Confirmation modal: "Clear N logged sets and replace..." | ✅ |
+| SR-15 | Exercise replaced in-place | Same position in session; rest timer, note, and superset preserved; sets reset | ✅ |
+| SR-16 | ReplacementEvent stored | Written to `repiq-replacement-events`; includes normalized reason, setsAlreadyLogged, and matchScore | ✅ |
+| SR-17 | Repeated replacement preference | Previously chosen replacement gains extra ranking weight next time | ✅ |
+| SR-18 | Replace mode query reset | Search query is `""`; same-muscle prefilter is applied separately from the query | ✅ |
 
 ---
 

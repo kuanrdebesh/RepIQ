@@ -489,7 +489,7 @@ These are documented and should not be forgotten:
 
 ## Smart Replace
 
-- Smart exercise replacement designed and stubbed — entry point already exists in logger ⋮ menu
+- Smart exercise replacement is now implemented through the shared `AddExercisePage` replace mode
 - Core types added to App.tsx:
   - `MovementPattern` — 14 patterns covering all movement types
   - `ExerciseAngle` — flat / incline / decline / overhead / neutral / prone / none
@@ -503,6 +503,16 @@ These are documented and should not be forgotten:
   - `getMovementFamily()` — groups patterns into push/pull/legs/core/carry/cardio families
   - `groupSetsByMovementPattern()` — aggregates session volume by pattern family for Insights
 - Storage: `repiq-replacement-events` key with `persistReplacementEvent()` / `getStoredReplacementEvents()`
+- Current shipped behavior:
+  - logger `Replace` opens `AddExercisePage` directly in replace mode
+  - reason chips inside replace mode drive reason-specific sorting without adding a blocking step
+  - replace mode shows the top 5 ranked same-primary-muscle suggestions by default, with a `Browse all exercises` escape hatch
+  - there is no dedicated ranked Smart Replace suggestion sheet in the main flow
+  - scoring checks exact equipment classes, including TRX / suspension trainer and resistance band variants
+  - swaps preserve rest timer, note, and superset placement
+  - swaps with logged sets require confirmation before clearing and replacing
+  - replacement events are persisted with reason, logged-set count, and score
+  - repeated user replacements are promoted in future ranking through stored preference history
 - Design spec in `docs/smart-replace.md`
 
 ## Exercise Taxonomy

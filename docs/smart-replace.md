@@ -1,14 +1,18 @@
 # Smart Exercise Replace
 
-> **Status: Fully implemented. No dedicated UI.**
+> **Status: Fully implemented.**
 >
 > **Entry point:** Logger exercise ⋮ menu → "Replace exercise" → opens AddExercisePage pre-filtered to the same primary muscle, in replace mode.
+>
+> **Reason controls:** reason chips live inline in replace mode, so sorting can be refined without a forced extra step.
+>
+> **Suggestions:** replace mode shows the top 5 ranked suggestions first, with `Browse all exercises` available when the user wants the full library.
 >
 > **On selection:** exercise swaps in-place (same position, rest timer preserved, superset group preserved). Sets reset. ReplacementEvent logged.
 >
 > **Scoring engine + smartReplaceCatalog:** implemented and dormant. Reserved for V2 inline suggestion ("Haven't logged this one — try X?").
 >
-> **What was deliberately removed:** SmartReplaceSheet (ranked suggestion list). Reason: any single irrelevant suggestion in a ranked list destroys trust in the entire feature. The AddExercisePage pre-filter makes no algorithmic promise — users perceive it as the exercise library filtered to the right muscle, sorted by relevance. No promise = no trust to break.
+> **What was deliberately removed:** SmartReplaceSheet as a ranked suggestion list. Reason: any single irrelevant suggestion in a ranked list destroys trust in the entire feature. The shipped UI keeps reasons inline inside AddExercisePage, so users can refine sorting without being forced through an extra step. No overconfident ranked promise = less trust to break.
 
 ---
 
@@ -30,8 +34,10 @@ A naive replacement just finds exercises with the same primary muscle. Smart rep
 
 1. **Muscle match** — same primary muscle, similar secondary involvement
 2. **Movement match** — same movement pattern (push stays push, hinge stays hinge)
-3. **Equipment filter** — only suggests exercises the user can actually do right now
+3. **Equipment match** — machine / barbell / dumbbell / bodyweight / TRX / resistance band and similar classes are scored distinctly
 4. **Session balance** — aware of what's already been done; won't pile on an already-fatigued muscle group
+5. **Difficulty fit** — easier or safer variations rise when the reason calls for them
+6. **Preference memory** — user-selected replacements get extra weight the next time a similar swap happens
 
 The user should be able to trust the first suggestion without reading the explanation. The explanation is there to build confidence, not justify a questionable choice.
 
@@ -322,7 +328,7 @@ When reason = `"too_difficult"`:
 ### UI
 - [x] Wire "Replace exercise" in ⋮ menu → opens AddExercisePage in replace mode, pre-filtered to primary muscle
 - [x] Replace mode in AddExercisePage (preFilterMuscle prop, replaceMode prop, replaceExerciseWithTemplate function)
-- [~] Swap is silent (sets are reset without confirmation — acceptable for V1)
+- [x] Swap is silent when 0 sets are logged, but requires confirmation once logged sets exist
 - [ ] Contextual hint on zero-progress exercises after 5 min
 - [x] Built-in: AddExercisePage IS the replace UI
 
