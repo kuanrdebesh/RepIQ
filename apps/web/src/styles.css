@@ -762,6 +762,61 @@ ol {
   width: 100%;
 }
 
+/* History detail page */
+.hd-page .finish-workout-body {
+  padding-bottom: 40px;
+}
+
+/* Edit workout CTA — sits just below hero */
+.hd-edit-cta {
+  padding: 12px 16px 0;
+}
+.hd-edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 13px 20px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  transition: opacity 0.15s;
+}
+.hd-edit-btn:hover { opacity: 0.88; }
+.hd-edit-btn:active { opacity: 0.75; }
+
+/* Full-width media slider in detail page */
+.hd-media-slider-wrap {
+  position: relative;
+  margin: 16px 0 0;
+}
+.hd-media-slider {
+  border-radius: 0;  /* full bleed */
+}
+.hd-media-slider .history-slide {
+  /* taller on detail page for more immersion */
+  aspect-ratio: 1 / 1;
+}
+.hd-slider-hints {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 0 4px;
+}
+.hd-slider-hint-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--line);
+  display: inline-block;
+}
+
 .history-detail-actions {
   display: flex;
   gap: 10px;
@@ -1026,6 +1081,113 @@ ol {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1), 0 0 0 0.5px var(--line);
 }
 
+/* Share as Quote toggle pill */
+.finish-share-quote-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 7px 13px;
+  border-radius: 20px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.finish-share-quote-toggle.is-active {
+  background: #000;
+  border-color: #000;
+  color: #fff;
+}
+
+.finish-share-quote-toggle-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  display: block;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.finish-share-quote-toggle.is-active .finish-share-quote-toggle-dot {
+  background: #fff;
+  border-color: #fff;
+}
+
+/* Quote live preview card */
+.finish-quote-preview-card {
+  margin-top: 12px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1.5px solid var(--line);
+}
+
+.finish-quote-preview-card.is-light {
+  background: var(--paper);
+}
+
+.finish-quote-preview-card.is-dark {
+  background: #000;
+  border-color: #000;
+}
+
+.finish-quote-preview-body {
+  padding: 18px 18px 12px;
+}
+
+.finish-quote-preview-text {
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+
+.finish-quote-preview-text.light {
+  color: var(--ink);
+}
+
+.finish-quote-preview-text.dark {
+  color: #fff;
+  font-style: italic;
+}
+
+.finish-quote-preview-placeholder {
+  opacity: 0.38;
+  font-style: normal;
+}
+
+.finish-quote-preview-author {
+  font-size: 0.82rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+.finish-quote-preview-author.light {
+  color: var(--muted);
+}
+
+.finish-quote-preview-author.dark {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.finish-quote-preview-hint {
+  padding: 7px 18px;
+  font-size: 0.74rem;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  margin: 0;
+}
+
+.finish-quote-preview-card.is-dark .finish-quote-preview-hint {
+  color: rgba(255, 255, 255, 0.4);
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
 .finish-workout-heading {
   display: flex;
   align-items: baseline;
@@ -1234,26 +1396,19 @@ ol {
   gap: 8px;
 }
 
-/* ── Photo cards — horizontal slider ──────────────────────────── */
+/* ── Photo cards ─────────────────────────────────────────────── */
 .finish-media-cards {
   display: flex;
-  flex-direction: row;
-  gap: 10px;
+  gap: 8px;
   margin-top: 10px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  padding-bottom: 4px;
-}
-
-.finish-media-cards::-webkit-scrollbar {
-  display: none;
+  overflow: hidden; /* safety clip — prevents cards from breaking parent boundary */
+  /* Cards share the full row width equally:
+     1 photo → 100%,  2 photos → 50% each,  3 photos → 33% each */
 }
 
 .finish-media-card {
-  flex: 0 0 160px;
-  scroll-snap-align: start;
+  flex: 1 1 0;
+  min-width: 0;
   border-radius: 12px;
   overflow: hidden;
   border: 2px solid var(--line);
@@ -1268,7 +1423,7 @@ ol {
 .finish-media-img-wrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 1 / 1;
   cursor: pointer;
   overflow: hidden;
   background: #000;
@@ -1319,18 +1474,20 @@ ol {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   width: 100%;
-  padding: 7px 8px;
+  padding: 6px 4px;
   background: transparent;
   border: none;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 500;
   color: var(--subtle-text);
   cursor: pointer;
   text-align: center;
   transition: color 0.15s ease, background 0.15s ease;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.2;
+  word-break: break-word;
 }
 
 .finish-media-progress-toggle:active {
@@ -8402,6 +8559,14 @@ ol {
   font-variant-numeric: tabular-nums;
 }
 
+.active-tray-rest {
+  font-size: 0.72rem;
+  color: var(--accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-left: 4px;
+}
+
 .active-tray-actions {
   display: flex;
   align-items: center;
@@ -8630,6 +8795,12 @@ ol {
 /* Planner bottom padding when tray is visible */
 .planner-page.has-tray {
   padding-bottom: calc(224px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Extra bottom padding for general pages when workout tray is visible */
+.history-page,
+.page-container {
+  padding-bottom: calc(var(--bottom-nav-h, 64px) + 60px + env(safe-area-inset-bottom, 0px));
 }
 
 /* ── Plan tag picker ────────────────────────────────────────────────────── */
@@ -9038,6 +9209,7 @@ ol {
   z-index: 40;
   display: flex;
   align-items: stretch;
+  height: calc(56px + env(safe-area-inset-bottom, 0px));
   background: var(--paper);
   border-top: 1px solid var(--line);
   box-shadow: 0 -2px 12px var(--shadow);
@@ -9047,25 +9219,23 @@ ol {
 .bottom-nav-tab {
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 10px 0 12px;
+  padding-bottom: 0;
   border: none;
   background: none;
   color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
   cursor: pointer;
   transition: color 0.15s;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .bottom-nav-tab svg {
   width: 22px;
   height: 22px;
   stroke-width: 1.75;
+  flex-shrink: 0;
+  display: block;
 }
 
 .bottom-nav-tab.is-active {
@@ -14018,3 +14188,864 @@ ol {
 :root[data-theme="dark"] .az-rotation-warning { color: #fca5a5; }
 :root[data-theme="dark"] .az-milestone--done { color: #86efac; }
 
+/* ── History Page ─────────────────────────────────────────────────────────── */
+.history-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: #fff;
+  padding-bottom: 80px;
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.history-page-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: #fff;
+  padding: 0 16px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-page-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0 8px;
+}
+
+.history-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--ink);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.history-back-btn:hover { background: var(--surface); }
+
+.history-page-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+  flex: 1;
+}
+
+.history-count-row {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.history-count-bold {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.history-count-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.history-count-filtered-num {
+  color: var(--accent);
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.history-count-filtered-of {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.history-date-filter {
+  display: flex;
+  gap: 10px;
+  padding-bottom: 4px;
+}
+
+.history-date-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.history-date-input {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 0.82rem;
+  color: var(--ink);
+  width: 100%;
+  outline: none;
+  font-family: inherit;
+}
+.history-date-input:focus {
+  border-color: var(--accent);
+}
+
+/* Feed */
+.history-feed {
+  padding: 12px 12px 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.history-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 40px 16px;
+  font-size: 0.9rem;
+}
+
+/* Cards */
+.history-card {
+  background: var(--paper);
+  border-radius: 16px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+}
+.history-card:hover {
+  box-shadow: 0 4px 16px var(--shadow);
+}
+.history-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.history-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 14px 14px 6px;
+}
+
+.history-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.history-card-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.history-card-date {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.history-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.history-card-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--surface);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: background 0.12s, color 0.12s;
+  padding: 0;
+}
+.history-card-action-btn:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+/* ── History card slider ──────────────────────────────────────────────────── */
+.history-card-slider {
+  position: relative;
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  width: 100%;
+  min-width: 0;
+}
+.history-card-slider::-webkit-scrollbar { display: none; }
+
+/* Each slide: full-width, 1:1 square */
+.history-slide {
+  flex: 0 0 100%;
+  min-width: 0;
+  scroll-snap-align: start;
+  aspect-ratio: 1 / 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Photo slide */
+.history-slide-photo {
+  background: #000;
+}
+.history-slide-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.history-slide-progress-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(255,255,255,0.88);
+  color: #111;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 20px;
+}
+
+/* Quote slide */
+.history-slide-quote {
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 24px;
+  text-align: center;
+}
+.history-slide-quote.is-dark {
+  background: #0d0d0d;
+}
+.history-slide-quote.is-light {
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+.history-slide-quote-text {
+  font-size: 1.05rem;
+  font-style: italic;
+  line-height: 1.55;
+  margin: 0;
+}
+.history-slide-quote.is-dark .history-slide-quote-text { color: #fff; }
+.history-slide-quote.is-light .history-slide-quote-text { color: var(--ink); }
+.history-slide-quote-author {
+  font-size: 0.82rem;
+  margin: 0;
+}
+.history-slide-quote.is-dark .history-slide-quote-author { color: rgba(255,255,255,0.5); }
+.history-slide-quote.is-light .history-slide-quote-author { color: var(--muted); }
+
+/* Detail card slide — B&W */
+.history-slide-detail {
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 24px 22px;
+  background: #111;
+  color: #f5f5f5;
+  gap: 0;
+  justify-content: center;
+}
+.history-slide-detail-name {
+  font-size: 1.1rem;
+  font-weight: 800;
+  margin: 0 0 2px;
+  color: #fff;
+  letter-spacing: -0.01em;
+}
+.history-slide-detail-date {
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.45);
+  margin: 0 0 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.history-slide-detail-divider {
+  width: 32px;
+  height: 2px;
+  background: rgba(255,255,255,0.25);
+  margin-bottom: 14px;
+  border-radius: 2px;
+}
+.history-slide-detail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.history-slide-detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.history-slide-detail-ex {
+  font-size: 0.88rem;
+  color: rgba(255,255,255,0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 75%;
+}
+.history-slide-detail-sets {
+  font-size: 0.78rem;
+  color: rgba(255,255,255,0.4);
+  white-space: nowrap;
+}
+.history-slide-detail-more {
+  font-size: 0.78rem;
+  color: rgba(255,255,255,0.35);
+  margin-top: 2px;
+}
+.history-slide-detail-brand {
+  margin: 16px 0 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.2);
+}
+
+/* Personal note slide */
+.history-slide-note {
+  flex-direction: column;
+  gap: 14px;
+  padding: 28px 24px;
+  background: #f9f9f7;
+  text-align: center;
+}
+.history-slide-note-icon {
+  color: #999;
+  flex-shrink: 0;
+}
+.history-slide-note-text {
+  font-size: 0.95rem;
+  color: #333;
+  line-height: 1.6;
+  margin: 0;
+  font-style: italic;
+}
+
+/* Slide indicator dots */
+.history-slider-dots {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 0 4px;
+  background: var(--paper);
+}
+.history-slider-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.22);
+  display: inline-block;
+  transition: background 0.2s, transform 0.2s;
+}
+:root[data-theme="dark"] .history-slider-dot {
+  background: rgba(255,255,255,0.3);
+}
+
+/* Exercise muscle summary — compact */
+.history-muscle-summary {
+  padding: 8px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.history-muscle-count {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.history-muscle-list {
+  font-size: 0.84rem;
+  line-height: 1.5;
+  flex-wrap: wrap;
+}
+
+.history-muscle-primary {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.history-muscle-secondary {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* (legacy — keep for any existing references) */
+.history-exercise-muscle {
+  font-size: 0.72rem;
+  background: var(--surface);
+  padding: 2px 7px;
+  border-radius: 20px;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  align-self: center;
+  border: 1px solid var(--line);
+}
+
+/* Dark mode tweaks */
+:root[data-theme="dark"] .history-quote-dark {
+  background: #0d0d0d;
+}
+
+:root[data-theme="dark"] .history-date-input {
+  color-scheme: dark;
+}
+
+/* History card slider wrapper */
+.history-card-slider-wrap { width: 100%; min-width: 0; }
+
+/* Active dot */
+.history-slider-dot.is-active {
+  background: var(--accent);
+  transform: scale(1.4);
+}
+/* history-slider-dots styles consolidated above */
+
+/* Rewards row in history card */
+.history-card-rewards {
+  display: flex;
+  gap: 6px;
+  padding: 6px 14px 12px;
+  flex-wrap: wrap;
+}
+.hcr-chip {
+  font-size: 0.75rem;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.hcr-chip-session { background: rgba(255,200,0,0.15); color: #b8860b; }
+.hcr-chip-exercise { background: rgba(100,150,255,0.12); color: var(--accent); }
+.hcr-chip-set { background: rgba(80,180,100,0.15); color: #2d8a4e; }
+:root[data-theme="dark"] .hcr-chip-session { color: #f0c040; }
+:root[data-theme="dark"] .hcr-chip-set { color: #5dba7d; }
+
+/* Photo remove / progress buttons in detail slider */
+.history-slide-photo { position: relative; }
+.hd-photo-remove-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  border: none;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  backdrop-filter: blur(4px);
+}
+.hd-photo-progress-btn {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  border: none;
+  font-size: 0.72rem;
+  cursor: pointer;
+  z-index: 5;
+  backdrop-filter: blur(4px);
+}
+
+/* Add photo button in detail page */
+.hd-add-photo-row {
+  display: flex;
+  justify-content: center;
+  padding: 8px 16px 0;
+}
+.hd-add-photo-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: 22px;
+  border: 1.5px dashed var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  width: 100%;
+  justify-content: center;
+}
+.hd-add-photo-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Running workout toast */
+.history-running-toast {
+  position: fixed;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #222;
+  color: #fff;
+  font-size: 0.88rem;
+  padding: 12px 20px;
+  border-radius: 24px;
+  z-index: 200;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  max-width: 340px;
+  text-align: center;
+  cursor: pointer;
+}
+
+/* History detail edit section */
+.hd-edit-section { display: flex; flex-direction: column; gap: 14px; }
+.hd-edit-field { display: flex; flex-direction: column; gap: 6px; }
+.hd-edit-label { font-size: 0.8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.hd-edit-input {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  color: var(--ink);
+  width: 100%;
+  box-sizing: border-box;
+}
+.hd-edit-textarea {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  color: var(--ink);
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 80px;
+  font-family: inherit;
+}
+.hd-edit-input:focus, .hd-edit-textarea:focus { border-color: var(--accent); outline: none; }
+.hd-note-type-row { display: flex; gap: 8px; }
+.hd-note-type-btn {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.hd-note-type-btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.hd-save-changes-btn {
+  width: 100%;
+  padding: 12px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+
+/* ── Progress Photo Tab ──────────────────────────────────────────────────── */
+.pg-tab {
+  padding: 12px 14px 24px;
+}
+
+/* Filter bar */
+.pg-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 8px;
+}
+.pg-filter-pills {
+  display: flex;
+  gap: 6px;
+}
+.pg-filter-pill {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--subtle-text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.pg-filter-pill.is-active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+.pg-compare-btn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1.5px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.pg-compare-btn.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+.pg-compare-btn.is-disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Compare mode hint bar */
+.pg-compare-hint {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-size: 0.82rem;
+  color: var(--subtle-text);
+  text-align: center;
+  margin-bottom: 12px;
+}
+.pg-compare-go {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* Photo grid — 3 columns */
+.pg-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+}
+.pg-all-view {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Date group heading */
+.pg-day-group {}
+.pg-day-heading {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--subtle-text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 6px;
+}
+
+/* Individual photo card */
+.pg-photo-card {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background: var(--surface);
+  border-radius: 4px;
+  cursor: default;
+}
+.pg-photo-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Progress star badge (All view) */
+.pg-progress-star {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 0.7rem;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+}
+
+/* Date overlay (Progress view) */
+.pg-date-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,0.62));
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 10px 5px 4px;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+/* Selectable state (compare mode) */
+.pg-photo-card.pg-selectable {
+  cursor: pointer;
+}
+.pg-photo-card.pg-selectable:active {
+  opacity: 0.8;
+}
+.pg-photo-card.pg-selected::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2.5px solid var(--accent);
+  border-radius: 4px;
+  pointer-events: none;
+}
+.pg-select-check {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+}
+
+/* Empty state */
+.pg-empty {
+  font-size: 0.88rem;
+  color: var(--subtle-text);
+  text-align: center;
+  padding: 32px 20px;
+  line-height: 1.5;
+}
+
+/* ── Compare view ─────────────────────────────────────────────────────────── */
+.pg-compare-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--paper);
+}
+.pg-compare-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.pg-compare-back {
+  background: none;
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 4px 0;
+  width: 60px;
+}
+.pg-compare-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.pg-compare-pair {
+  display: flex;
+  flex: 1;
+  padding: 16px 12px;
+  gap: 10px;
+}
+.pg-compare-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.pg-compare-img-wrap {
+  aspect-ratio: 3 / 4;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+}
+.pg-compare-img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.pg-compare-date {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+  text-align: center;
+}
+.pg-compare-label {
+  font-size: 0.7rem;
+  color: var(--subtle-text);
+  margin: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

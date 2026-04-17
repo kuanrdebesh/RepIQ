@@ -32,6 +32,9 @@ export type ExerciseDraft = {
   secondaryMuscles: string[];
   exerciseType?: CustomExerciseType;
   measurementType?: MeasurementType;
+  performanceMetric?: PerformanceMetric;
+  supportsExternalLoad?: boolean;
+  implement?: ExerciseImplement;
   movementSide?: MovementSide;
   isCustom?: boolean;
   libraryStatus?: "active" | "archived";
@@ -44,7 +47,52 @@ export type ExerciseDraft = {
 export type DetailTab = "summary" | "history" | "howto";
 export type ThemePreference = "light" | "dark" | "system";
 export type DraftSetType = "warmup" | "normal" | "drop" | "restpause" | "failure";
-export type AppView = "home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "community" | "profile" | "history-detail" | "glossary" | "more";
+export type AppView = "home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "community" | "profile" | "history" | "history-detail" | "history-edit" | "glossary" | "more";
+
+// ── Navigation Registry ───────────────────────────────────────────────────────
+// Single source of truth for every page in the app.
+//
+// RULES:
+//   1. Every entry in AppView MUST have a record here — TypeScript will error otherwise.
+//   2. When you add a NEW view to AppView, add its record here immediately.
+//   3. Keep entryFrom accurate so the graph can be audited at any time.
+//
+// navType:
+//   "tab-root"   → navigateRoot() — clears the back stack (bottom nav items)
+//   "drill-down" → navigate()     — pushes caller onto back stack
+//   "modal"      → opened via custom logic (logger); back is handled separately
+
+export type NavType = "tab-root" | "drill-down" | "modal";
+
+export type NavMeta = {
+  /** Human-readable label for breadcrumbs and debugging */
+  label: string;
+  /** Which views navigate TO this view (document all callers here) */
+  entryFrom: AppView[];
+  /** Fallback destination when back stack is empty — must match goBack() call sites */
+  backFallback: AppView;
+  /** How this view is opened */
+  navType: NavType;
+};
+
+// TypeScript enforces completeness: add AppView → add registry entry or get a compile error.
+export const NAV_REGISTRY: Record<AppView, NavMeta> = {
+  home:            { label: "Home",           entryFrom: [],                                       backFallback: "home",          navType: "tab-root"   },
+  logger:          { label: "Logger",         entryFrom: ["home", "planner", "history-edit"],       backFallback: "home",          navType: "modal"      },
+  finish:          { label: "Finish Workout", entryFrom: ["logger"],                               backFallback: "home",          navType: "drill-down" },
+  share:           { label: "Share",          entryFrom: ["finish", "report"],                     backFallback: "finish",        navType: "drill-down" },
+  planner:         { label: "Planner",        entryFrom: [],                                       backFallback: "home",          navType: "tab-root"   },
+  "plan-builder":  { label: "Plan Builder",   entryFrom: ["planner"],                              backFallback: "planner",       navType: "drill-down" },
+  report:          { label: "Workout Report", entryFrom: ["finish", "history", "history-detail"],  backFallback: "history",       navType: "drill-down" },
+  insights:        { label: "Insights",       entryFrom: [],                                       backFallback: "home",          navType: "tab-root"   },
+  community:       { label: "Community",      entryFrom: [],                                       backFallback: "home",          navType: "tab-root"   },
+  profile:         { label: "Profile",        entryFrom: ["home", "more"],                         backFallback: "home",          navType: "drill-down" },
+  history:         { label: "History",        entryFrom: ["home", "more"],                         backFallback: "home",          navType: "drill-down" },
+  "history-detail":{ label: "History Detail", entryFrom: ["history"],                              backFallback: "history",       navType: "drill-down" },
+  "history-edit":  { label: "History Edit",   entryFrom: ["history-detail"],                       backFallback: "history-detail",navType: "drill-down" },
+  glossary:        { label: "Glossary",       entryFrom: ["home", "planner", "more"],              backFallback: "home",          navType: "drill-down" },
+  more:            { label: "More",           entryFrom: ["home"],                                 backFallback: "home",          navType: "drill-down" },
+};
 
 // ── Psychological Data Layer ──────────────────────────────────────────────────
 // V1: types and storage stubs defined now so data is captured from day one.
@@ -428,6 +476,16 @@ export type CustomExerciseType =
   | "bodyweight_weighted"
   | "free_weights_accessories";
 export type MeasurementType = "timed" | "reps_volume" | "weight_timed";
+export type PerformanceMetric = "reps" | "time" | "distance_or_time" | "mixed";
+export type ExerciseImplement =
+  | "suspension_trainer"
+  | "sled"
+  | "medicine_ball"
+  | "jump_rope"
+  | "plate"
+  | "battle_ropes"
+  | "yoke"
+  | "wrist_roller";
 export type MovementSide = "unilateral" | "bilateral";
 
 // ── Smart Replace — see docs/smart-replace.md ─────────────────────────────────
@@ -570,14 +628,18 @@ export type FinishWorkoutDraft = {
   images: WorkoutMediaAsset[];
   progressPicIndex?: number; // index of the progress picture
   personalNote?: string; // personal note for future reference
-  quoteNote?: string; // quote for sharing in community
+  quoteNote?: string; // session highlight text
   noteType?: "personal" | "quote"; // which type of note is active
+  shareAsQuote?: boolean; // true = dark card (white text, quoted), false = light card
 };
 
 export type SavedWorkoutData = FinishWorkoutDraft & {
   savedAt: string; // ISO string
   repiqSourceKey?: string; // "weekIdx-dayIdx" if completed as part of a RepIQ plan session
   workoutSource?: "repiq" | "saved" | "library" | "generated" | "quick" | "history";
+  /** Set to true when a workout has been edited via HistoryEditPage.
+   *  The dev seed buttons use this to skip re-seeding user-modified workouts. */
+  userEdited?: boolean;
 };
 
 export type ExerciseRestDefaults = Record<string, string>;

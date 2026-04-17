@@ -15,7 +15,7 @@ import inclineDumbbellPressImage from "./assets/incline-dumbbell-press.svg";
 import anatomyFrontImg from "./assets/anatomy-front.png";
 import anatomyBackImg from "./assets/anatomy-back.png";
 import { allCatalogExercises, generationCatalogExercises } from "./catalog";
-import { getStoredReplacementEvents, persistReplacementEvent, getStoredExercisePreferences, persistExercisePreference, getStoredHiddenSuggestions, persistHiddenSuggestion, removeHiddenSuggestion, themeStorageKey, workoutSettingsStorageKey, customExercisesStorageKey, savedWorkoutsStorageKey, workoutPlansStorageKey, planBuilderDraftStorageKey, psychProfileStorageKey, postWorkoutPsychStorageKey, dailyReadinessStorageKey, sessionBehaviorStorageKey, derivedPsychStorageKey, repiqPlanStorageKey, getStoredSavedWorkouts, persistSavedWorkout, persistSavedWorkoutsList, getStoredPsychProfile, persistPsychProfile, getStoredRepIQPlan, persistRepIQPlan, getStoredPostWorkoutPsych, persistPostWorkoutPsych, getStoredDailyReadiness, persistDailyReadiness, getStoredSessionBehavior, persistSessionBehavior, getStoredWorkoutPlans, persistWorkoutPlans, getStoredPlanBuilderDraft, persistPlanBuilderDraft, SAMPLE_WORKOUT_PLANS, SAMPLE_PLAN_IDS } from "./storage";
+import { getStoredReplacementEvents, persistReplacementEvent, getStoredExercisePreferences, persistExercisePreference, getStoredHiddenSuggestions, persistHiddenSuggestion, removeHiddenSuggestion, themeStorageKey, workoutSettingsStorageKey, customExercisesStorageKey, savedWorkoutsStorageKey, workoutPlansStorageKey, planBuilderDraftStorageKey, psychProfileStorageKey, postWorkoutPsychStorageKey, dailyReadinessStorageKey, sessionBehaviorStorageKey, derivedPsychStorageKey, repiqPlanStorageKey, getStoredSavedWorkouts, persistSavedWorkout, persistSavedWorkoutsList, overwriteSavedWorkout, getStoredPsychProfile, persistPsychProfile, getStoredRepIQPlan, persistRepIQPlan, getStoredPostWorkoutPsych, persistPostWorkoutPsych, getStoredDailyReadiness, persistDailyReadiness, getStoredSessionBehavior, persistSessionBehavior, getStoredWorkoutPlans, persistWorkoutPlans, getStoredPlanBuilderDraft, persistPlanBuilderDraft, SAMPLE_WORKOUT_PLANS, SAMPLE_PLAN_IDS, seedWorkoutHistory } from "./storage";
 import { DEFAULT_PSYCH_PROFILE, deriveTimeOfDay, buildSessionBehaviorSignals, createInitialSwipeState, COMPOUND_PATTERNS } from "./types";
 import type { FlowState, DraftSet, ExerciseDraft, DetailTab, ThemePreference, DraftSetType, AppView, MotivationalWhy, TrainingGoal, ExperienceLevel, EquipmentAccess, ScheduleCommitment, MoodRating, EnergyRating, RPERating, ThreePointScale, TimeOfDay, SessionSource, Trend, MotivationStyle, UserPsychProfile, PostWorkoutPsych, DailyReadiness, SessionBehaviorSignals, DerivedPsychProfile, SplitType, RepIQPlanExercise, RepIQPlanDay, RepIQPlanWeek, RepIQPlan, PlannedExercise, WorkoutPlan, PlanBuilderMode, PlanSessionSource, ActivePlanSession, WorkoutSettings, WorkoutMeta, RewardCategory, RewardLevel, AddExerciseMode, CreateExerciseStep, CustomExerciseType, MeasurementType, MovementSide, MovementPattern, ExerciseDifficulty, ExerciseAngle, ExerciseEquipment, ReplacementReason, ReplacementEvent, ExerciseWithTaxonomy, ExercisePreferenceEntry, ExercisePreferenceMap, CustomExerciseInput, LoggerReward, RewardSummary, FinishedExerciseSummary, FinishWorkoutDraft, SavedWorkoutData, ExerciseRestDefaults, SwipeState, ActiveRestTimer, MuscleRegion } from "./types";
 
@@ -3110,23 +3110,32 @@ function getSystemTheme(): Exclude<ThemePreference, "system"> {
 }
 
 function getExerciseMeasurementType(exercise: ExerciseDraft): MeasurementType {
+  // 1. Explicit measurementType override (backward compat for user-created exercises)
   if (exercise.measurementType) {
     return exercise.measurementType;
   }
 
-  const name = exercise.name.toLowerCase();
+  // 2. v4 taxonomy performanceMetric field
+  if (exercise.performanceMetric) {
+    switch (exercise.performanceMetric) {
+      case "time":
+      case "distance_or_time":
+        return "timed";
+      case "mixed":
+        return exercise.supportsExternalLoad ? "weight_timed" : "timed";
+      case "reps":
+        return "reps_volume";
+    }
+  }
 
-  // Only match exercises that are genuinely timed (holds / cardio machines / stretches).
-  // "walk" removed — it false-positives on Walking Lunge, Banded Lateral Walk, etc.
+  // 3. Name-based heuristics (fallback for custom exercises without performanceMetric)
+  const name = exercise.name.toLowerCase();
   if (/\b(run|bike|cycle|elliptical|rower|stair|stretch|mobility|yoga)\b/.test(name)) {
     return "timed";
   }
-
-  // Planks and holds are timed, but NOT "crunch", "lunge", "walk" etc.
   if (/\bplank\b/.test(name) || /\bhold\b/.test(name)) {
     return "timed";
   }
-
   const exerciseType = inferExerciseType(exercise);
   if (exerciseType === "freestyle_cardio") {
     return "timed";
@@ -3145,17 +3154,18 @@ function formatPrimaryMuscles(exercise: Pick<ExerciseDraft, "primaryMuscle" | "p
   return getPrimaryMuscles(exercise).join(", ");
 }
 
-function usesWeightInputForMeasurement(measurementType: MeasurementType) {
-  return measurementType !== "timed";
+function usesWeightInputForMeasurement(measurementType: MeasurementType, supportsExternalLoad?: boolean) {
+  return measurementType !== "timed" && supportsExternalLoad !== false;
 }
 
 function usesTimedMetric(measurementType: MeasurementType) {
   return measurementType === "timed" || measurementType === "weight_timed";
 }
 
-function getMeasurementColumnLabels(measurementType: MeasurementType) {
+function getMeasurementColumnLabels(measurementType: MeasurementType, supportsExternalLoad?: boolean) {
+  const showWeight = measurementType !== "timed" && supportsExternalLoad !== false;
   return {
-    first: usesWeightInputForMeasurement(measurementType) ? "Kg" : "—",
+    first: showWeight ? "Kg" : "—",
     second: usesTimedMetric(measurementType) ? "Time" : "Reps"
   };
 }
@@ -3520,7 +3530,8 @@ function buildCompletedSets(
   draftSets: DraftSet[],
   lastSession: ExerciseHistorySession | undefined,
   carryForwardDefaults: boolean,
-  measurementType: MeasurementType = "reps_volume"
+  measurementType: MeasurementType = "reps_volume",
+  supportsExternalLoad?: boolean
 ) {
   const resolvedSets: WorkoutSet[] = [];
   const issues: string[] = [];
@@ -3531,7 +3542,7 @@ function buildCompletedSets(
     }
 
     const previousSet = getPreviousReferenceSet(draftSets, index, lastSession);
-    const weight = usesWeightInputForMeasurement(measurementType)
+    const weight = usesWeightInputForMeasurement(measurementType, supportsExternalLoad)
       ? parseNumberInput(
           draftSet.weightInput,
           carryForwardDefaults ? previousSet?.weight : null
@@ -3546,10 +3557,10 @@ function buildCompletedSets(
       carryForwardDefaults ? previousSet?.rpe ?? null : null
     );
 
-    if (reps === null || (usesWeightInputForMeasurement(measurementType) && weight === null)) {
+    if (reps === null || (usesWeightInputForMeasurement(measurementType, supportsExternalLoad) && weight === null)) {
       issues.push(
         `Set ${getDisplaySetLabel(draftSets, index)} needs ${
-          usesWeightInputForMeasurement(measurementType)
+          usesWeightInputForMeasurement(measurementType, supportsExternalLoad)
             ? usesTimedMetric(measurementType)
               ? "weight and time."
               : "weight and reps."
@@ -3599,11 +3610,12 @@ function resolveDraftSet(
   index: number,
   lastSession: ExerciseHistorySession | undefined,
   carryForwardDefaults: boolean,
-  measurementType: MeasurementType = "reps_volume"
+  measurementType: MeasurementType = "reps_volume",
+  supportsExternalLoad?: boolean
 ) {
   const draftSet = draftSets[index];
   const previousSet = getPreviousReferenceSet(draftSets, index, lastSession);
-  const weight = usesWeightInputForMeasurement(measurementType)
+  const weight = usesWeightInputForMeasurement(measurementType, supportsExternalLoad)
     ? parseNumberInput(
         draftSet.weightInput,
         carryForwardDefaults ? previousSet?.weight : null
@@ -3618,7 +3630,7 @@ function resolveDraftSet(
     carryForwardDefaults ? previousSet?.rpe ?? null : null
   );
 
-  if (reps === null || (usesWeightInputForMeasurement(measurementType) && weight === null)) {
+  if (reps === null || (usesWeightInputForMeasurement(measurementType, supportsExternalLoad) && weight === null)) {
     return null;
   }
 
@@ -3747,7 +3759,8 @@ function recomputeLoggerRewards(
         index,
         lastSession,
         carryForwardDefaults,
-        getExerciseMeasurementType(exercise)
+        getExerciseMeasurementType(exercise),
+        exercise.supportsExternalLoad
       );
 
       if (!resolvedSet) {
@@ -4028,12 +4041,16 @@ function ActiveWorkoutTray({
   sessionName,
   duration,
   onResume,
-  onDiscardRequest
+  onDiscardRequest,
+  restSeconds,
+  showRestTimer,
 }: {
   sessionName: string;
   duration: string;
   onResume: () => void;
   onDiscardRequest: () => void;
+  restSeconds?: number;
+  showRestTimer?: boolean;
 }) {
   return (
     <div className="active-tray">
@@ -4043,6 +4060,9 @@ function ActiveWorkoutTray({
           <div className="active-tray-text">
             <span className="active-tray-name">{sessionName}</span>
             <span className="active-tray-timer">{duration}</span>
+            {showRestTimer && restSeconds !== undefined && restSeconds > 0 && (
+              <span className="active-tray-rest">◷ {Math.floor(restSeconds / 60)}:{String(restSeconds % 60).padStart(2, "0")}</span>
+            )}
           </div>
         </div>
         <div className="active-tray-actions">
@@ -4065,6 +4085,95 @@ function ActiveWorkoutTray({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Workout Tray Overlay (tray bar + discard dialog, used on every non-logger page) ──
+function WorkoutTrayOverlay({
+  isActive,
+  sessionName,
+  duration,
+  workoutSets,
+  workoutVolume,
+  incompleteSetCount,
+  discardOpen,
+  onDiscardRequest,
+  onDiscardClose,
+  onResume,
+  onDiscard,
+  restSeconds,
+  showRestTimer,
+}: {
+  isActive: boolean;
+  sessionName: string;
+  duration: string;
+  workoutSets: number;
+  workoutVolume: number;
+  incompleteSetCount: number;
+  discardOpen: boolean;
+  onDiscardRequest: () => void;
+  onDiscardClose: () => void;
+  onResume: () => void;
+  onDiscard: () => void;
+  restSeconds?: number;
+  showRestTimer?: boolean;
+}) {
+  if (!isActive && !discardOpen) return null;
+  return (
+    <>
+      {isActive && (
+        <ActiveWorkoutTray
+          sessionName={sessionName}
+          duration={duration}
+          onResume={onResume}
+          onDiscardRequest={onDiscardRequest}
+          restSeconds={restSeconds}
+          showRestTimer={showRestTimer}
+        />
+      )}
+      {discardOpen && (
+        <section className="sheet-overlay leave-center-overlay" onClick={onDiscardClose}>
+          <div className="leave-center-card" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-head">
+              <div>
+                <p className="label">Discard Workout</p>
+                <h3>{sessionName}</h3>
+              </div>
+              <button className="icon-button" type="button" onClick={onDiscardClose}>×</button>
+            </div>
+            <section className="session-summary session-summary-compact">
+              <p className="label">Session so far</p>
+              <div className="session-summary-grid">
+                <article className="session-summary-item">
+                  <span>Elapsed</span>
+                  <strong>{duration}</strong>
+                </article>
+                <article className="session-summary-item">
+                  <span>Completed</span>
+                  <strong>{workoutSets} sets</strong>
+                </article>
+                <article className="session-summary-item">
+                  <span>Volume</span>
+                  <strong>{workoutVolume.toFixed(0)} kg</strong>
+                </article>
+                <article className="session-summary-item">
+                  <span>Incomplete</span>
+                  <strong>{incompleteSetCount} sets</strong>
+                </article>
+              </div>
+            </section>
+            <div className="sheet-actions">
+              <button className="secondary-button" type="button" onClick={onDiscardClose}>
+                Keep Going
+              </button>
+              <button className="primary-button is-danger-btn" type="button" onClick={onDiscard}>
+                Discard
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+    </>
   );
 }
 
@@ -7269,10 +7378,11 @@ function CropTool({
       quality = 0.92;
     }
 
-    canvas.toBlob((blob) => {
-      setConfirming(false);
-      if (blob) onCrop(URL.createObjectURL(blob));
-    }, mimeType, quality);
+    // Use toDataURL (base64) so the result persists across page refreshes.
+    // blob: URLs are session-only and go dead on reload.
+    const dataUrl = canvas.toDataURL(mimeType, quality);
+    setConfirming(false);
+    onCrop(dataUrl);
   }
 
   return (
@@ -7372,22 +7482,26 @@ function FinishWorkoutPage({
   onNoteChange,
   onPersonalNoteChange,
   onQuoteNoteChange,
+  onShareAsQuoteChange,
   onProgressPicChange,
   onBack,
   onSave,
   resolvedTheme,
   onToggleTheme,
+  authorName,
 }: {
   draft: FinishWorkoutDraft;
   onTitleChange: (value: string) => void;
   onNoteChange: (value: string) => void;
   onPersonalNoteChange: (value: string) => void;
   onQuoteNoteChange: (value: string) => void;
+  onShareAsQuoteChange: (value: boolean) => void;
   onProgressPicChange: (index: number | undefined) => void;
   onBack: () => void;
   onSave: (images: WorkoutMediaAsset[]) => Promise<void>;
   resolvedTheme?: string;
   onToggleTheme?: () => void;
+  authorName?: string | null;
 }) {
   // V1 decision: keep photo support visible for progress/self-reference.
   // Video stays parked behind a disabled flag until we design its real
@@ -7999,15 +8113,39 @@ function FinishWorkoutPage({
                   value={draft.quoteNote ?? ""}
                   onChange={(event) => onQuoteNoteChange(event.target.value)}
                 />
-                {draft.quoteNote && (
-                  <div className="finish-quote-preview">
-                    <div className="quote-preview-box">
-                      <p className="quote-preview-text">"{draft.quoteNote}"</p>
-                      <p className="quote-preview-author">— {draft.sessionName || "Your Name"}</p>
-                    </div>
-                    <p className="quote-preview-hint">This is how your quote will appear when shared</p>
+
+                {/* Share as Quote toggle */}
+                <button
+                  type="button"
+                  className={`finish-share-quote-toggle${draft.shareAsQuote ? " is-active" : ""}`}
+                  onClick={() => onShareAsQuoteChange(!(draft.shareAsQuote ?? false))}
+                >
+                  <span className="finish-share-quote-toggle-dot" />
+                  Share as Quote
+                </button>
+
+                {/* Live preview */}
+                <div className={`finish-quote-preview-card${draft.shareAsQuote ? " is-dark" : " is-light"}`}>
+                  <div className="finish-quote-preview-body">
+                    {draft.shareAsQuote ? (
+                      <>
+                        <p className="finish-quote-preview-text dark">
+                          {draft.quoteNote ? `"${draft.quoteNote}"` : <span className="finish-quote-preview-placeholder">Your highlight will appear here…</span>}
+                        </p>
+                        <p className="finish-quote-preview-author dark">— {authorName || "You"}</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="finish-quote-preview-text light">
+                          {draft.quoteNote || <span className="finish-quote-preview-placeholder">Your highlight will appear here…</span>}
+                        </p>
+                      </>
+                    )}
                   </div>
-                )}
+                  <p className="finish-quote-preview-hint">
+                    {draft.shareAsQuote ? "Dark card · text in quotes · author shown" : "Light card · shown in history feed"}
+                  </p>
+                </div>
               </>
             )}
           </div>
@@ -8799,6 +8937,7 @@ function DevLandingPage({
     { view: "home",         label: "Home",          emoji: "🏠" },
     { view: "planner",      label: "Planner",        emoji: "📋" },
     { view: "insights",     label: "Insights",       emoji: "📊" },
+    { view: "history",      label: "History",        emoji: "🕐" },
     { view: "profile",      label: "Profile",        emoji: "👤" },
     { view: "report",       label: "Workout Report", emoji: "📄" },
     { view: "plan-builder", label: "Plan Builder",   emoji: "🏗️" },
@@ -11124,33 +11263,28 @@ function BottomNav({ activeView, onNavigate, onMore }: { activeView: AppView; on
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
         </svg>
-        <span>Home</span>
       </button>
       <button className={`bottom-nav-tab${activeView === "planner" ? " is-active" : ""}`} type="button" onClick={() => onNavigate("planner")} aria-label="Planner">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
         </svg>
-        <span>Planner</span>
       </button>
       <button className={`bottom-nav-tab${activeView === "insights" ? " is-active" : ""}`} type="button" onClick={() => onNavigate("insights")} aria-label="Insights">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
         </svg>
-        <span>Insights</span>
       </button>
       <button className={`bottom-nav-tab${activeView === "community" ? " is-active" : ""}`} type="button" onClick={() => onNavigate("community")} aria-label="Community">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
         </svg>
-        <span>Community</span>
       </button>
       <button className={`bottom-nav-tab${activeView === "more" ? " is-active" : ""}`} type="button" onClick={onMore} aria-label="More">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <line x1="3" y1="6" x2="21" y2="6"/>
-          <line x1="3" y1="12" x2="21" y2="12"/>
-          <line x1="3" y1="18" x2="21" y2="18"/>
+        <svg width="5" height="21" viewBox="0 0 5 21" fill="currentColor" aria-hidden="true">
+          <circle cx="2.5" cy="2.5" r="2.5"/>
+          <circle cx="2.5" cy="10.5" r="2.5"/>
+          <circle cx="2.5" cy="18.5" r="2.5"/>
         </svg>
-        <span>More</span>
       </button>
     </nav>
   );
@@ -11887,23 +12021,400 @@ function WorkoutReportPage({
   );
 }
 
-// ── Workout History Detail Page ───────────────────────────────────────────────
-function WorkoutHistoryDetailPage({
+// ── History Edit Page — "Edit Session Details" (mirrors FinishWorkoutPage UI) ─
+function HistoryEditPage({
   workout,
+  psychProfileName,
   onBack,
-  onEdit,
-  onShare,
+  onEditWorkout,
+  onSave,
+  onPersist,
   resolvedTheme,
   onToggleTheme,
 }: {
   workout: SavedWorkoutData;
+  psychProfileName?: string | null;
   onBack: () => void;
-  onEdit?: () => void;
-  onShare?: () => void;
+  onEditWorkout: () => void;
+  onSave: (updated: SavedWorkoutData) => void;
+  /** Persist without navigating away — used for auto-save after image crop */
+  onPersist: (updated: SavedWorkoutData) => void;
   resolvedTheme?: string;
   onToggleTheme?: () => void;
 }) {
-  const isRepIQ = !!workout.repiqSourceKey;
+  const [sessionName, setSessionName] = useState(workout.sessionName);
+  const [noteType, setNoteType] = useState<"personal" | "quote">(workout.noteType === "quote" ? "quote" : "personal");
+  const [personalNote, setPersonalNote] = useState(workout.personalNote ?? "");
+  const [quoteNote, setQuoteNote] = useState(workout.quoteNote ?? "");
+  const [shareAsQuote, setShareAsQuote] = useState(workout.shareAsQuote ?? false);
+  const [images, setImages] = useState<WorkoutMediaAsset[]>(workout.images ?? []);
+  const [progressPicIndex, setProgressPicIndex] = useState<number | undefined>(workout.progressPicIndex);
+  const [isDirty, setIsDirty] = useState(false);
+  const [exercisesExpanded, setExercisesExpanded] = useState(false);
+  const [rewardsExpanded, setRewardsExpanded] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingCrop, setPendingCrop] = useState<{ src: string; index: number | null } | null>(null);
+
+  const MEDIA_MAX_PHOTOS = 3;
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || images.length >= MEDIA_MAX_PHOTOS) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setPendingCrop({ src: dataUrl, index: null });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function handleCropDone(outputUrl: string) {
+    if (!pendingCrop) return;
+    const newImg: WorkoutMediaAsset = {
+      id: `local-${Date.now()}`,
+      kind: "image" as const,
+      storage_key: `local-${Date.now()}`,
+      original_name: "photo.jpg",
+      mime_type: "image/jpeg",
+      byte_size: 0,
+      upload_url: outputUrl,
+      public_url: outputUrl,
+    };
+    // Compute new images synchronously so we can auto-persist without
+    // waiting for the React state update to flush.
+    const updatedImages = pendingCrop.index === null
+      ? [...images, newImg]
+      : images.map((img, i) => i === pendingCrop.index ? newImg : img);
+
+    setImages(updatedImages);
+    setPendingCrop(null);
+    setIsDirty(true);
+
+    // Auto-persist immediately — photos are saved on crop confirm, not on
+    // the explicit "Save Changes" press. Prevents losing images on refresh.
+    onPersist({
+      ...workout,
+      sessionName,
+      noteType,
+      personalNote: personalNote || undefined,
+      quoteNote: quoteNote || undefined,
+      shareAsQuote,
+      images: updatedImages,
+      progressPicIndex,
+      userEdited: true,
+    });
+  }
+
+  function handleCropCancel() {
+    setPendingCrop(null);
+  }
+
+  function removeImage(idx: number) {
+    const updatedImages = images.filter((_, i) => i !== idx);
+    const updatedProgIdx =
+      progressPicIndex === idx ? undefined
+      : (progressPicIndex !== undefined && idx < progressPicIndex) ? progressPicIndex - 1
+      : progressPicIndex;
+    setImages(updatedImages);
+    setProgressPicIndex(updatedProgIdx);
+    setIsDirty(true);
+    onPersist({
+      ...workout,
+      sessionName,
+      noteType,
+      personalNote: personalNote || undefined,
+      quoteNote: quoteNote || undefined,
+      shareAsQuote,
+      images: updatedImages,
+      progressPicIndex: updatedProgIdx,
+      userEdited: true,
+    });
+  }
+
+  function handleSave() {
+    const updated: SavedWorkoutData = {
+      ...workout,
+      sessionName,
+      noteType,
+      personalNote: personalNote || undefined,
+      quoteNote: quoteNote || undefined,
+      shareAsQuote,
+      images,
+      progressPicIndex,
+      userEdited: true, // preserve through dev seed refreshes
+    };
+    onSave(updated);
+  }
+
+  const authorName = psychProfileName || "You";
+
+  return (
+    <main className="detail-page finish-workout-page" data-theme={resolvedTheme}>
+      {/* Hero */}
+      <div className="finish-hero">
+        <div className="finish-hero-topbar">
+          <button className="finish-hero-back" type="button" onClick={onBack} aria-label="Back">←</button>
+          <span className="finish-hero-eyebrow">Edit Session</span>
+          {resolvedTheme && onToggleTheme ? (
+            <button type="button" className="theme-toggle-btn theme-toggle-btn--ghost" onClick={onToggleTheme} aria-label="Toggle theme">
+              {resolvedTheme === "dark"
+                ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+            </button>
+          ) : <span style={{ width: 32 }} aria-hidden="true" />}
+        </div>
+        <h1 className="finish-hero-title">{sessionName || workout.sessionName}</h1>
+        <p className="finish-hero-date">{new Date(workout.date).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p>
+        <div className="finish-hero-stats">
+          <div className="finish-hero-stat"><strong>{workout.duration}</strong><span>Duration</span></div>
+          <div className="finish-hero-stat"><strong>{workout.totalVolume.toFixed(0)} kg</strong><span>Volume</span></div>
+          <div className="finish-hero-stat"><strong>{workout.totalSets}</strong><span>Sets</span></div>
+          <div className="finish-hero-stat"><strong>{workout.exerciseCount}</strong><span>Exercises</span></div>
+        </div>
+      </div>
+
+      <section className="detail-section finish-workout-section">
+        {/* Rewards */}
+        {workout.rewards && workout.rewardSummary.total > 0 && (
+          <section className="finish-workout-card finish-rewards-card">
+            <button type="button" className="finish-rewards-toggle" onClick={() => setRewardsExpanded(v => !v)} aria-expanded={rewardsExpanded}>
+              <div className="finish-rewards-toggle-left">
+                <p className="label" style={{ margin: 0 }}>Rewards</p>
+                <div className="reward-sheet-summary finish-workout-reward-summary">
+                  {workout.rewardSummary.exercise > 0 && <span className="reward-summary-chip reward-summary-chip-exercise">{rewardLevelIcon.exercise} {workout.rewardSummary.exercise}</span>}
+                  {workout.rewardSummary.set > 0 && <span className="reward-summary-chip reward-summary-chip-set">{rewardLevelIcon.set} {workout.rewardSummary.set}</span>}
+                  {workout.rewardSummary.session > 0 && <span className="reward-summary-chip reward-summary-chip-session">{rewardLevelIcon.session} {workout.rewardSummary.session}</span>}
+                </div>
+              </div>
+              <span className={`finish-rewards-chevron${rewardsExpanded ? " is-open" : ""}`} aria-hidden="true">›</span>
+            </button>
+            {rewardsExpanded && (
+              <div className="reward-sheet-list finish-workout-reward-list">
+                {workout.rewards.map((reward) => (
+                  <article key={reward.id} className="reward-sheet-item">
+                    <div className={`reward-sheet-icon reward-sheet-icon-${reward.level}`} aria-hidden="true">{rewardLevelIcon[reward.level]}</div>
+                    <div><strong>{reward.shortLabel}</strong><p>{reward.detail}</p></div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Edit Workout in Logger */}
+        <div className="hd-edit-cta">
+          <button className="hd-edit-btn" type="button" onClick={onEditWorkout}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            Edit Workout in Logger
+          </button>
+        </div>
+
+        {/* Edit Details — mirrors save page */}
+        <section className="finish-workout-card">
+          <p className="label">Session Details</p>
+
+          {/* Title */}
+          <label className="finish-title-row">
+            <span className="finish-title-label">Workout title</span>
+            <input
+              className="finish-title-input"
+              type="text"
+              value={sessionName}
+              onChange={e => { setSessionName(e.target.value); setIsDirty(true); }}
+            />
+          </label>
+
+          {/* Photos */}
+          <div className="finish-media-strip">
+            <div className="finish-media-btns">
+              <button
+                type="button"
+                className={`finish-media-add-btn${images.length >= MEDIA_MAX_PHOTOS ? " is-maxed" : ""}`}
+                onClick={() => images.length < MEDIA_MAX_PHOTOS && photoInputRef.current?.click()}
+                aria-disabled={images.length >= MEDIA_MAX_PHOTOS}
+              >
+                📷 Photo
+                <span className="finish-media-count">{images.length}/{MEDIA_MAX_PHOTOS}</span>
+              </button>
+            </div>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleFileChange}
+            />
+            {images.length > 0 && (
+              <div className="finish-media-cards">
+                {images.map((img, idx) => {
+                  const src = img.public_url || img.upload_url || "";
+                  const isProgress = idx === progressPicIndex;
+                  return (
+                    <div key={img.id} className={`finish-media-card${isProgress ? " is-progress-pic" : ""}`}>
+                      <div className="finish-media-img-wrap" onClick={() => setPendingCrop({ src, index: idx })}>
+                        <img
+                          src={src}
+                          alt={isProgress ? "Progress" : "Workout photo"}
+                        />
+                        {isProgress && (
+                          <div className="finish-media-progress-overlay">⭐ Progress Pic</div>
+                        )}
+                        <button
+                          type="button"
+                          className="finish-media-remove"
+                          onClick={(e) => { e.stopPropagation(); removeImage(idx); }}
+                          aria-label="Remove photo"
+                        >×</button>
+                      </div>
+                      <button
+                        type="button"
+                        className={`finish-media-progress-toggle${isProgress ? " is-active" : ""}`}
+                        onClick={() => { setProgressPicIndex(isProgress ? undefined : idx); setIsDirty(true); }}
+                      >
+                        <span className="finish-media-progress-toggle-dot" />
+                        {isProgress ? "✓ Progress pic" : "Mark as progress pic"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Notes — two tabs exactly like save page */}
+          <div className="finish-notes-section">
+            <div className="finish-notes-track">
+              <button
+                type="button"
+                className={`finish-notes-tab${noteType === "personal" ? " is-active" : ""}`}
+                onClick={() => { setNoteType("personal"); setIsDirty(true); }}
+              >
+                Personal Note
+              </button>
+              <button
+                type="button"
+                className={`finish-notes-tab${noteType === "quote" ? " is-active" : ""}`}
+                onClick={() => { setNoteType("quote"); setIsDirty(true); }}
+              >
+                Session Highlight
+              </button>
+            </div>
+
+            {noteType === "personal" ? (
+              <textarea
+                className="notes-textarea finish-workout-notes"
+                placeholder="Private note — only visible to you."
+                value={personalNote}
+                onChange={e => { setPersonalNote(e.target.value); setIsDirty(true); }}
+              />
+            ) : (
+              <>
+                <textarea
+                  className="notes-textarea finish-workout-notes"
+                  placeholder="A moment worth remembering — shown in your history and shareable."
+                  value={quoteNote}
+                  onChange={e => { setQuoteNote(e.target.value); setIsDirty(true); }}
+                />
+                <button
+                  type="button"
+                  className={`finish-share-quote-toggle${shareAsQuote ? " is-active" : ""}`}
+                  onClick={() => { setShareAsQuote(v => !v); setIsDirty(true); }}
+                >
+                  <span className="finish-share-quote-toggle-dot" />
+                  Share as Quote
+                </button>
+                {/* Live preview */}
+                <div className={`finish-quote-preview-card${shareAsQuote ? " is-dark" : " is-light"}`}>
+                  <div className="finish-quote-preview-body">
+                    {shareAsQuote ? (
+                      <>
+                        <p className="finish-quote-preview-text dark">
+                          {quoteNote ? `"${quoteNote}"` : <span className="finish-quote-preview-placeholder">Your highlight will appear here…</span>}
+                        </p>
+                        <p className="finish-quote-preview-author dark">— {authorName}</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="finish-quote-preview-text">
+                          {quoteNote || <span className="finish-quote-preview-placeholder">Your highlight will appear here…</span>}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+
+        {/* Exercises (collapsible) */}
+        <section className="finish-workout-card">
+          <button type="button" className="finish-exercises-toggle" onClick={() => setExercisesExpanded(e => !e)}>
+            <p className="label">Logged Exercises</p>
+            <span className="finish-exercises-toggle-meta">
+              {workout.exerciseCount} {workout.exerciseCount === 1 ? "exercise" : "exercises"}
+              <span className="finish-exercises-chevron">{exercisesExpanded ? "⌄" : "›"}</span>
+            </span>
+          </button>
+          {exercisesExpanded && (
+            <div className="finish-workout-exercise-list">
+              {workout.exercises.map(ex => (
+                <article key={ex.id} className="finish-workout-exercise-item">
+                  <div>
+                    <strong>{ex.name}</strong>
+                    <p>{ex.loggedSets} {ex.loggedSets === 1 ? "set" : "sets"}</p>
+                  </div>
+                  <span>{ex.loggedVolume.toFixed(0)} kg</span>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Save button — only shown when dirty */}
+        {isDirty && (
+          <div className="finish-workout-actions">
+            <button className="primary-button logger-finish-button" type="button" onClick={handleSave}>
+              Save Changes
+            </button>
+          </div>
+        )}
+      </section>
+      {pendingCrop && (
+        <CropTool
+          imageUrl={pendingCrop.src}
+          onCrop={handleCropDone}
+          onCancel={handleCropCancel}
+        />
+      )}
+    </main>
+  );
+}
+
+// ── Workout History Detail Page ───────────────────────────────────────────────
+function WorkoutHistoryDetailPage({
+  workout,
+  psychProfileName,
+  onBack,
+  onEdit,
+  onEditDetails,
+  onUpdate,
+  resolvedTheme,
+  onToggleTheme,
+}: {
+  workout: SavedWorkoutData;
+  psychProfileName?: string | null;
+  onBack: () => void;
+  onEdit: () => void;
+  onEditDetails: () => void;
+  onUpdate: (updated: SavedWorkoutData) => void;
+  resolvedTheme?: string;
+  onToggleTheme?: () => void;
+}) {
   const [expandedExId, setExpandedExId] = useState<string | null>(null);
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
 
@@ -11923,15 +12434,92 @@ function WorkoutHistoryDetailPage({
     warmup: "W", dropset: "D", "rest-pause": "RP", failure: "F", normal: "",
   };
 
+  // Build media slides using workout data directly (no edit state)
+  const mediaSlides: React.ReactNode[] = [];
+
+  // 1. Photos — progress pic first, then others
+  if (workout.images && workout.images.length > 0) {
+    const progIdx = workout.progressPicIndex ?? null;
+    const ordered = [
+      ...(progIdx !== null ? [workout.images[progIdx]] : []),
+      ...workout.images.filter((_, i) => i !== progIdx),
+    ].filter(Boolean);
+    ordered.forEach((img, i) => {
+      const src = (img.public_url || img.upload_url) || "";
+      const isProgress = i === 0 && progIdx !== null;
+      mediaSlides.push(
+        <div key={`photo-${i}`} className="history-slide history-slide-photo">
+          <img src={src} alt={isProgress ? "Progress photo" : "Workout photo"} className="history-slide-img" />
+          {isProgress && <span className="history-slide-progress-badge">Progress</span>}
+        </div>
+      );
+    });
+  }
+
+  // 2. Quote slide
+  if (workout.noteType === "quote" && workout.quoteNote) {
+    if (workout.shareAsQuote) {
+      mediaSlides.push(
+        <div key="quote-dark" className="history-slide history-slide-quote is-dark">
+          <p className="history-slide-quote-text">"{workout.quoteNote}"</p>
+          <p className="history-slide-quote-author">— {psychProfileName || "You"}</p>
+        </div>
+      );
+    } else {
+      mediaSlides.push(
+        <div key="quote-light" className="history-slide history-slide-quote is-light">
+          <p className="history-slide-quote-text">{workout.quoteNote}</p>
+          <p className="history-slide-quote-author">— {psychProfileName || "You"}</p>
+        </div>
+      );
+    }
+  }
+
+  // 3. B&W session detail card
+  if (workout.exercises.length > 0) {
+    const topExs = workout.exercises.slice(0, 4);
+    mediaSlides.push(
+      <div key="detail" className="history-slide history-slide-detail">
+        <p className="history-slide-detail-name">{workout.sessionName}</p>
+        <p className="history-slide-detail-date">{new Date(workout.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</p>
+        <div className="history-slide-detail-divider" />
+        <ul className="history-slide-detail-list">
+          {topExs.map((ex, i) => (
+            <li key={i} className="history-slide-detail-item">
+              <span className="history-slide-detail-ex">{ex.name}</span>
+              <span className="history-slide-detail-sets">{(ex.sets?.length ?? ex.loggedSets)} set{(ex.sets?.length ?? ex.loggedSets) !== 1 ? "s" : ""}</span>
+            </li>
+          ))}
+          {workout.exercises.length > 4 && (
+            <li className="history-slide-detail-more">+{workout.exercises.length - 4} more</li>
+          )}
+        </ul>
+        <p className="history-slide-detail-brand">RepIQ</p>
+      </div>
+    );
+  }
+
+  // 4. Personal note slide
+  if (workout.noteType === "personal" && workout.personalNote) {
+    mediaSlides.push(
+      <div key="note" className="history-slide history-slide-note">
+        <svg className="history-slide-note-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+        <p className="history-slide-note-text">{workout.personalNote}</p>
+      </div>
+    );
+  }
+
   return (
-    <main className="detail-page finish-workout-page" data-theme={resolvedTheme}>
+    <main className="detail-page finish-workout-page hd-page" data-theme={resolvedTheme}>
+      {/* Hero */}
       <div className="finish-hero">
         <div className="finish-hero-topbar">
           <button className="finish-hero-back" type="button" onClick={onBack} aria-label="Back">←</button>
           <div style={{ flex: 1, textAlign: "center" }}>
-            <p className="finish-hero-eyebrow label" style={{ color: "rgba(255,255,255,0.7)", margin: 0 }}>
-              {isRepIQ ? "RepIQ Session" : "Workout"}
-            </p>
+            <p className="finish-hero-eyebrow label" style={{ color: "rgba(255,255,255,0.7)", margin: 0 }}>Workout History</p>
           </div>
           {resolvedTheme && onToggleTheme ? (
             <button type="button" className="theme-toggle-btn theme-toggle-btn--ghost" onClick={onToggleTheme} aria-label="Toggle theme">
@@ -11942,7 +12530,7 @@ function WorkoutHistoryDetailPage({
           ) : <span style={{ width: 38 }} />}
         </div>
         <h1 className="finish-hero-title">{workout.sessionName}</h1>
-        <p className="finish-hero-date">{new Date(workout.date).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</p>
+        <p className="finish-hero-date">{new Date(workout.date).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p>
         <div className="finish-hero-stats">
           <div className="finish-hero-stat"><span className="finish-hero-stat-label">Duration</span><strong className="finish-hero-stat-value">{workout.duration}</strong></div>
           <div className="finish-hero-stat"><span className="finish-hero-stat-label">Sets</span><strong className="finish-hero-stat-value">{workout.totalSets}</strong></div>
@@ -11952,8 +12540,47 @@ function WorkoutHistoryDetailPage({
       </div>
 
       <div className="finish-workout-body">
+
+        {/* Edit Session Details CTA */}
+        <div className="hd-edit-cta" style={{ display: "flex", gap: 10 }}>
+          <button className="hd-edit-btn" type="button" onClick={onEditDetails} style={{ flex: 1 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            Edit Details
+          </button>
+          <button className="hd-edit-btn" type="button" onClick={onEdit} style={{ flex: 1, background: "transparent", border: "1.5px solid var(--line)", color: "var(--ink)" }}>
+            Edit Workout
+          </button>
+        </div>
+
+        {/* Media slider */}
+        {mediaSlides.length > 0 && <HistoryCardSlider slides={mediaSlides} />}
+
+        {/* Rewards */}
+        {workout.rewards && workout.rewards.length > 0 && (
+          <section className="finish-workout-card">
+            <p className="label" style={{ marginBottom: 8 }}>Rewards Earned</p>
+            <div className="reward-sheet-summary finish-workout-reward-summary">
+              {workout.rewardSummary.session > 0 && <span className="reward-summary-chip reward-summary-chip-session">{rewardLevelIcon.session} {workout.rewardSummary.session}</span>}
+              {workout.rewardSummary.exercise > 0 && <span className="reward-summary-chip reward-summary-chip-exercise">{rewardLevelIcon.exercise} {workout.rewardSummary.exercise}</span>}
+              {workout.rewardSummary.set > 0 && <span className="reward-summary-chip reward-summary-chip-set">{rewardLevelIcon.set} {workout.rewardSummary.set}</span>}
+            </div>
+            <div className="reward-sheet-list finish-workout-reward-list" style={{ borderTop: "1px solid rgba(255,255,255,0.12)", paddingTop: 10, marginTop: 8 }}>
+              {workout.rewards.map((r) => (
+                <article key={r.id} className="reward-sheet-item">
+                  <div className={`reward-sheet-icon reward-sheet-icon-${r.level}`}>{rewardLevelIcon[r.level]}</div>
+                  <div><strong>{r.shortLabel}</strong><p>{r.detail}</p></div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Exercises with expandable set detail */}
         <section className="finish-workout-card">
-          <p className="label" style={{ marginBottom: 8 }}>Exercises Performed</p>
+          <p className="label" style={{ marginBottom: 8 }}>Exercises</p>
           {workout.exercises.map((ex) => {
             const isExpanded = expandedExId === ex.id;
             return (
@@ -12006,6 +12633,7 @@ function WorkoutHistoryDetailPage({
           })}
         </section>
 
+        {/* Legacy plain note */}
         {workout.note && (
           <section className="finish-workout-card">
             <p className="label" style={{ marginBottom: 6 }}>Note</p>
@@ -12013,22 +12641,215 @@ function WorkoutHistoryDetailPage({
           </section>
         )}
 
-        {(onEdit || onShare) && (
-          <div className="history-detail-actions">
-            {onEdit && (
-              <button className="secondary-button history-detail-action-btn" type="button" onClick={onEdit}>
-                Edit Session
-              </button>
-            )}
-            {onShare && (
-              <button className="primary-button history-detail-action-btn" type="button" onClick={onShare}>
-                Share Summary
-              </button>
-            )}
-          </div>
-        )}
       </div>
     </main>
+  );
+}
+
+// ── Progress Photo Tab ────────────────────────────────────────────────────────
+type ProgressPhotoEntry = {
+  key: string;        // `${savedAt}__${imgIdx}`
+  src: string;
+  date: string;       // ISO — workout.savedAt
+  workoutName: string;
+  isProgress: boolean;
+};
+
+function fmtGroupDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "long", year: "numeric" });
+}
+function fmtOverlayDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function ProgressPhotoTab({ savedWorkouts }: { savedWorkouts: SavedWorkoutData[] }) {
+  type PFilter = "all" | "progress";
+  const [filter, setFilter] = useState<PFilter>("all");
+  const [compareMode, setCompareMode] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);  // up to 2 keys
+  const [comparing, setComparing] = useState(false);
+
+  // Flatten all images newest-first
+  const allPhotos = useMemo<ProgressPhotoEntry[]>(() => {
+    const sorted = [...savedWorkouts].sort(
+      (a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()
+    );
+    const out: ProgressPhotoEntry[] = [];
+    for (const w of sorted) {
+      if (!w.images?.length) continue;
+      w.images.forEach((img, idx) => {
+        const src = img.public_url || img.upload_url || "";
+        if (!src) return;
+        out.push({
+          key: `${w.savedAt}__${idx}`,
+          src,
+          date: w.savedAt,
+          workoutName: w.sessionName,
+          isProgress: idx === (w.progressPicIndex ?? -1),
+        });
+      });
+    }
+    return out;
+  }, [savedWorkouts]);
+
+  const progressPhotos = useMemo(() => allPhotos.filter(p => p.isProgress), [allPhotos]);
+
+  // Whichever pool is visible is what Compare draws from
+  const activePool = filter === "progress" ? progressPhotos : allPhotos;
+
+  // Group all photos by calendar day for the All view
+  const dayGroups = useMemo(() => {
+    const map = new Map<string, ProgressPhotoEntry[]>();
+    for (const p of allPhotos) {
+      const day = p.date.slice(0, 10);
+      if (!map.has(day)) map.set(day, []);
+      map.get(day)!.push(p);
+    }
+    return [...map.entries()];
+  }, [allPhotos]);
+
+  function toggleSelect(key: string) {
+    setSelected(prev => {
+      if (prev.includes(key)) return prev.filter(k => k !== key);
+      if (prev.length >= 2) return [prev[1], key];
+      return [...prev, key];
+    });
+  }
+
+  function enterCompareMode() {
+    // Stay on the current filter — compare works on any photo
+    setCompareMode(true);
+    setSelected([]);
+    setComparing(false);
+  }
+
+  function exitCompareMode() {
+    setCompareMode(false);
+    setSelected([]);
+    setComparing(false);
+  }
+
+  // ── Full compare view ──────────────────────────────────────────────────────
+  if (comparing && selected.length === 2) {
+    const photos = selected.map(k => allPhotos.find(p => p.key === k)!);
+    return (
+      <div className="pg-compare-view">
+        <div className="pg-compare-topbar">
+          <button type="button" className="pg-compare-back" onClick={exitCompareMode}>← Back</button>
+          <span className="pg-compare-title">Compare</span>
+          <span style={{ width: 60 }} />
+        </div>
+        <div className="pg-compare-pair">
+          {photos.map((p, i) => (
+            <div key={p.key} className="pg-compare-item">
+              <div className="pg-compare-img-wrap">
+                <img src={p.src} alt={`Photo ${i + 1}`} />
+              </div>
+              <p className="pg-compare-date">{fmtOverlayDate(p.date)}</p>
+              <p className="pg-compare-label">{p.workoutName}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main tab ───────────────────────────────────────────────────────────────
+  const canCompare = activePool.length >= 2;
+
+  return (
+    <div className="pg-tab">
+      {/* Filter bar */}
+      <div className="pg-filter-bar">
+        <div className="pg-filter-pills">
+          <button
+            type="button"
+            className={`pg-filter-pill${filter === "all" ? " is-active" : ""}`}
+            onClick={() => { setFilter("all"); setCompareMode(false); setSelected([]); }}
+          >All</button>
+          <button
+            type="button"
+            className={`pg-filter-pill${filter === "progress" ? " is-active" : ""}`}
+            onClick={() => { setFilter("progress"); setCompareMode(false); setSelected([]); }}
+          >⭐ Progress</button>
+        </div>
+        <button
+          type="button"
+          className={`pg-compare-btn${compareMode ? " is-active" : ""}${!canCompare ? " is-disabled" : ""}`}
+          onClick={compareMode ? exitCompareMode : enterCompareMode}
+          disabled={!canCompare}
+          title={!canCompare ? "Need at least 2 photos" : "Compare any two photos"}
+        >
+          {compareMode ? "Cancel" : "Compare"}
+        </button>
+      </div>
+
+      {/* Compare mode hint */}
+      {compareMode && (
+        <div className="pg-compare-hint">
+          {selected.length < 2
+            ? `Tap ${2 - selected.length} more photo${2 - selected.length !== 1 ? "s" : ""} to compare`
+            : <button type="button" className="pg-compare-go" onClick={() => setComparing(true)}>Compare selected →</button>
+          }
+        </div>
+      )}
+
+      {/* ── All view — grouped by date ─────────────────────────────────── */}
+      {filter === "all" && (
+        allPhotos.length === 0
+          ? <p className="pg-empty">No workout photos yet. Add photos when logging or editing a session.</p>
+          : <div className="pg-all-view">
+              {dayGroups.map(([day, photos]) => (
+                <div key={day} className="pg-day-group">
+                  <p className="pg-day-heading">{fmtGroupDate(day + "T12:00:00")}</p>
+                  <div className="pg-grid">
+                    {photos.map(p => {
+                      const isSel = selected.includes(p.key);
+                      return (
+                        <div
+                          key={p.key}
+                          className={`pg-photo-card pg-has-date${compareMode ? " pg-selectable" : ""}${isSel ? " pg-selected" : ""}`}
+                          onClick={() => compareMode && toggleSelect(p.key)}
+                        >
+                          <img src={p.src} alt={p.workoutName} loading="lazy" />
+                          <span className="pg-date-overlay">{fmtOverlayDate(p.date)}</span>
+                          {p.isProgress && !compareMode && <span className="pg-progress-star">⭐</span>}
+                          {compareMode && isSel && (
+                            <div className="pg-select-check">{selected.indexOf(p.key) + 1}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+      )}
+
+      {/* ── Progress view — flat grid with date overlay ────────────────── */}
+      {filter === "progress" && (
+        progressPhotos.length === 0
+          ? <p className="pg-empty">No progress photos yet. Mark a photo as "Progress" when editing a workout.</p>
+          : <div className="pg-grid pg-progress-grid">
+              {progressPhotos.map(p => {
+                const isSel = selected.includes(p.key);
+                return (
+                  <div
+                    key={p.key}
+                    className={`pg-photo-card pg-has-date${compareMode ? " pg-selectable" : ""}${isSel ? " pg-selected" : ""}`}
+                    onClick={() => compareMode && toggleSelect(p.key)}
+                  >
+                    <img src={p.src} alt="Progress" loading="lazy" />
+                    <span className="pg-date-overlay">{fmtOverlayDate(p.date)}</span>
+                    {compareMode && isSel && (
+                      <div className="pg-select-check">{selected.indexOf(p.key) + 1}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+      )}
+    </div>
   );
 }
 
@@ -12400,11 +13221,8 @@ function InsightsPage({
         )}
 
         {tab === "progress" && (
-          <section className="planner-section az-section">
-            <div className="planner-builder-stub">
-              <p className="planner-empty-title">Progress tracking</p>
-              <p className="planner-empty-sub">Coming soon — track your fitness journey with photos and milestone tracking.</p>
-            </div>
+          <section className="planner-section az-section" style={{ padding: 0 }}>
+            <ProgressPhotoTab savedWorkouts={savedWorkouts} />
           </section>
         )}
 
@@ -14367,6 +15185,317 @@ function GlossaryPage({ onBack, resolvedTheme, initialTerm = "" }: { onBack: () 
   );
 }
 
+// ── History Card Slider ───────────────────────────────────────────────────────
+function HistoryCardSlider({ slides }: { slides: React.ReactNode[] }) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const sliderRef = useRef<HTMLDivElement>(null);
+  function handleScroll() {
+    const el = sliderRef.current;
+    if (!el || el.offsetWidth === 0) return;
+    setActiveIdx(Math.round(el.scrollLeft / el.offsetWidth));
+  }
+  if (slides.length === 0) return null;
+  return (
+    <div className="history-card-slider-wrap">
+      <div ref={sliderRef} className="history-card-slider" onScroll={handleScroll}>
+        {slides}
+      </div>
+      {slides.length > 1 && (
+        <div className="history-slider-dots">
+          {slides.map((_, i) => (
+            <span key={i} className={`history-slider-dot${i === activeIdx ? " is-active" : ""}`} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Workout History Page ──────────────────────────────────────────────────────
+function WorkoutHistoryPage({
+  workouts,
+  onBack,
+  onRedo,
+  onGoToDetail,
+  onEdit,
+  psychProfileName,
+  hasActiveWorkout,
+}: {
+  workouts: SavedWorkoutData[];
+  onBack: () => void;
+  onRedo: (workout: SavedWorkoutData) => void;
+  onGoToDetail: (workout: SavedWorkoutData) => void;
+  onEdit: (workout: SavedWorkoutData) => void;
+  psychProfileName?: string | null;
+  hasActiveWorkout: boolean;
+}) {
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
+  const [runningToast, setRunningToast] = useState(false);
+
+  useEffect(() => {
+    if (!runningToast) return;
+    const t = setTimeout(() => setRunningToast(false), 3000);
+    return () => clearTimeout(t);
+  }, [runningToast]);
+
+  const sorted = useMemo(
+    () => [...workouts].sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()),
+    [workouts]
+  );
+
+  const filtered = useMemo(() => {
+    if (!fromDate && !toDate) return sorted;
+    return sorted.filter((w) => {
+      const d = w.savedAt.slice(0, 10);
+      if (fromDate && d < fromDate) return false;
+      if (toDate && d > toDate) return false;
+      return true;
+    });
+  }, [sorted, fromDate, toDate]);
+
+  const isFiltered = fromDate !== "" || toDate !== "";
+  const total = sorted.length;
+
+  function formatCardDate(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  }
+
+  function formatSetSummary(sets?: { weight: number; reps: number; rpe: number | null; setType: string }[]): string {
+    if (!sets || sets.length === 0) return "";
+    const weights = sets.map((s) => s.weight);
+    const allSame = weights.every((w) => w === weights[0]);
+    if (allSame) return `${sets.length} × ${weights[0]}kg`;
+    return sets.map((s) => `${s.weight}kg`).join(" · ");
+  }
+
+  return (
+    <div className="history-page">
+      {/* Sticky header */}
+      <div className="history-page-header">
+        <div className="history-page-topbar">
+          <button className="history-back-btn" type="button" onClick={onBack} aria-label="Back">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+          <h2 className="history-page-title">History</h2>
+          <div className="history-count-row">
+            {isFiltered ? (
+              <span>
+                <span className="history-count-filtered-num">{filtered.length}</span>
+                <span className="history-count-filtered-of"> of {total} sessions</span>
+              </span>
+            ) : (
+              <span className="history-count-bold">{total}</span>
+            )}
+            {!isFiltered && <span className="history-count-label"> sessions</span>}
+          </div>
+        </div>
+        {/* Date filter */}
+        <div className="history-date-filter">
+          <label className="history-date-label">
+            <span>From</span>
+            <input type="date" className="history-date-input" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          </label>
+          <label className="history-date-label">
+            <span>To</span>
+            <input type="date" className="history-date-input" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </label>
+        </div>
+      </div>
+
+      {/* Feed */}
+      <div className="history-feed">
+        {filtered.length === 0 && (
+          <p className="history-empty">No workouts found for this date range.</p>
+        )}
+        {filtered.map((workout) => (
+          <article
+            key={workout.savedAt}
+            className="history-card"
+            onClick={() => onGoToDetail(workout)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onGoToDetail(workout); }}
+          >
+            {/* Card header */}
+            <div className="history-card-header" onClick={(e) => e.stopPropagation()}>
+              <div className="history-card-meta">
+                <span className="history-card-title">{workout.sessionName}</span>
+                <span className="history-card-date">{formatCardDate(workout.savedAt)}</span>
+              </div>
+              <div className="history-card-actions">
+                <button
+                  className="history-card-action-btn"
+                  type="button"
+                  title="Re-do this workout"
+                  aria-label="Re-do workout"
+                  onClick={(e) => { e.stopPropagation(); if (hasActiveWorkout) { setRunningToast(true); } else { onRedo(workout); } }}
+                >
+                  {/* Repeat icon */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="17 1 21 5 17 9"/>
+                    <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                    <polyline points="7 23 3 19 7 15"/>
+                    <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                  </svg>
+                </button>
+                <button
+                  className="history-card-action-btn"
+                  type="button"
+                  title="Save as template"
+                  aria-label="Save as template"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Bookmark icon */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                  </svg>
+                </button>
+                <button
+                  className="history-card-action-btn"
+                  type="button"
+                  title="Edit workout"
+                  aria-label="Edit workout"
+                  onClick={(e) => { e.stopPropagation(); if (hasActiveWorkout) { setRunningToast(true); } else { onEdit(workout); } }}
+                >
+                  {/* Pencil icon */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Slider — images → quote → detail card → personal note */}
+            {(() => {
+              // Build slides in order
+              const slides: React.ReactNode[] = [];
+
+              // 1. Progress pic first, then other photos
+              if (workout.images && workout.images.length > 0) {
+                const progIdx = workout.progressPicIndex ?? null;
+                const ordered = [
+                  ...(progIdx !== null ? [workout.images[progIdx]] : []),
+                  ...workout.images.filter((_, i) => i !== progIdx),
+                ].filter(Boolean);
+                ordered.forEach((img, i) => {
+                  const src = (img.public_url || img.upload_url) || "";
+                  const isProgress = i === 0 && progIdx !== null;
+                  slides.push(
+                    <div key={`photo-${i}`} className="history-slide history-slide-photo">
+                      <img src={src} alt={isProgress ? "Progress photo" : "Workout photo"} className="history-slide-img" />
+                      {isProgress && <span className="history-slide-progress-badge">Progress</span>}
+                    </div>
+                  );
+                });
+              }
+
+              // 2. Session highlight quote slide
+              if (workout.noteType === "quote" && workout.quoteNote) {
+                if (workout.shareAsQuote) {
+                  slides.push(
+                    <div key="quote-dark" className="history-slide history-slide-quote is-dark">
+                      <p className="history-slide-quote-text">"{workout.quoteNote}"</p>
+                      <p className="history-slide-quote-author">— {psychProfileName || "You"}</p>
+                    </div>
+                  );
+                } else {
+                  slides.push(
+                    <div key="quote-light" className="history-slide history-slide-quote is-light">
+                      <p className="history-slide-quote-text">{workout.quoteNote}</p>
+                      <p className="history-slide-quote-author">— {psychProfileName || "You"}</p>
+                    </div>
+                  );
+                }
+              }
+
+              // 3. Session detail card — B&W summary
+              if (workout.exercises.length > 0) {
+                const topExs = workout.exercises.slice(0, 4);
+                slides.push(
+                  <div key="detail" className="history-slide history-slide-detail">
+                    <p className="history-slide-detail-name">{workout.sessionName}</p>
+                    <p className="history-slide-detail-date">{formatCardDate(workout.savedAt)}</p>
+                    <div className="history-slide-detail-divider" />
+                    <ul className="history-slide-detail-list">
+                      {topExs.map((ex, i) => (
+                        <li key={i} className="history-slide-detail-item">
+                          <span className="history-slide-detail-ex">{ex.name}</span>
+                          <span className="history-slide-detail-sets">{(ex.sets?.length ?? 0)} set{(ex.sets?.length ?? 0) !== 1 ? "s" : ""}</span>
+                        </li>
+                      ))}
+                      {workout.exercises.length > 4 && (
+                        <li className="history-slide-detail-more">+{workout.exercises.length - 4} more</li>
+                      )}
+                    </ul>
+                    <p className="history-slide-detail-brand">RepIQ</p>
+                  </div>
+                );
+              }
+
+              // 4. Personal note slide
+              if (workout.noteType === "personal" && workout.personalNote) {
+                slides.push(
+                  <div key="note" className="history-slide history-slide-note">
+                    <svg className="history-slide-note-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                    </svg>
+                    <p className="history-slide-note-text">{workout.personalNote}</p>
+                  </div>
+                );
+              }
+
+              return <HistoryCardSlider slides={slides} />;
+            })()}
+
+            {/* Exercise summary — compact muscle overview */}
+            {workout.exercises.length > 0 && (() => {
+              const primaryMuscles = Array.from(new Set(workout.exercises.map(e => e.primaryMuscle).filter(Boolean)));
+              const secondaryMuscles = Array.from(new Set(
+                workout.exercises.flatMap(e => {
+                  const catalogEx = allCatalogExercises.find(c => c.id === e.id || c.id === e.id.replace(/-\d{8,}-\d+$/, ""));
+                  return catalogEx?.secondaryMuscles ?? [];
+                }).filter(m => !primaryMuscles.includes(m) && Boolean(m))
+              ));
+              return (
+                <div className="history-muscle-summary">
+                  <span className="history-muscle-count">{workout.exercises.length} exercise{workout.exercises.length !== 1 ? "s" : ""}</span>
+                  <div className="history-muscle-list">
+                    {primaryMuscles.map((m, i) => (
+                      <span key={m} className="history-muscle-primary">{m}{i < primaryMuscles.length - 1 || secondaryMuscles.length > 0 ? " · " : ""}</span>
+                    ))}
+                    {secondaryMuscles.slice(0, 4).map((m, i) => (
+                      <span key={m} className="history-muscle-secondary">{m}{i < Math.min(secondaryMuscles.length, 4) - 1 ? " · " : ""}</span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+            {/* Rewards row */}
+            {workout.rewards && workout.rewards.length > 0 && (
+              <div className="history-card-rewards">
+                {workout.rewardSummary.session > 0 && <span className="hcr-chip hcr-chip-session">{rewardLevelIcon.session} {workout.rewardSummary.session}</span>}
+                {workout.rewardSummary.exercise > 0 && <span className="hcr-chip hcr-chip-exercise">{rewardLevelIcon.exercise} {workout.rewardSummary.exercise}</span>}
+                {workout.rewardSummary.set > 0 && <span className="hcr-chip hcr-chip-set">{rewardLevelIcon.set} {workout.rewardSummary.set}</span>}
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+      {runningToast && (
+        <div className="history-running-toast" onClick={() => setRunningToast(false)}>
+          A workout is already running. Finish or discard it first.
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── More Sheet ────────────────────────────────────────────────────────────────
 function MoreSheet({ open, onClose, onGoTo, resolvedTheme }: { open: boolean; onClose: () => void; onGoTo: (view: AppView) => void; resolvedTheme: string }) {
   if (!open) return null;
@@ -14375,7 +15504,7 @@ function MoreSheet({ open, onClose, onGoTo, resolvedTheme }: { open: boolean; on
       <div className="more-sheet-card" onClick={(e) => e.stopPropagation()}>
         <div className="more-sheet-handle" />
         <p className="more-sheet-title">More</p>
-        <button className="more-sheet-item" type="button" onClick={() => onGoTo("history-detail")}>
+        <button className="more-sheet-item" type="button" onClick={() => onGoTo("history")}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
           </svg>
@@ -14404,6 +15533,51 @@ export function App() {
   const storedPlanBuilderState = getStoredPlanBuilderDraft();
   const [psychProfile, setPsychProfile] = useState<UserPsychProfile>(getStoredPsychProfile);
   const [appView, setAppView] = useState<AppView>("home");
+
+  // ── Navigation stack ──────────────────────────────────────────────────────
+  const navStackRef = useRef<AppView[]>([]);
+  const appViewRef = useRef<AppView>("home");
+
+  // Keep appViewRef in sync with appView
+  useEffect(() => { appViewRef.current = appView; }, [appView]);
+
+  // navigate: user-initiated drill-down (pushes to stack + browser history)
+  function navigate(view: AppView) {
+    navStackRef.current = [...navStackRef.current, appViewRef.current];
+    window.history.pushState(null, "");
+    setAppView(view);
+  }
+
+  // navigateRoot: tab-level navigation (clears stack — fresh context)
+  function navigateRoot(view: AppView) {
+    navStackRef.current = [];
+    setAppView(view);
+  }
+
+  // goBack: pop the stack (or fall back to "home")
+  function goBack(fallback: AppView = "home") {
+    const stack = navStackRef.current;
+    if (stack.length > 0) {
+      const prev = stack[stack.length - 1];
+      navStackRef.current = stack.slice(0, -1);
+      setAppView(prev);
+    } else {
+      setAppView(fallback);
+    }
+  }
+
+  // Handle browser back button / iOS swipe-back gesture
+  useEffect(() => {
+    window.history.pushState(null, ""); // sentinel: always one entry ahead
+    function handlePopState() {
+      window.history.pushState(null, ""); // re-push so next swipe also fires
+      goBack();
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // goBack reads from ref — no stale closure
+
   const [showMoreSheet, setShowMoreSheet] = useState(false);
   const [insightsInitialTab, setInsightsInitialTab] = useState<"summary" | "stats" | "progress">("summary");
   const [glossaryTerm, setGlossaryTerm] = useState("");
@@ -14459,11 +15633,14 @@ export function App() {
   });
   const [plannerView, setPlannerView] = useState<"mine" | "library" | "generate">("mine");
   const [activePlanSession, setActivePlanSession] = useState<ActivePlanSession>(null);
-  const [discardReturnView, setDiscardReturnView] = useState<"home" | "planner">("home");
+  const [discardReturnView, setDiscardReturnView] = useState<AppView>("home");
   const [reportWorkout, setReportWorkout] = useState<SavedWorkoutData | null>(null);
   const [historyDetailWorkout, setHistoryDetailWorkout] = useState<SavedWorkoutData | null>(null);
   const [historyDetailReturnView, setHistoryDetailReturnView] = useState<AppView>("planner");
+  const [historyEditReturnView, setHistoryEditReturnView] = useState<AppView>("history-detail");
   const [historyDetailPlanContext, setHistoryDetailPlanContext] = useState<{ weekIdx: number; dayIdx: number; label: string; sessionNum: number } | null>(null);
+  // When editing a history workout, track its original savedAt so we overwrite instead of duplicating
+  const [editingWorkoutOriginalSavedAt, setEditingWorkoutOriginalSavedAt] = useState<string | null>(null);
   const [savedWorkoutsList, setSavedWorkoutsList] = useState<SavedWorkoutData[]>(getStoredSavedWorkouts);
   const [templateApplyPromptImages, setTemplateApplyPromptImages] = useState<WorkoutMediaAsset[] | null>(null);
   const [tagPlanId, setTagPlanId] = useState<string | null>(null);
@@ -14615,7 +15792,8 @@ export function App() {
           exercise.draftSets,
           lastSession,
           settings.carryForwardDefaults,
-          getExerciseMeasurementType(exercise)
+          getExerciseMeasurementType(exercise),
+          exercise.supportsExternalLoad
         ).resolvedSets;
         return {
           sets: summary.sets + completed.length,
@@ -14734,7 +15912,8 @@ export function App() {
         exercise.draftSets,
         lastSession,
         settings.carryForwardDefaults,
-        getExerciseMeasurementType(exercise)
+        getExerciseMeasurementType(exercise),
+        exercise.supportsExternalLoad
       ).resolvedSets;
 
       if (completedSets.length === 0) {
@@ -14774,14 +15953,22 @@ export function App() {
     const saved: SavedWorkoutData = {
       ...finishWorkoutDraft,
       images,
-      savedAt: new Date().toISOString(),
+      // When editing history, keep the original savedAt so we overwrite the correct entry.
+      // Otherwise stamp with current time.
+      savedAt: editingWorkoutOriginalSavedAt ?? new Date().toISOString(),
       ...(activeRepIQSessionKey ? { repiqSourceKey: activeRepIQSessionKey } : {}),
       workoutSource: activeRepIQSessionKey ? "repiq"
         : activePlanSession ? (activePlanSession.source as "saved" | "library" | "generated" | "quick")
+        : editingWorkoutOriginalSavedAt ? "history"
         : activeWorkoutIsRedo ? "history"
         : "quick",
     };
-    persistSavedWorkout(saved);
+    if (editingWorkoutOriginalSavedAt) {
+      overwriteSavedWorkout(editingWorkoutOriginalSavedAt, saved);
+      setEditingWorkoutOriginalSavedAt(null);
+    } else {
+      persistSavedWorkout(saved);
+    }
 
     // ── Passive psych capture (zero user friction) ──────────────────────────
     // Automatically record behavioral signals for every completed session.
@@ -14909,7 +16096,8 @@ export function App() {
           exercise.draftSets,
           lastSession,
           settings.carryForwardDefaults,
-          getExerciseMeasurementType(exercise)
+          getExerciseMeasurementType(exercise),
+          exercise.supportsExternalLoad
         ).resolvedSets;
 
         return {
@@ -14986,6 +16174,12 @@ export function App() {
     mediaQuery.addEventListener("change", updateTheme);
 
     return () => mediaQuery.removeEventListener("change", updateTheme);
+  }, []);
+
+  // Seed workout history in dev / demo
+  useEffect(() => {
+    seedWorkoutHistory();
+    setSavedWorkoutsList(getStoredSavedWorkouts());
   }, []);
 
   // Reset insights tab to Analyzer whenever user navigates away from Insights
@@ -15409,7 +16603,7 @@ export function App() {
     setInteractedExerciseActive(exerciseId);
 
     applyResolvedValuesToDraftSet(exerciseId, setIndex, {
-      weightInput: usesWeightInputForMeasurement(measurementType)
+      weightInput: usesWeightInputForMeasurement(measurementType, exercise.supportsExternalLoad)
         ? String(previousSet.weight)
         : "",
       repsInput: String(previousSet.reps),
@@ -15434,7 +16628,7 @@ export function App() {
       exercise.history[exercise.history.length - 1]
     );
     const draftSet = exercise.draftSets[setIndex];
-    const resolvedWeightInput = usesWeightInputForMeasurement(measurementType)
+    const resolvedWeightInput = usesWeightInputForMeasurement(measurementType, exercise.supportsExternalLoad)
       ? settings.carryForwardDefaults &&
         draftSet.weightInput.trim().length === 0
           ? carrySource?.weightInput?.trim().length
@@ -16686,7 +17880,8 @@ export function App() {
       activeExercise.draftSets,
       lastSession,
       settings.carryForwardDefaults,
-      getExerciseMeasurementType(activeExercise)
+      getExerciseMeasurementType(activeExercise),
+      activeExercise.supportsExternalLoad
     );
 
     if (resolvedSets.length === 0) {
@@ -17020,7 +18215,7 @@ export function App() {
     withReadinessCheck(() => setAppView("logger"));
   }
 
-  function editHistoryWorkout(workout: SavedWorkoutData) {
+  function editHistoryWorkout(workout: SavedWorkoutData, returnView: AppView = "history") {
     // Re-loads the logger with the same exercises as the original session.
     // Timer is pre-seeded from durationSeconds so elapsed time starts where the session left off.
     const sourceKey = workout.repiqSourceKey;
@@ -17107,7 +18302,8 @@ export function App() {
     setShowBottomRestDock(true);
     setActivePlanSession(null);
     setActiveRepIQSessionKey(null);
-    setDiscardReturnView("planner");
+    setDiscardReturnView(returnView);
+    setEditingWorkoutOriginalSavedAt(workout.savedAt);
     setHasActiveWorkout(true);
     setAppView("logger");
   }
@@ -17344,29 +18540,38 @@ export function App() {
           setShowDevPage(false);
         }}
         onSeedHistoryData={() => {
-          const workouts = buildSeedWorkouts();
-          persistSavedWorkoutsList(workouts);
-          setSavedWorkoutsList(workouts);
+          const fresh = buildSeedWorkouts();
+          const userKept = getStoredSavedWorkouts().filter(w => w.userEdited);
+          const merged = [...userKept, ...fresh].slice(0, 200)
+            .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
+          persistSavedWorkoutsList(merged);
+          setSavedWorkoutsList(merged);
           setAppView("home");
           setShowDevPage(false);
           setDevBypassGate(true);
         }}
         onSeedRepIQData={() => {
-          const { plan, workouts } = buildSeedRepIQData();
+          const { plan, workouts: fresh } = buildSeedRepIQData();
+          const userKept = getStoredSavedWorkouts().filter(w => w.userEdited);
+          const merged = [...userKept, ...fresh].slice(0, 200)
+            .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
           persistRepIQPlan(plan);
-          persistSavedWorkoutsList(workouts);
+          persistSavedWorkoutsList(merged);
           setRepiqPlan(plan);
-          setSavedWorkoutsList(workouts);
+          setSavedWorkoutsList(merged);
           setAppView("home");
           setShowDevPage(false);
           setDevBypassGate(true);
         }}
         onSeedMuscleGap={() => {
-          const workouts = buildMuscleGapSeed();
+          const fresh = buildMuscleGapSeed();
+          const userKept = getStoredSavedWorkouts().filter(w => w.userEdited);
+          const merged = [...userKept, ...fresh].slice(0, 200)
+            .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
           window.localStorage.removeItem(repiqPlanStorageKey);
-          persistSavedWorkoutsList(workouts);
+          persistSavedWorkoutsList(merged);
           setRepiqPlan(null);
-          setSavedWorkoutsList(workouts);
+          setSavedWorkoutsList(merged);
           setAppView("home");
           setShowDevPage(false);
           setDevBypassGate(true);
@@ -17553,12 +18758,33 @@ export function App() {
     );
   }
 
+  function openTrayDiscard() {
+    setDiscardReturnView(appView);
+    setTrayDiscardOpen(true);
+  }
+
+  const trayOverlayProps = {
+    isActive: hasActiveWorkout && exercises.length > 0,
+    sessionName: workoutMeta.sessionName,
+    duration: derivedDuration,
+    workoutSets: workoutSummary.sets,
+    workoutVolume: workoutSummary.volume,
+    incompleteSetCount,
+    discardOpen: trayDiscardOpen,
+    onDiscardRequest: openTrayDiscard,
+    onDiscardClose: () => setTrayDiscardOpen(false),
+    onResume: openActiveWorkout,
+    onDiscard: () => { setTrayDiscardOpen(false); discardWorkout(); },
+    restSeconds: activeRestSeconds,
+    showRestTimer: showStickyRestDock,
+  };
+
   if (appView === "report" && reportWorkout) {
     return (
       <div data-theme={resolvedTheme}>
         <WorkoutReportPage
           data={reportWorkout}
-          onBack={() => setAppView("home")}
+          onBack={() => goBack("home")}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
           psychCapture={{
@@ -17566,7 +18792,7 @@ export function App() {
             onSave: persistPostWorkoutPsych,
           }}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <BottomNav activeView={appView} onNavigate={(view) => navigateRoot(view)} onMore={() => setShowMoreSheet(true)} />
         {/* ── RepIQ plan update prompt ─────────────────────────────────────── */}
         {repiqUpdatePrompt && (
           <div
@@ -17605,6 +18831,35 @@ export function App() {
           </div>
         )}
         {/* cross-plan prompt removed — plan is flagged silently; review notice shown inline on home and planner */}
+        <WorkoutTrayOverlay {...trayOverlayProps} />
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
+      </div>
+    );
+  }
+
+  if (appView === "history") {
+    return (
+      <div data-theme={resolvedTheme} style={{ minHeight: "100dvh", background: "var(--bg)" }}>
+        <WorkoutHistoryPage
+          workouts={savedWorkoutsList}
+          onBack={() => goBack("home")}
+          onRedo={(workout) => {
+            redoWorkout(workout);
+          }}
+          onGoToDetail={(workout) => {
+            setHistoryDetailWorkout(workout);
+            setHistoryDetailPlanContext(null);
+            setHistoryDetailReturnView("history");
+            navigate("history-detail");
+          }}
+          onEdit={(workout) => {
+            editHistoryWorkout(workout);
+          }}
+          hasActiveWorkout={hasActiveWorkout && exercises.length > 0}
+          psychProfileName={psychProfile.name}
+        />
+        <BottomNav activeView={appView} onNavigate={(view) => navigateRoot(view)} onMore={() => setShowMoreSheet(true)} />
+        <WorkoutTrayOverlay {...trayOverlayProps} />
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
@@ -17642,17 +18897,54 @@ export function App() {
       repiqSourceKey: `${historyDetailPlanContext.weekIdx}-${historyDetailPlanContext.dayIdx}`,
     } : null);
     if (!effectiveWorkout) { setAppView(historyDetailReturnView); return null; }
-    const canEdit = !!(effectiveWorkout.repiqSourceKey);
     return (
       <div data-theme={resolvedTheme}>
         <WorkoutHistoryDetailPage
           workout={effectiveWorkout}
-          onBack={() => setAppView(historyDetailReturnView)}
-          onEdit={canEdit ? () => editHistoryWorkout(effectiveWorkout) : undefined}
-          onShare={canEdit ? () => { setReportWorkout(effectiveWorkout); setAppView("share"); } : undefined}
+          psychProfileName={psychProfile.name}
+          onBack={() => goBack("history")}
+          onEdit={() => editHistoryWorkout(effectiveWorkout, "history-detail")}
+          onEditDetails={() => {
+            setHistoryEditReturnView("history-detail");
+            navigate("history-edit");
+          }}
+          onUpdate={(updated) => {
+            overwriteSavedWorkout(updated.savedAt, updated);
+            setSavedWorkoutsList(getStoredSavedWorkouts());
+            setHistoryDetailWorkout(updated);
+          }}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
+        <WorkoutTrayOverlay {...trayOverlayProps} />
+      </div>
+    );
+  }
+
+  if (appView === "history-edit" && historyDetailWorkout) {
+    return (
+      <div data-theme={resolvedTheme}>
+        <HistoryEditPage
+          workout={historyDetailWorkout}
+          psychProfileName={psychProfile.name}
+          onBack={() => goBack("history-detail")}
+          onEditWorkout={() => editHistoryWorkout(historyDetailWorkout, "history-edit")}
+          onPersist={(updated) => {
+            // Auto-save (no navigation) — called immediately after image crop/remove
+            overwriteSavedWorkout(updated.savedAt, updated);
+            setSavedWorkoutsList(getStoredSavedWorkouts());
+            setHistoryDetailWorkout(updated);
+          }}
+          onSave={(updated) => {
+            overwriteSavedWorkout(updated.savedAt, updated);
+            setSavedWorkoutsList(getStoredSavedWorkouts());
+            setHistoryDetailWorkout(updated);
+            setAppView(historyEditReturnView);
+          }}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+        />
+        <WorkoutTrayOverlay {...trayOverlayProps} />
       </div>
     );
   }
@@ -17664,7 +18956,7 @@ export function App() {
           savedWorkouts={savedWorkoutsList}
           psychProfile={psychProfile}
           library={availableExerciseTemplates as ExerciseWithTaxonomy[]}
-          onOpenReport={(workout) => { setReportWorkout(workout); setAppView("report"); }}
+          onOpenReport={(workout) => { setReportWorkout(workout); navigate("report"); }}
           onRedoWorkout={redoWorkout}
           onSaveToMyWorkouts={saveHistoryWorkoutToMyWorkouts}
           onDeleteWorkout={deleteHistoryWorkout}
@@ -17672,7 +18964,8 @@ export function App() {
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
           initialTab={insightsInitialTab}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <BottomNav activeView={appView} onNavigate={(view) => navigateRoot(view)} onMore={() => setShowMoreSheet(true)} />
+        <WorkoutTrayOverlay {...trayOverlayProps} />
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
@@ -17690,7 +18983,8 @@ export function App() {
             <p style={{ fontSize: "0.9rem", color: "var(--subtle-text)", marginTop: "1rem" }}>Connect with other RepIQ users, share workouts, and build your fitness community.</p>
           </div>
         </main>
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <BottomNav activeView={appView} onNavigate={(view) => navigateRoot(view)} onMore={() => setShowMoreSheet(true)} />
+        <WorkoutTrayOverlay {...trayOverlayProps} />
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
@@ -17700,7 +18994,7 @@ export function App() {
     return (
       <div data-theme={resolvedTheme}>
         <ProfilePage
-          onBack={() => setAppView("home")}
+          onBack={() => goBack("home")}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
           hiddenSuggestionIds={hiddenSuggestionIds}
@@ -17714,7 +19008,8 @@ export function App() {
             setHiddenSuggestionIds(new Set());
           }}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <BottomNav activeView={appView} onNavigate={(view) => navigateRoot(view)} onMore={() => setShowMoreSheet(true)} />
+        <WorkoutTrayOverlay {...trayOverlayProps} />
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
@@ -17726,8 +19021,9 @@ export function App() {
         <GlossaryPage
           resolvedTheme={resolvedTheme}
           initialTerm={glossaryTerm}
-          onBack={() => { setGlossaryTerm(""); setAppView("home"); }}
+          onBack={() => { setGlossaryTerm(""); goBack("home"); }}
         />
+        <WorkoutTrayOverlay {...trayOverlayProps} />
       </div>
     );
   }
@@ -17742,7 +19038,7 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <BottomNav activeView={appView} onNavigate={(view) => navigateRoot(view)} onMore={() => setShowMoreSheet(true)} />
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
@@ -17795,6 +19091,17 @@ export function App() {
                 : current
             )
           }
+          onShareAsQuoteChange={(value) =>
+            setFinishWorkoutDraft((current) =>
+              current
+                ? {
+                    ...current,
+                    shareAsQuote: value
+                  }
+                : current
+            )
+          }
+          authorName={psychProfile.name}
           onProgressPicChange={(index) =>
             setFinishWorkoutDraft((current) =>
               current
@@ -17810,7 +19117,7 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <BottomNav activeView={appView} onNavigate={(view) => navigateRoot(view)} onMore={() => setShowMoreSheet(true)} />
         {templateApplyPromptImages && (
           <section className="sheet-overlay leave-center-overlay" onClick={() => setTemplateApplyPromptImages(null)}>
             <div className="leave-center-card" onClick={(event) => event.stopPropagation()}>
@@ -17870,21 +19177,21 @@ export function App() {
               setPlanBuilderMode("create");
               setPlanBuilderDraft(buildBlankWorkoutPlan());
             }
-            setAppView("plan-builder");
+            navigate("plan-builder");
           }}
           onGeneratePlan={(plan, config) => {
             setEditingPlan(null);
             setPlanBuilderMode("generate");
             setPlanBuilderDraft(plan);
             setLastGenConfig(config);
-            setAppView("plan-builder");
+            navigate("plan-builder");
           }}
           onStartPlan={(plan) => startPlanWorkout(plan, workoutPlans.some((entry) => entry.id === plan.id) ? "saved" : "library")}
           onEditPlan={(plan) => {
             setEditingPlan(plan);
             setPlanBuilderMode("edit");
             setPlanBuilderDraft(plan);
-            setAppView("plan-builder");
+            navigate("plan-builder");
           }}
           onDuplicatePlan={duplicatePlan}
           onSharePlan={sharePlan}
@@ -18012,7 +19319,7 @@ export function App() {
             setHistoryDetailWorkout(workout);
             setHistoryDetailPlanContext(repiqPlan ? { weekIdx, dayIdx, label, sessionNum } : null);
             setHistoryDetailReturnView("planner");
-            setAppView("history-detail");
+            navigate("history-detail");
           }}
           onSaveHistoryWorkout={saveHistoryWorkoutToMyWorkouts}
           onTryRepIQPlan={() => {
@@ -18021,7 +19328,7 @@ export function App() {
             setRepiqPlan(plan);
             setPlannerInitialMode("repiq");
           }}
-          onNavigateGlossary={(term) => { setGlossaryTerm(term); setAppView("glossary"); }}
+          onNavigateGlossary={(term) => { setGlossaryTerm(term); navigate("glossary"); }}
           onApplyCustomSplit={(arrangement) => {
             if (!repiqPlan) return;
             // Convert muscle arrangement to PlanDayTemplates
@@ -18109,61 +19416,8 @@ export function App() {
             setRepiqPlan(plan);
           }}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
-
-        {hasActiveWorkout && (
-          <ActiveWorkoutTray
-            sessionName={workoutMeta.sessionName}
-            duration={derivedDuration}
-            onResume={openActiveWorkout}
-            onDiscardRequest={() => {
-              setDiscardReturnView("planner");
-              setTrayDiscardOpen(true);
-            }}
-          />
-        )}
-        {trayDiscardOpen && (
-          <section className="sheet-overlay leave-center-overlay" onClick={() => setTrayDiscardOpen(false)}>
-            <div className="leave-center-card" onClick={(e) => e.stopPropagation()}>
-              <div className="sheet-head">
-                <div>
-                  <p className="label">Discard Workout</p>
-                  <h3>{workoutMeta.sessionName}</h3>
-                </div>
-                <button className="icon-button" type="button" onClick={() => setTrayDiscardOpen(false)}>×</button>
-              </div>
-              <section className="session-summary session-summary-compact">
-                <p className="label">Session so far</p>
-                <div className="session-summary-grid">
-                  <article className="session-summary-item">
-                    <span>Elapsed</span>
-                    <strong>{derivedDuration}</strong>
-                  </article>
-                  <article className="session-summary-item">
-                    <span>Completed</span>
-                    <strong>{workoutSummary.sets} sets</strong>
-                  </article>
-                  <article className="session-summary-item">
-                    <span>Volume</span>
-                    <strong>{workoutSummary.volume.toFixed(0)} kg</strong>
-                  </article>
-                  <article className="session-summary-item">
-                    <span>Incomplete</span>
-                    <strong>{incompleteSetCount} sets</strong>
-                  </article>
-                </div>
-              </section>
-              <div className="sheet-actions">
-                <button className="secondary-button" type="button" onClick={() => setTrayDiscardOpen(false)}>
-                  Keep Going
-                </button>
-                <button className="primary-button is-danger-btn" type="button" onClick={() => { setTrayDiscardOpen(false); discardWorkout(); }}>
-                  Discard
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
+        <BottomNav activeView={appView} onNavigate={(view) => navigateRoot(view)} onMore={() => setShowMoreSheet(true)} />
+        <WorkoutTrayOverlay {...trayOverlayProps} />
         {tagPlanId && (
           <section className="sheet-overlay leave-center-overlay" onClick={() => setTagPlanId(null)}>
             <div className="leave-center-card" onClick={(e) => e.stopPropagation()}>
@@ -18266,14 +19520,7 @@ export function App() {
             onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
           />
           <BottomNav activeView={appView} onNavigate={(view) => { setBuilderAddExerciseOpen(false); setAppView(view); }} onMore={() => setShowMoreSheet(true)} />
-          {hasActiveWorkout && (
-            <ActiveWorkoutTray
-              sessionName={workoutMeta.sessionName}
-              duration={derivedDuration}
-              onResume={openActiveWorkout}
-              onDiscardRequest={() => { setDiscardReturnView("planner"); setTrayDiscardOpen(true); }}
-            />
-          )}
+          <WorkoutTrayOverlay {...trayOverlayProps} />
           <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
         </div>
       );
@@ -18286,7 +19533,7 @@ export function App() {
           mode={planBuilderMode}
           library={availableExerciseTemplates}
           existingTags={existingUserTags}
-          onBack={() => { setPlannerInitialMode("custom"); setAppView("planner"); }}
+          onBack={() => { setPlannerInitialMode("custom"); goBack("planner"); }}
           onChange={setPlanBuilderDraft}
           onAddExercise={() => setBuilderAddExerciseOpen(true)}
           onOpenExerciseDetails={(exerciseId) => openDetails(exerciseId)}
@@ -18329,15 +19576,8 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
-        {hasActiveWorkout && (
-          <ActiveWorkoutTray
-            sessionName={workoutMeta.sessionName}
-            duration={derivedDuration}
-            onResume={openActiveWorkout}
-            onDiscardRequest={() => { setDiscardReturnView("planner"); setTrayDiscardOpen(true); }}
-          />
-        )}
+        <BottomNav activeView={appView} onNavigate={(view) => navigateRoot(view)} onMore={() => setShowMoreSheet(true)} />
+        <WorkoutTrayOverlay {...trayOverlayProps} />
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
@@ -18423,7 +19663,7 @@ export function App() {
                       </div>
                     )}
                   </div>
-                  <InfoIcon onClick={() => { setGlossaryTerm("streak"); setAppView("glossary"); }} />
+                  <InfoIcon onClick={() => { setGlossaryTerm("streak"); navigate("glossary"); }} />
                 </div>
               )}
             </div>
@@ -18506,7 +19746,7 @@ export function App() {
             {showLastWorkout && (
               <article
                 className="session-card home-latest-card"
-                onClick={() => { setReportWorkout(latestWorkout!); setAppView("report"); }}
+                onClick={() => { setReportWorkout(latestWorkout!); navigate("report"); }}
                 style={{ cursor: "pointer" }}
               >
                 <div className="home-latest-info">
@@ -18532,11 +19772,11 @@ export function App() {
               className="home-goal-card home-card-tappable"
               role="button"
               tabIndex={0}
-              onClick={() => { setInsightsInitialTab("summary"); setAppView("insights"); }}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setInsightsInitialTab("summary"); setAppView("insights"); } }}
+              onClick={() => { setInsightsInitialTab("summary"); navigate("insights"); }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setInsightsInitialTab("summary"); navigate("insights"); } }}
             >
               <div className="home-trend-header">
-                <p className="home-goal-label">Training Trend · Overall Volume <InfoIcon onClick={(e) => { e.stopPropagation(); setGlossaryTerm("training trend"); setAppView("glossary"); }} /></p>
+                <p className="home-goal-label">Training Trend · Overall Volume <InfoIcon onClick={(e) => { e.stopPropagation(); setGlossaryTerm("training trend"); navigate("glossary"); }} /></p>
                 <p className={`home-trend-zone-label home-trend-zone-label--${trainingTrend.currentZone}`}>
                   {trainingTrend.zoneLabel}
                 </p>
@@ -18566,68 +19806,16 @@ export function App() {
             {/* ── Muscle nudge — compact, only shows when muscles are due ── */}
             <HomeMuscleNudge
               coverage={muscleCoverage}
-              onTap={() => { setInsightsInitialTab("summary"); setAppView("insights"); }}
+              onTap={() => { setInsightsInitialTab("summary"); navigate("insights"); }}
             />
 
 
           </section>
         </section>
 
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <BottomNav activeView={appView} onNavigate={(view) => navigateRoot(view)} onMore={() => setShowMoreSheet(true)} />
 
-        {hasActiveWorkout && (
-          <ActiveWorkoutTray
-            sessionName={workoutMeta.sessionName}
-            duration={derivedDuration}
-            onResume={openActiveWorkout}
-            onDiscardRequest={() => {
-              setDiscardReturnView("home");
-              setTrayDiscardOpen(true);
-            }}
-          />
-        )}
-        {trayDiscardOpen && (
-          <section className="sheet-overlay leave-center-overlay" onClick={() => setTrayDiscardOpen(false)}>
-            <div className="leave-center-card" onClick={(e) => e.stopPropagation()}>
-              <div className="sheet-head">
-                <div>
-                  <p className="label">Discard Workout</p>
-                  <h3>{workoutMeta.sessionName}</h3>
-                </div>
-                <button className="icon-button" type="button" onClick={() => setTrayDiscardOpen(false)}>×</button>
-              </div>
-              <section className="session-summary session-summary-compact">
-                <p className="label">Session so far</p>
-                <div className="session-summary-grid">
-                  <article className="session-summary-item">
-                    <span>Elapsed</span>
-                    <strong>{derivedDuration}</strong>
-                  </article>
-                  <article className="session-summary-item">
-                    <span>Completed</span>
-                    <strong>{workoutSummary.sets} sets</strong>
-                  </article>
-                  <article className="session-summary-item">
-                    <span>Volume</span>
-                    <strong>{workoutSummary.volume.toFixed(0)} kg</strong>
-                  </article>
-                  <article className="session-summary-item">
-                    <span>Incomplete</span>
-                    <strong>{incompleteSetCount} sets</strong>
-                  </article>
-                </div>
-              </section>
-              <div className="sheet-actions">
-                <button className="secondary-button" type="button" onClick={() => setTrayDiscardOpen(false)}>
-                  Keep Going
-                </button>
-                <button className="primary-button is-danger-btn" type="button" onClick={() => { setTrayDiscardOpen(false); discardWorkout(); }}>
-                  Discard
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
+        <WorkoutTrayOverlay {...trayOverlayProps} />
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
         {showReadinessSheet && (
           <ReadinessCheckSheet
@@ -18985,14 +20173,15 @@ export function App() {
           {exercises.map((exercise, exerciseIndex) => {
             const lastSession = exercise.history[exercise.history.length - 1];
             const measurementType = getExerciseMeasurementType(exercise);
-            const measurementLabels = getMeasurementColumnLabels(measurementType);
-            const hasWeightInput = usesWeightInputForMeasurement(measurementType);
+            const measurementLabels = getMeasurementColumnLabels(measurementType, exercise.supportsExternalLoad);
+            const hasWeightInput = usesWeightInputForMeasurement(measurementType, exercise.supportsExternalLoad);
             const isCollapsed = collapsedExerciseIds.includes(exercise.id);
             const completedExerciseSets = buildCompletedSets(
               exercise.draftSets,
               lastSession,
               settings.carryForwardDefaults,
-              measurementType
+              measurementType,
+              exercise.supportsExternalLoad
             ).resolvedSets;
             const isComplete = exercise.draftSets.length > 0 && exercise.draftSets.every((set) => set.done);
             const loggedSetCount = completedExerciseSets.length;
@@ -19397,7 +20586,7 @@ export function App() {
                                 const measurementType = getExerciseMeasurementType(ex);
                                 const carrySource = getCurrentExerciseCarrySource(ex.draftSets, i);
                                 const previousSet = getPreviousReferenceSet(ex.draftSets, i, lastSession);
-                                const resolvedWeight = usesWeightInputForMeasurement(measurementType)
+                                const resolvedWeight = usesWeightInputForMeasurement(measurementType, ex.supportsExternalLoad)
                                   ? settings.carryForwardDefaults && set.weightInput.trim() === ""
                                     ? carrySource?.weightInput?.trim().length ? carrySource.weightInput
                                       : previousSet ? String(previousSet.weight) : ""
@@ -20576,7 +21765,7 @@ export function App() {
                           const measurementType = getExerciseMeasurementType(ex);
                           const carrySource = getCurrentExerciseCarrySource(ex.draftSets, i);
                           const previousSet = getPreviousReferenceSet(ex.draftSets, i, lastSession);
-                          const resolvedWeight = usesWeightInputForMeasurement(measurementType)
+                          const resolvedWeight = usesWeightInputForMeasurement(measurementType, ex.supportsExternalLoad)
                             ? settings.carryForwardDefaults && set.weightInput.trim() === ""
                               ? carrySource?.weightInput?.trim().length ? carrySource.weightInput
                                 : previousSet ? String(previousSet.weight) : ""
