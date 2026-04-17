@@ -205,11 +205,11 @@ Equipment access is split into two independent axes:
 | `bodyweight` | bodyweight |
 | `dumbbell_pair` | bodyweight, dumbbell, kettlebell |
 | `home_setup` | bodyweight, dumbbell, kettlebell, barbell *(implies squat rack)* |
-| `basic_gym` | bodyweight, dumbbell, cable, machine |
+| `basic_gym` | bodyweight, dumbbell, cable, machine, barbell |
 | `full_gym` | bodyweight, dumbbell, kettlebell, barbell, cable, machine, smith_machine, landmine |
 
-`basic_gym` = standard commercial gym (Planet Fitness tier) — dumbbells, cables, plate-loaded machines. No squat rack, no barbell, no smith machine, no landmine, no kettlebells.
-`full_gym` = complete strength setup — adds rack, barbell, smith machine, landmine, and kettlebells on top of basic_gym.
+`basic_gym` = standard commercial gym — dumbbells, cables, machines, and a barbell (bench station). No smith machine, no landmine, no kettlebells.
+`full_gym` = complete strength setup — adds smith machine, landmine, and kettlebells on top of basic_gym.
 
 ### Standalone add-ons (opt-in, independent of tier)
 
