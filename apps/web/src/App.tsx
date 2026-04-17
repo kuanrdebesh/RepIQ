@@ -17,6 +17,7 @@ import anatomyBackImg from "./assets/anatomy-back.png";
 import { allCatalogExercises, generationCatalogExercises } from "./catalog";
 import { getStoredReplacementEvents, persistReplacementEvent, getStoredExercisePreferences, persistExercisePreference, getStoredHiddenSuggestions, persistHiddenSuggestion, removeHiddenSuggestion, themeStorageKey, workoutSettingsStorageKey, customExercisesStorageKey, savedWorkoutsStorageKey, workoutPlansStorageKey, planBuilderDraftStorageKey, psychProfileStorageKey, postWorkoutPsychStorageKey, dailyReadinessStorageKey, sessionBehaviorStorageKey, derivedPsychStorageKey, repiqPlanStorageKey, getStoredSavedWorkouts, persistSavedWorkout, persistSavedWorkoutsList, overwriteSavedWorkout, getStoredPsychProfile, persistPsychProfile, getStoredRepIQPlan, persistRepIQPlan, getStoredPostWorkoutPsych, persistPostWorkoutPsych, getStoredDailyReadiness, persistDailyReadiness, getStoredSessionBehavior, persistSessionBehavior, getStoredWorkoutPlans, persistWorkoutPlans, getStoredPlanBuilderDraft, persistPlanBuilderDraft, SAMPLE_WORKOUT_PLANS, SAMPLE_PLAN_IDS, seedWorkoutHistory, getStoredDateRangePrefs, persistDateRangePrefs } from "./storage";
 import { resolveDateRange, isWithinRange, ROLLING_CHIPS, TO_DATE_CHIPS, chipLabel } from "./analytics/dateRange";
+import { seedDemoWorkouts } from "./demoData";
 import { DEFAULT_PSYCH_PROFILE, deriveTimeOfDay, buildSessionBehaviorSignals, createInitialSwipeState, COMPOUND_PATTERNS } from "./types";
 import type { DateRangePrefs, DateRangeMode, RollingChip, ToDateChip, DateRangeChip, FlowState, DraftSet, ExerciseDraft, DetailTab, ThemePreference, DraftSetType, AppView, MotivationalWhy, TrainingGoal, ExperienceLevel, EquipmentAccess, ScheduleCommitment, MoodRating, EnergyRating, RPERating, ThreePointScale, TimeOfDay, SessionSource, Trend, MotivationStyle, UserPsychProfile, PostWorkoutPsych, DailyReadiness, SessionBehaviorSignals, DerivedPsychProfile, SplitType, RepIQPlanExercise, RepIQPlanDay, RepIQPlanWeek, RepIQPlan, PlannedExercise, WorkoutPlan, PlanBuilderMode, PlanSessionSource, ActivePlanSession, WorkoutSettings, WorkoutMeta, RewardCategory, RewardLevel, AddExerciseMode, CreateExerciseStep, CustomExerciseType, MeasurementType, MovementSide, MovementPattern, ExerciseDifficulty, ExerciseAngle, ExerciseEquipment, ExerciseImplement, ReplacementReason, ReplacementEvent, ExerciseWithTaxonomy, CustomExerciseInput, LoggerReward, RewardSummary, FinishedExerciseSummary, FinishWorkoutDraft, SavedWorkoutData, ExerciseRestDefaults, SwipeState, ActiveRestTimer, MuscleRegion } from "./types";
 
@@ -12522,6 +12523,7 @@ function WorkoutHistoryDetailPage({
 }) {
   const [expandedExId, setExpandedExId] = useState<string | null>(null);
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   function toggleExercise(id: string) {
     setExpandedExId(prev => {
@@ -12553,31 +12555,22 @@ function WorkoutHistoryDetailPage({
       const src = (img.public_url || img.upload_url) || "";
       const isProgress = i === 0 && progIdx !== null;
       mediaSlides.push(
-        <div key={`photo-${i}`} className="history-slide history-slide-photo">
-          <img src={src} alt={isProgress ? "Progress photo" : "Workout photo"} className="history-slide-img" />
+        <div key={`photo-${i}`} className="history-slide history-slide-photo history-slide-photo-tappable" onClick={() => src && setLightboxSrc(src)}>
+          <img src={src} alt={isProgress ? "Progress photo" : "Workout photo"} className="history-slide-img" loading="lazy" />
           {isProgress && <span className="history-slide-progress-badge">Progress</span>}
         </div>
       );
     });
   }
 
-  // 2. Quote slide
-  if (workout.noteType === "quote" && workout.quoteNote) {
-    if (workout.shareAsQuote) {
-      mediaSlides.push(
-        <div key="quote-dark" className="history-slide history-slide-quote is-dark">
-          <p className="history-slide-quote-text">"{workout.quoteNote}"</p>
-          <p className="history-slide-quote-author">— {psychProfileName || "You"}</p>
-        </div>
-      );
-    } else {
-      mediaSlides.push(
-        <div key="quote-light" className="history-slide history-slide-quote is-light">
-          <p className="history-slide-quote-text">{workout.quoteNote}</p>
-          <p className="history-slide-quote-author">— {psychProfileName || "You"}</p>
-        </div>
-      );
-    }
+  // 2. Quote slide — always dark: black bg, white quoted text, golden author
+  if (workout.quoteNote) {
+    mediaSlides.push(
+      <div key="quote" className="history-slide history-slide-quote">
+        <p className="history-slide-quote-text">"{workout.quoteNote}"</p>
+        <p className="history-slide-quote-author">— {psychProfileName || "Me"}</p>
+      </div>
+    );
   }
 
   // 3. B&W session detail card
@@ -12604,15 +12597,16 @@ function WorkoutHistoryDetailPage({
     );
   }
 
-  // 4. Personal note slide
-  if (workout.noteType === "personal" && workout.personalNote) {
+  // 4. Personal note slide — last slide
+  const detailNoteText = workout.personalNote || workout.note;
+  if (detailNoteText) {
     mediaSlides.push(
       <div key="note" className="history-slide history-slide-note">
         <svg className="history-slide-note-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
           <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
         </svg>
-        <p className="history-slide-note-text">{workout.personalNote}</p>
+        <p className="history-slide-note-text">{detailNoteText}</p>
       </div>
     );
   }
@@ -12747,6 +12741,20 @@ function WorkoutHistoryDetailPage({
         )}
 
       </div>
+
+      {/* Lightbox */}
+      {lightboxSrc && (
+        <div className="pg-lightbox-overlay" onClick={() => setLightboxSrc(null)} role="dialog" aria-modal="true" aria-label="Full size photo">
+          <button className="pg-lightbox-close" onClick={() => setLightboxSrc(null)} aria-label="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+          <div className="pg-lightbox-inner" onClick={e => e.stopPropagation()}>
+            <img src={lightboxSrc} alt="Workout photo" className="pg-lightbox-img" />
+          </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -12773,6 +12781,7 @@ function ProgressPhotoTab({ savedWorkouts }: { savedWorkouts: SavedWorkoutData[]
   const [compareMode, setCompareMode] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);  // up to 2 keys
   const [comparing, setComparing] = useState(false);
+  const [lightbox, setLightbox] = useState<{ src: string; date: string; label: string } | null>(null);
 
   // Flatten all images newest-first
   const allPhotos = useMemo<ProgressPhotoEntry[]>(() => {
@@ -12913,8 +12922,8 @@ function ProgressPhotoTab({ savedWorkouts }: { savedWorkouts: SavedWorkoutData[]
                       return (
                         <div
                           key={p.key}
-                          className={`pg-photo-card pg-has-date${compareMode ? " pg-selectable" : ""}${isSel ? " pg-selected" : ""}`}
-                          onClick={() => compareMode && toggleSelect(p.key)}
+                          className={`pg-photo-card pg-has-date${compareMode ? " pg-selectable" : " pg-tappable"}${isSel ? " pg-selected" : ""}`}
+                          onClick={() => compareMode ? toggleSelect(p.key) : setLightbox({ src: p.src, date: fmtOverlayDate(p.date), label: p.workoutName })}
                         >
                           <img src={p.src} alt={p.workoutName} loading="lazy" />
                           <span className="pg-date-overlay">{fmtOverlayDate(p.date)}</span>
@@ -12941,8 +12950,8 @@ function ProgressPhotoTab({ savedWorkouts }: { savedWorkouts: SavedWorkoutData[]
                 return (
                   <div
                     key={p.key}
-                    className={`pg-photo-card pg-has-date${compareMode ? " pg-selectable" : ""}${isSel ? " pg-selected" : ""}`}
-                    onClick={() => compareMode && toggleSelect(p.key)}
+                    className={`pg-photo-card pg-has-date${compareMode ? " pg-selectable" : " pg-tappable"}${isSel ? " pg-selected" : ""}`}
+                    onClick={() => compareMode ? toggleSelect(p.key) : setLightbox({ src: p.src, date: fmtOverlayDate(p.date), label: p.workoutName ?? "Progress" })}
                   >
                     <img src={p.src} alt="Progress" loading="lazy" />
                     <span className="pg-date-overlay">{fmtOverlayDate(p.date)}</span>
@@ -12953,6 +12962,34 @@ function ProgressPhotoTab({ savedWorkouts }: { savedWorkouts: SavedWorkoutData[]
                 );
               })}
             </div>
+      )}
+
+      {/* ── Lightbox ──────────────────────────────────────────────────────── */}
+      {lightbox && (
+        <div
+          className="pg-lightbox-overlay"
+          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Full size photo"
+        >
+          <button
+            className="pg-lightbox-close"
+            onClick={() => setLightbox(null)}
+            aria-label="Close"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+          <div className="pg-lightbox-inner" onClick={e => e.stopPropagation()}>
+            <img src={lightbox.src} alt={lightbox.label} className="pg-lightbox-img" />
+            <div className="pg-lightbox-meta">
+              <span className="pg-lightbox-date">{lightbox.date}</span>
+              <span className="pg-lightbox-label">{lightbox.label}</span>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -15441,6 +15478,8 @@ function WorkoutHistoryPage({
   onEdit,
   psychProfileName,
   hasActiveWorkout,
+  resolvedTheme,
+  onToggleTheme,
 }: {
   workouts: SavedWorkoutData[];
   onBack: () => void;
@@ -15449,10 +15488,13 @@ function WorkoutHistoryPage({
   onEdit: (workout: SavedWorkoutData) => void;
   psychProfileName?: string | null;
   hasActiveWorkout: boolean;
+  resolvedTheme?: string;
+  onToggleTheme?: () => void;
 }) {
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
   const [runningToast, setRunningToast] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   useEffect(() => {
     if (!runningToast) return;
@@ -15513,6 +15555,13 @@ function WorkoutHistoryPage({
             )}
             {!isFiltered && <span className="history-count-label"> sessions</span>}
           </div>
+          {resolvedTheme && onToggleTheme && (
+            <button type="button" className="theme-toggle-btn" onClick={onToggleTheme} aria-label="Toggle theme" style={{ marginLeft: "auto" }}>
+              {resolvedTheme === "dark"
+                ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+            </button>
+          )}
         </div>
         {/* Date filter */}
         <div className="history-date-filter">
@@ -15607,31 +15656,22 @@ function WorkoutHistoryPage({
                   const src = (img.public_url || img.upload_url) || "";
                   const isProgress = i === 0 && progIdx !== null;
                   slides.push(
-                    <div key={`photo-${i}`} className="history-slide history-slide-photo">
-                      <img src={src} alt={isProgress ? "Progress photo" : "Workout photo"} className="history-slide-img" />
+                    <div key={`photo-${i}`} className="history-slide history-slide-photo history-slide-photo-tappable" onClick={() => src && setLightboxSrc(src)}>
+                      <img src={src} alt={isProgress ? "Progress photo" : "Workout photo"} className="history-slide-img" loading="lazy" />
                       {isProgress && <span className="history-slide-progress-badge">Progress</span>}
                     </div>
                   );
                 });
               }
 
-              // 2. Session highlight quote slide
-              if (workout.noteType === "quote" && workout.quoteNote) {
-                if (workout.shareAsQuote) {
-                  slides.push(
-                    <div key="quote-dark" className="history-slide history-slide-quote is-dark">
-                      <p className="history-slide-quote-text">"{workout.quoteNote}"</p>
-                      <p className="history-slide-quote-author">— {psychProfileName || "You"}</p>
-                    </div>
-                  );
-                } else {
-                  slides.push(
-                    <div key="quote-light" className="history-slide history-slide-quote is-light">
-                      <p className="history-slide-quote-text">{workout.quoteNote}</p>
-                      <p className="history-slide-quote-author">— {psychProfileName || "You"}</p>
-                    </div>
-                  );
-                }
+              // 2. Session highlight quote slide — always dark: black bg, white quoted text, golden author
+              if (workout.quoteNote) {
+                slides.push(
+                  <div key="quote" className="history-slide history-slide-quote">
+                    <p className="history-slide-quote-text">"{workout.quoteNote}"</p>
+                    <p className="history-slide-quote-author">— {psychProfileName || "Me"}</p>
+                  </div>
+                );
               }
 
               // 3. Session detail card — B&W summary
@@ -15658,15 +15698,16 @@ function WorkoutHistoryPage({
                 );
               }
 
-              // 4. Personal note slide
-              if (workout.noteType === "personal" && workout.personalNote) {
+              // 4. Personal note slide — last slide
+              const noteText = workout.personalNote || workout.note;
+              if (noteText) {
                 slides.push(
                   <div key="note" className="history-slide history-slide-note">
                     <svg className="history-slide-note-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                       <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                     </svg>
-                    <p className="history-slide-note-text">{workout.personalNote}</p>
+                    <p className="history-slide-note-text">{noteText}</p>
                   </div>
                 );
               }
@@ -15711,6 +15752,20 @@ function WorkoutHistoryPage({
       {runningToast && (
         <div className="history-running-toast" onClick={() => setRunningToast(false)}>
           A workout is already running. Finish or discard it first.
+        </div>
+      )}
+
+      {/* Lightbox */}
+      {lightboxSrc && (
+        <div className="pg-lightbox-overlay" onClick={() => setLightboxSrc(null)} role="dialog" aria-modal="true" aria-label="Full size photo">
+          <button className="pg-lightbox-close" onClick={() => setLightboxSrc(null)} aria-label="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+          <div className="pg-lightbox-inner" onClick={e => e.stopPropagation()}>
+            <img src={lightboxSrc} alt="Workout photo" className="pg-lightbox-img" />
+          </div>
         </div>
       )}
     </div>
@@ -16408,8 +16463,34 @@ export function App() {
 
   // Seed workout history in dev / demo
   useEffect(() => {
-    seedWorkoutHistory();
-    setSavedWorkoutsList(getStoredSavedWorkouts());
+    // Clear all stale version flags and their data
+    const STALE_FLAGS = ["repiq-demo-seeded-v3", "repiq-demo-seeded-v4", "repiq-demo-seeded-v5", "repiq-demo-seeded-v6", "repiq-demo-seeded-v7", "repiq-demo-seeded-v8", "repiq-demo-seeded-v9"];
+    const FLAG = "repiq-demo-seeded-v10";
+    const hadStale = STALE_FLAGS.some(f => localStorage.getItem(f));
+    STALE_FLAGS.forEach(f => localStorage.removeItem(f));
+
+    if (!localStorage.getItem(FLAG)) {
+      // On first run or version bump: wipe saved workouts and replace cleanly with demo set
+      if (hadStale) {
+        // Had old seed data — replace entirely to avoid duplicates
+        persistSavedWorkoutsList(seedDemoWorkouts([]));
+      } else {
+        // Fresh browser — merge preserving any real user workouts on non-demo dates
+        persistSavedWorkoutsList(seedDemoWorkouts(getStoredSavedWorkouts()));
+      }
+      const fresh = getStoredSavedWorkouts();
+      setSavedWorkoutsList(fresh);
+      // Set demo profile name so quote cards show a real name in gold
+      const currentProfile = getStoredPsychProfile();
+      if (!currentProfile.name) {
+        const seededProfile = { ...currentProfile, name: "Guru" };
+        persistPsychProfile(seededProfile);
+        setPsychProfile(seededProfile);
+      }
+      localStorage.setItem(FLAG, "1");
+    } else {
+      setSavedWorkoutsList(getStoredSavedWorkouts());
+    }
   }, []);
 
   // Reset insights tab to Analyzer whenever user navigates away from Insights
@@ -19191,6 +19272,8 @@ export function App() {
           }}
           hasActiveWorkout={hasActiveWorkout && exercises.length > 0}
           psychProfileName={psychProfile.name}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
         />
         <BottomNav activeView={appView} onNavigate={(view) => navigateRoot(view)} onMore={() => setShowMoreSheet(true)} />
         <WorkoutTrayOverlay {...trayOverlayProps} />

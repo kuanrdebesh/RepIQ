@@ -14601,7 +14601,7 @@ ol {
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
-  background: #fff;
+  background: var(--paper);
   padding-bottom: 80px;
   overflow-x: hidden;
   width: 100%;
@@ -14614,7 +14614,7 @@ ol {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: #fff;
+  background: var(--paper);
   padding: 0 16px 8px;
   border-bottom: 1px solid var(--line);
 }
@@ -14832,6 +14832,12 @@ ol {
 .history-slide-photo {
   background: #000;
 }
+.history-slide-photo-tappable {
+  cursor: zoom-in;
+}
+.history-slide-photo-tappable:active {
+  opacity: 0.88;
+}
 .history-slide-img {
   width: 100%;
   height: 100%;
@@ -14852,34 +14858,28 @@ ol {
   border-radius: 20px;
 }
 
-/* Quote slide */
+/* Quote slide — always dark regardless of app theme */
 .history-slide-quote {
   flex-direction: column;
-  gap: 12px;
-  padding: 28px 24px;
+  gap: 14px;
+  padding: 32px 28px;
   text-align: center;
-}
-.history-slide-quote.is-dark {
   background: #0d0d0d;
-}
-.history-slide-quote.is-light {
-  background: var(--surface);
-  border-top: 1px solid var(--line);
 }
 .history-slide-quote-text {
   font-size: 1.05rem;
   font-style: italic;
-  line-height: 1.55;
+  line-height: 1.6;
+  color: #ffffff;
   margin: 0;
 }
-.history-slide-quote.is-dark .history-slide-quote-text { color: #fff; }
-.history-slide-quote.is-light .history-slide-quote-text { color: var(--ink); }
 .history-slide-quote-author {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #c9a84c;  /* gold */
   margin: 0;
 }
-.history-slide-quote.is-dark .history-slide-quote-author { color: rgba(255,255,255,0.5); }
-.history-slide-quote.is-light .history-slide-quote-author { color: var(--muted); }
 
 /* Detail card slide — B&W */
 .history-slide-detail {
@@ -14952,21 +14952,21 @@ ol {
   color: rgba(255,255,255,0.2);
 }
 
-/* Personal note slide */
+/* Personal note slide — always white bg in light mode, dark in dark mode */
 .history-slide-note {
   flex-direction: column;
   gap: 14px;
-  padding: 28px 24px;
-  background: #f9f9f7;
+  padding: 32px 28px;
+  background: var(--paper, #ffffff);
   text-align: center;
 }
 .history-slide-note-icon {
-  color: #999;
+  color: var(--ink-faint, #bbb);
   flex-shrink: 0;
 }
 .history-slide-note-text {
   font-size: 0.95rem;
-  color: #333;
+  color: var(--ink, #111);
   line-height: 1.6;
   margin: 0;
   font-style: italic;
@@ -15346,12 +15346,89 @@ ol {
   letter-spacing: 0.02em;
 }
 
+/* Tappable state (lightbox mode) */
+.pg-photo-card.pg-tappable {
+  cursor: zoom-in;
+}
+.pg-photo-card.pg-tappable:active {
+  opacity: 0.88;
+  transform: scale(0.97);
+  transition: transform 0.1s ease, opacity 0.1s ease;
+}
+
 /* Selectable state (compare mode) */
 .pg-photo-card.pg-selectable {
   cursor: pointer;
 }
 .pg-photo-card.pg-selectable:active {
   opacity: 0.8;
+}
+
+/* ── Lightbox ──────────────────────────────────────────────────────────────── */
+.pg-lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+  animation: pg-lb-fade 0.18s ease;
+}
+@keyframes pg-lb-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.pg-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.15);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #fff;
+  z-index: 201;
+}
+.pg-lightbox-close:hover { background: rgba(255,255,255,0.25); }
+.pg-lightbox-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: min(90vw, 560px);
+  width: 100%;
+}
+.pg-lightbox-img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 10px;
+  display: block;
+}
+.pg-lightbox-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.pg-lightbox-date {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.9);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pg-lightbox-label {
+  font-size: 0.78rem;
+  color: rgba(255,255,255,0.5);
 }
 .pg-photo-card.pg-selected::after {
   content: "";
