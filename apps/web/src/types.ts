@@ -44,7 +44,7 @@ export type ExerciseDraft = {
 export type DetailTab = "summary" | "history" | "howto";
 export type ThemePreference = "light" | "dark" | "system";
 export type DraftSetType = "warmup" | "normal" | "drop" | "restpause" | "failure";
-export type AppView = "home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "profile" | "history-detail" | "glossary" | "more";
+export type AppView = "home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "community" | "profile" | "history-detail" | "glossary" | "more";
 
 // ── Psychological Data Layer ──────────────────────────────────────────────────
 // V1: types and storage stubs defined now so data is captured from day one.
@@ -415,12 +415,18 @@ export type RewardLevel = "set" | "exercise" | "session";
 export type AddExerciseMode = "browse" | "create";
 export type CreateExerciseStep = 1 | 2;
 export type CustomExerciseType =
-  | "bodyweight_only"
-  | "bodyweight_weighted"
-  | "free_weights_accessories"
+  // V2 schema
+  | "bodyweight"
+  | "dumbbell"
+  | "cable"
+  | "resistance_band"
   | "barbell"
   | "machine"
-  | "freestyle_cardio";
+  | "freestyle_cardio"
+  // Legacy (backward compat)
+  | "bodyweight_only"
+  | "bodyweight_weighted"
+  | "free_weights_accessories";
 export type MeasurementType = "timed" | "reps_volume" | "weight_timed";
 export type MovementSide = "unilateral" | "bilateral";
 
@@ -439,6 +445,7 @@ export type MovementPattern =
   | "isolation_push"     // Tricep pushdown, chest fly, lateral raise
   | "isolation_pull"     // Bicep curl, face pull, rear delt fly
   | "isolation_legs"     // Leg extension, leg curl, calf raise
+  | "mobility"           // Stretches, mobility drills
   | "cardio";            // Jump rope, sled, rowing machine
 
 export type ExerciseDifficulty = "beginner" | "intermediate" | "advanced";

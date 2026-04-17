@@ -121,7 +121,7 @@ Living registry of test cases across all built modules. Updated as features are 
 | AE-11 | Fixed bottom add-action bar | Appears when ≥1 exercise selected | ✅ |
 | AE-12 | Info (i) action on exercise row | Opens Exercise Detail without selecting | ✅ |
 | AE-13 | Custom exercise "MINE" amber badge | Appears on all user-created exercises | ✅ |
-| AE-14 | Smart Replace mode — replace exercise | Shows reason picker → ranked suggestions | ✅ |
+| AE-14 | Smart Replace mode — replace exercise | Opens with blank query; rank hint chips on each exercise row | ✅ |
 
 ---
 
@@ -300,13 +300,38 @@ Living registry of test cases across all built modules. Updated as features are 
 
 | ID | Test | Expected | Status |
 |---|---|---|---|
-| SR-01 | Replace exercise via ⋮ menu | Opens reason picker | ✅ |
-| SR-02 | Reason picker — machine taken | Machines excluded from suggestions | ✅ |
-| SR-03 | Top 5 ranked suggestions shown | ✦ badge on top result | ✅ |
-| SR-04 | Match reason chip on each suggestion | Human-readable label shown | ✅ |
-| SR-05 | Confirm swap | Exercise replaced in logger | ✅ |
-| SR-06 | ReplacementEvent logged per swap | Stored to `repiq-replacement-events` | ✅ |
-| SR-07 | Session fatigue penalty | Over-trained muscle gets lower score | ✅ |
+| SR-01 | Replace exercise via ⋮ menu | Opens AddExercisePage in replace mode; query blank; rank hint chips visible | ✅ |
+| SR-02 | Reason — machine_taken | Exercises with machine exerciseType excluded from browse | ✅ |
+| SR-03 | Reason — no_equipment | Only bodyweight_only exercises shown | ✅ |
+| SR-04 | Reason — too_difficult | Difficulty tier weights advanced exercises down; beginner/intermediate ranked higher | 🔲 |
+| SR-05 | Reason — best_match (default) | No equipment/difficulty filter; full catalog ranked by 10-tuple | ✅ |
+| SR-06 | Reason — just_change (swap button) | No filter; all candidates scored; variety-biased by novelty tier | ✅ |
+| SR-07 | Rank hint chip per exercise row | Shows "Same pattern" / "Same muscle" / "Bodyweight alt" style chip in replace mode | ✅ |
+| SR-08 | Confirm swap — 0 sets logged | Silent swap; no confirmation modal | ✅ |
+| SR-09 | Confirm swap — sets already logged | Confirmation modal: "Clear N sets and replace?" | ✅ |
+| SR-10 | Exercise replaced in-place | Same position in session; rest timer preserved; sets reset | ✅ |
+| SR-11 | ReplacementEvent stored | Written to `repiq-replacement-events`; includes full `rankTuple` | ✅ |
+| SR-12 | `preference` reason normalised | `normalizeReplacementReason("preference")` → stored as `"best_match"` | 🔲 |
+| SR-13 | Fatigue tier — over-trained muscle | Exercise targeting already-loaded muscle ranked lower | ✅ |
+| SR-14 | Hard exclusion — same exercise | Original exercise never appears as a suggestion | ✅ |
+| SR-15 | Hard exclusion — session duplicate | Exercises already in the session are excluded | ✅ |
+| SR-16 | Swap button (⇄) visible on exercise card header | Icon present; opacity 0.55 at rest | ✅ |
+| SR-17 | Swap button tap | Opens replace mode with just_change reason; no reason picker shown | ✅ |
+| SR-18 | Replace mode query reset | Search query is "" not preFilterMuscle when replace opens | ✅ |
+
+---
+
+## Generate Session — Determinism and Shuffle
+
+| ID | Test | Expected | Status |
+|---|---|---|---|
+| GS-01 | Same GenConfig inputs produce same plan | Two calls with identical goal/muscles/duration/seedOffset produce identical exercise lists | ✅ |
+| GS-02 | Shuffle button increments seedOffset | New plan shown; different exercise order or selection | ✅ |
+| GS-03 | Exercise cards collapsed by default in Plan Builder | All exercise cards start collapsed | ✅ |
+| GS-04 | Tap exercise card to expand | Card expands; others stay collapsed | ✅ |
+| GS-05 | Shuffle resets expanded state | All cards collapse after shuffle (expandedIds cleared on draft.id change) | ✅ |
+| GS-06 | Compress/Regenerate hidden when sessionsRemaining ≤ daysRemaining | Both buttons not rendered | ✅ |
+| GS-07 | Compress/Regenerate visible when sessionsRemaining > daysRemaining | Both buttons shown | ✅ |
 
 ---
 
@@ -433,3 +458,5 @@ Living registry of test cases across all built modules. Updated as features are 
 | UP-08 | Progress | Insights → Progress tab timeline | 🚧 |
 | UP-09 | History | Edit-save overwrites original entry (not duplicate) | 🚧 |
 | UP-10 | Payments | Paywall and feature gates | 🚧 |
+| UP-11 | Smart Replace | Contextual hint on 0-progress exercises after 5 min | 🚧 |
+| UP-12 | Smart Replace | Difficulty filter for too_difficult reason (verified taxonomy required) | 🚧 |

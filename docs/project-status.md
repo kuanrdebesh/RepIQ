@@ -359,6 +359,18 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
 - ~40 new exercises added across Chest, Arms, Back, Shoulders, Legs, Core, Cardio categories via `_userExercises` block (total catalog ~136 exercises with full taxonomy)
 - Custom exercises show amber "MINE" pill badge (`custom-exercise-badge` CSS class)
 
+## Taxonomy Schema v2 Migration (IN PROGRESS)
+
+- **Type scaffolding complete** (TypeScript 0 errors):
+  - `CustomExerciseType`: Added v2 values (`bodyweight`, `dumbbell`, `cable`, `resistance_band`); kept legacy values for backward compat
+  - `MovementPattern`: Added `mobility` (stretching, foam rolling)
+  - `ExerciseAngle`: Added `upright`, `supine`
+  - New types: `PerformanceMetric` (`reps | time | distance_or_time | mixed`), `ExerciseImplement` (suspension_trainer, sled, medicine_ball, jump_rope, plate, battle_ropes, yoke)
+  - `ExerciseDraft`: Added 3 optional fields (`performanceMetric`, `supportsExternalLoad`, `implement`)
+  - `catalog.ts` `makeExercise()`: now accepts new fields as trailing optional params
+  - `App.tsx` `getEquipmentAccessibility()`: handles both v2 and legacy type values during transition
+- **Awaiting:** 435-exercise taxonomy CSV (v2 schema) — will replace 352-exercise library and unlock library workout templates (7 categories)
+
 ## Add Exercise — By Muscle Tab
 
 - 10 canonical primary muscle groups: Chest, Back, Shoulders, Core, Biceps, Triceps, Quads, Hamstrings, Glutes, Calves
@@ -366,6 +378,36 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
 - Secondary drill-down (`showSecondaryDrilldown`) enabled by default
 - `groupedByMuscle`: exercises bucketed by canonical group
 - `groupedByMuscleWithSecondary`: sub-map by actual primaryMuscle + same-canonical secondaryMuscle overlaps (exercises can appear in multiple sub-groups)
+
+## Home Redesign (Phase 1 — Complete)
+
+- **Streak badge** — fire emoji + consecutive-day count (`computeStreak()`); only renders when streak ≥ 1
+- **Week streak badge** — calendar icon + consecutive quality-weeks count (`computeWeekStreak()`); quality = 2+ sessions or 1 session with 3+ muscle groups
+- **PR banner** — trophy emoji + exercise name + weight/reps; sourced from last 30 days; only shown when PR exists
+- **This Week card** — 7-day dot grid (M–Su, today highlighted) + session count, set count, volume; computed by `getThisWeekStats()`
+- **Last Workout card** — clickable card → WorkoutReportPage; only shown when last session ≤ 14 days ago; shows name, duration, sets, volume
+- **Training Trend card** — 3-week rolling zone view (W-2, W-1, W0); zones: Progress (≥5% vol growth), Maintenance (stable), Plateau (≥10% drop), Missed (0 vol); computed by `computeTrainingTrend()`; taps → Insights Analyzer
+- **Muscle Coverage nudge** — lists overdue canonical muscles (due = ≥75% of cycle elapsed); computed by `computeMuscleCoverage()`; only shown when ≥1 muscle is overdue and user has history; taps → Insights Analyzer
+- **NextSessionCard (context-aware primary CTA)** — 4 states:
+  1. Active RepIQ plan with next session: "NEXT UP" eyebrow, session name, focus, exercise count, duration, optional needsReview notice
+  2. Active plan but all sessions complete: "Plan Complete" state
+  3. Has history but no plan: "READY TO TRAIN?" with Quick Workout + Generate Session
+  4. Brand new user: "LET'S GET STARTED" with Start First Workout + Generate Session
+- `computeGoalProgress()` function implemented (100-pt scoring: consistency 40, volume trend 20, muscle coverage 20, streak 20) — calculated but not yet displayed on Home
+- **GlossaryPage** — term definitions for streak, training trend, etc.; accessible via info icons on Home
+
+## Psych Capture (Phase 2 — Mostly Complete)
+
+- **PsychCaptureCard** — shown on WorkoutReportPage after every workout finish
+  - Mood after: 5 emoji chips 😫→😄 (`MoodRating` 1–5)
+  - Energy left: 5 emoji chips 🪫→💪 (`EnergyRating` 1–5)
+  - Session RPE: 10 numbered chips 1–10 (`RPERating`)
+  - Respects consent flags from `UserPsychProfile` (`capturePostWorkoutMood`, `capturePostWorkoutEnergy`, `captureSessionRPE`)
+  - Shows "✓ Feeling logged" checkmark if already captured for this session
+  - Persists to `PostWorkoutPsych` via `persistPostWorkoutPsych()`
+- **ReadinessCheckSheet** — contextual prompt on Home asking "How's your energy?" with 5 emoji chips; "Skip for now" + "Don't ask again" options; shown as overlay + bottom sheet
+- ❌ Persistent Daily Readiness Card on Home — not yet built
+- ❌ Consent toggles in Profile → Preferences — not yet built (types defined, UI missing)
 
 ## Psychological Data Layer
 
@@ -484,15 +526,22 @@ These are documented and should not be forgotten:
 - Sync localStorage → server on first login
 - Decision needed: Supabase recommended
 
-### Phase 1 — Onboarding + Home (highest retention impact)
-- 5-step onboarding flow → plan generation → reveal
-- Home redesign: streak, contextual CTA, this-week snapshot, PR highlight
-- Goal Planner wired to same step UI as onboarding
+### Phase 1 — Onboarding + Home ✅ COMPLETE
+- 5-step onboarding flow → PostOnboardingPage reveal ✅
+- Home redesign: streak, week-streak, PR banner, week snapshot, last workout card, Training Trend card, Muscle Coverage nudge, context-aware NextSessionCard ✅
+- Schedule recommendations pre-filled from profile in onboarding step 5 ✅
 
-### Phase 2 — Psych capture UI (data compounds over time)
-- Post-workout mood + energy chips after Report screen
-- Home daily readiness card (sleep/stress/energy)
-- Consent toggles in Profile → Preferences
+### Phase 2 — Psych capture UI ✅ MOSTLY COMPLETE
+- Post-workout mood + energy chips + RPE after Report screen ✅ (`PsychCaptureCard` on WorkoutReportPage)
+- Daily readiness prompt on Home ✅ (`ReadinessCheckSheet` — shown contextually)
+- ❌ Daily Readiness Card on Home (persistent card showing today's readiness score) — not yet built
+- ❌ Consent toggles in Profile → Preferences — not yet built
+
+### Phase 2.5 — Insights Analyzer ← NEXT
+- Visualize the analytics already computed: Training Trend, Muscle Coverage, Goal Progress
+- Surface `computeTrainingTrend()`, `computeMuscleCoverage()`, `computeGoalProgress()` in Analyzer tab (currently "coming soon")
+- Volume per movement pattern, week-over-week comparison
+- Mood/energy overlays on trend chart (data now being collected)
 
 ### Phase 3 — Progress Photos
 - Photo capture prompt at Finish Workout
@@ -505,15 +554,14 @@ These are documented and should not be forgotten:
 ### Phase 5 — V2 Psychological Intelligence
 - Skip prediction, deload recommendations
 - Motivation-style personalised copy
-- Insights → Analyzer with mood/readiness overlays
+- Analyzer mood/readiness overlays (builds on Phase 2.5 Analyzer)
 
 ### Phase 6 — Payments
 - Post-Phase 3 (after users have proven intent to stay)
 - Paywall at onboarding end or feature gate
 
 ### Immediate next session
-- Home redesign: streak always visible, context-aware primary CTA, this-week snapshot, last workout card, PR highlight (Phase 1 completion)
-- Then Phase 2: post-workout psych capture UI (mood/energy chips after Report screen)
+- Insights Analyzer tab: surface existing analytics functions into real UI (trends, muscle coverage, goal progress)
 
 ## Planned Logger Enhancement
 

@@ -14,7 +14,7 @@ import benchPressImage from "./assets/bench-press.svg";
 import inclineDumbbellPressImage from "./assets/incline-dumbbell-press.svg";
 import anatomyFrontImg from "./assets/anatomy-front.png";
 import anatomyBackImg from "./assets/anatomy-back.png";
-import { makeExercise, exerciseCatalog, _additionalExercises, _finalExercises, _strongExercises, _userExercises, allCatalogExercises } from "./catalog";
+import { allCatalogExercises, generationCatalogExercises } from "./catalog";
 import { getStoredReplacementEvents, persistReplacementEvent, getStoredExercisePreferences, persistExercisePreference, getStoredHiddenSuggestions, persistHiddenSuggestion, removeHiddenSuggestion, themeStorageKey, workoutSettingsStorageKey, customExercisesStorageKey, savedWorkoutsStorageKey, workoutPlansStorageKey, planBuilderDraftStorageKey, psychProfileStorageKey, postWorkoutPsychStorageKey, dailyReadinessStorageKey, sessionBehaviorStorageKey, derivedPsychStorageKey, repiqPlanStorageKey, getStoredSavedWorkouts, persistSavedWorkout, persistSavedWorkoutsList, getStoredPsychProfile, persistPsychProfile, getStoredRepIQPlan, persistRepIQPlan, getStoredPostWorkoutPsych, persistPostWorkoutPsych, getStoredDailyReadiness, persistDailyReadiness, getStoredSessionBehavior, persistSessionBehavior, getStoredWorkoutPlans, persistWorkoutPlans, getStoredPlanBuilderDraft, persistPlanBuilderDraft, SAMPLE_WORKOUT_PLANS, SAMPLE_PLAN_IDS } from "./storage";
 import { DEFAULT_PSYCH_PROFILE, deriveTimeOfDay, buildSessionBehaviorSignals, createInitialSwipeState, COMPOUND_PATTERNS } from "./types";
 import type { FlowState, DraftSet, ExerciseDraft, DetailTab, ThemePreference, DraftSetType, AppView, MotivationalWhy, TrainingGoal, ExperienceLevel, EquipmentAccess, ScheduleCommitment, MoodRating, EnergyRating, RPERating, ThreePointScale, TimeOfDay, SessionSource, Trend, MotivationStyle, UserPsychProfile, PostWorkoutPsych, DailyReadiness, SessionBehaviorSignals, DerivedPsychProfile, SplitType, RepIQPlanExercise, RepIQPlanDay, RepIQPlanWeek, RepIQPlan, PlannedExercise, WorkoutPlan, PlanBuilderMode, PlanSessionSource, ActivePlanSession, WorkoutSettings, WorkoutMeta, RewardCategory, RewardLevel, AddExerciseMode, CreateExerciseStep, CustomExerciseType, MeasurementType, MovementSide, MovementPattern, ExerciseDifficulty, ExerciseAngle, ExerciseEquipment, ReplacementReason, ReplacementEvent, ExerciseWithTaxonomy, ExercisePreferenceEntry, ExercisePreferenceMap, CustomExerciseInput, LoggerReward, RewardSummary, FinishedExerciseSummary, FinishWorkoutDraft, SavedWorkoutData, ExerciseRestDefaults, SwipeState, ActiveRestTimer, MuscleRegion } from "./types";
@@ -34,22 +34,30 @@ function getMovementFamily(pattern: MovementPattern): string {
 
 // Maps user's equipment access level to the exercise types they can perform
 const EQUIPMENT_ALLOWED_TYPES: Record<EquipmentAccess, CustomExerciseType[]> = {
-  bodyweight:    ["bodyweight_only", "freestyle_cardio"],
-  dumbbell_pair: ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "freestyle_cardio"],
-  home_setup:    ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "barbell", "freestyle_cardio"],
-  basic_gym:     ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "barbell", "machine", "freestyle_cardio"],
-  full_gym:      ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "barbell", "machine", "freestyle_cardio"],
+  bodyweight:    ["bodyweight", "freestyle_cardio"],
+  dumbbell_pair: ["bodyweight", "dumbbell", "freestyle_cardio"],
+  home_setup:    ["bodyweight", "dumbbell", "barbell", "resistance_band", "freestyle_cardio"],
+  basic_gym:     ["bodyweight", "dumbbell", "barbell", "cable", "machine", "resistance_band", "freestyle_cardio"],
+  full_gym:      ["bodyweight", "dumbbell", "barbell", "cable", "machine", "resistance_band", "freestyle_cardio"],
 };
 
 // Equipment accessibility — maps exerciseType to what the user needs available
 function getEquipmentAccessibility(type: CustomExerciseType): CustomExerciseType[] {
   switch (type) {
-    case "bodyweight_only":          return ["bodyweight_only"];
-    case "bodyweight_weighted":      return ["bodyweight_only", "bodyweight_weighted"];
-    case "free_weights_accessories": return ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories"];
-    case "barbell":                  return ["barbell"];
-    case "machine":                  return ["machine"];
-    case "freestyle_cardio":         return ["freestyle_cardio"];
+    // V2 types
+    case "bodyweight":      return ["bodyweight"];
+    case "dumbbell":        return ["dumbbell"];
+    case "cable":           return ["cable"];
+    case "resistance_band": return ["resistance_band"];
+    case "barbell":         return ["barbell"];
+    case "machine":         return ["machine"];
+    case "freestyle_cardio": return ["freestyle_cardio"];
+    // Legacy types (backward compat)
+    case "bodyweight_only":          return ["bodyweight"];
+    case "bodyweight_weighted":      return ["bodyweight", "dumbbell", "barbell", "resistance_band"];
+    case "free_weights_accessories": return ["dumbbell", "barbell", "cable", "resistance_band"];
+    // Fallback
+    default: return [];
   }
 }
 
@@ -541,13 +549,14 @@ export type GenConfig = {
   goal: string;
   muscles: string[];
   duration: string;
+  equipment: EquipmentAccess;
   seedOffset: number;
 };
 
 // Pure function — deterministically builds a WorkoutPlan from user inputs + library.
 // Called both by WorkoutPlannerPage (initial generate) and root App (shuffle on review).
 function buildGeneratedPlan(config: GenConfig, library: ExerciseWithTaxonomy[]): WorkoutPlan | null {
-  const { goal, muscles, duration, seedOffset } = config;
+  const { goal, muscles, duration, equipment, seedOffset } = config;
   const muscleKeywords: Record<string, string[]> = {
     Chest:      ["chest", "pec"],
     Back:       ["back", "lat", "row", "rhomboid", "trap"],
@@ -585,6 +594,12 @@ function buildGeneratedPlan(config: GenConfig, library: ExerciseWithTaxonomy[]):
     ex.exerciseType !== "freestyle_cardio" &&
     !STRETCH_IDS.has(ex.id)
   );
+  const allowedEquipTypes = EQUIPMENT_ALLOWED_TYPES[equipment] ?? EQUIPMENT_ALLOWED_TYPES.full_gym;
+  candidates = candidates.filter((ex) => {
+    if (ex.exerciseType == null) return true;
+    const neededEquipment = getEquipmentAccessibility(ex.exerciseType as CustomExerciseType);
+    return neededEquipment.some((item) => allowedEquipTypes.includes(item));
+  });
   if (keywords.length > 0) {
     candidates = candidates.filter((ex) =>
       keywords.some(
@@ -596,7 +611,7 @@ function buildGeneratedPlan(config: GenConfig, library: ExerciseWithTaxonomy[]):
     );
   }
 
-  const inputKey = `${goal}|${[...muscles].sort().join(",")}|${duration}`;
+  const inputKey = `${goal}|${[...muscles].sort().join(",")}|${duration}|${equipment}`;
   const seed = hashString(inputKey) + seedOffset;
 
   const scored = candidates.map(ex => ({
@@ -4293,6 +4308,7 @@ function buildPlanContext(plan: RepIQPlan, profile: UserPsychProfile | null): st
 function PlannerHomePage({
   plans,
   library,
+  generationLibrary,
   existingTags,
   activeView,
   onViewChange,
@@ -4333,9 +4349,12 @@ function PlannerHomePage({
   onApplyCustomSplit,
   onCarryOverSessions,
   onCompressSessions,
+  genDraftConfig,
+  onGenDraftConfigChange,
 }: {
   plans: WorkoutPlan[];
   library: ExerciseDraft[];
+  generationLibrary: ExerciseWithTaxonomy[];
   existingTags: string[];
   activeView: "mine" | "library" | "generate";
   onViewChange: (view: "mine" | "library" | "generate") => void;
@@ -4376,11 +4395,14 @@ function PlannerHomePage({
   onApplyCustomSplit?: (arrangement: { label: string; muscles: string[] }[]) => void;
   onCarryOverSessions?: () => void;
   onCompressSessions?: () => void;
+  genDraftConfig?: GenConfig | null;
+  onGenDraftConfigChange?: (config: GenConfig) => void;
 }) {
   // Generate state
-  const [genGoal, setGenGoal] = useState("Hypertrophy");
-  const [genMuscles, setGenMuscles] = useState<string[]>([]);
-  const [genDuration, setGenDuration] = useState("45 min");
+  const [genGoal, setGenGoal] = useState(genDraftConfig?.goal ?? "Hypertrophy");
+  const [genMuscles, setGenMuscles] = useState<string[]>(genDraftConfig?.muscles ?? []);
+  const [genDuration, setGenDuration] = useState(genDraftConfig?.duration ?? "45 min");
+  const [genEquipment, setGenEquipment] = useState<EquipmentAccess>(genDraftConfig?.equipment ?? psychProfile?.equipmentAccess ?? "full_gym");
   const [genError, setGenError] = useState<string | null>(null);
   const [dragPlanId, setDragPlanId] = useState<string | null>(null);
   const [activeTagFilter, setActiveTagFilter] = useState<string[]>([]);
@@ -4478,13 +4500,20 @@ function PlannerHomePage({
   }
 
   function handleGenerate() {
-    const genConfig: GenConfig = { goal: genGoal, muscles: genMuscles, duration: genDuration, seedOffset: 0 };
-    const plan = buildGeneratedPlan(genConfig, library as ExerciseWithTaxonomy[]);
+    const genConfig: GenConfig = {
+      goal: genGoal,
+      muscles: genMuscles,
+      duration: genDuration,
+      equipment: genEquipment,
+      seedOffset: 0
+    };
+    const plan = buildGeneratedPlan(genConfig, generationLibrary);
     if (!plan) {
       setGenError("No exercises found for your selections. Try removing some filters.");
       return;
     }
     setGenError(null);
+    onGenDraftConfigChange?.(genConfig);
     onGeneratePlan(plan, genConfig);
   }
 
@@ -4553,6 +4582,27 @@ function PlannerHomePage({
                     onClick={() => setGenDuration(d)}
                   >
                     {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="generate-field">
+              <label className="generate-field-label">Where do you train?</label>
+              <div className="generate-field-chips">
+                {([
+                  { value: "bodyweight", label: "No equipment" },
+                  { value: "dumbbell_pair", label: "Dumbbells" },
+                  { value: "home_setup", label: "Home setup" },
+                  { value: "basic_gym", label: "Basic gym" },
+                  { value: "full_gym", label: "Full gym" },
+                ] as const).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`generate-chip${genEquipment === option.value ? " is-selected" : ""}`}
+                    onClick={() => setGenEquipment(option.value)}
+                  >
+                    {option.label}
                   </button>
                 ))}
               </div>
@@ -8394,7 +8444,7 @@ function buildDayTemplates(split: SplitType, days: number): PlanDayTemplate[] {
 }
 
 function pickPlanExercise(
-  catalog: typeof allCatalogExercises,
+  catalog: ExerciseWithTaxonomy[],
   slot: PlanExerciseSlot,
   exp: ExperienceLevel,
   used: Set<string>,
@@ -8414,7 +8464,11 @@ function pickPlanExercise(
     slot.patterns.some((p) => ex.movementPattern === p) &&
     (ex.difficultyLevel == null || allowed.includes(ex.difficultyLevel as ExerciseDifficulty)) &&
     !used.has(ex.id) &&
-    (ex.exerciseType == null || allowedEquipTypes.includes(ex.exerciseType as CustomExerciseType))
+    (() => {
+      if (ex.exerciseType == null) return true;
+      const neededEquipment = getEquipmentAccessibility(ex.exerciseType as CustomExerciseType);
+      return neededEquipment.some((item) => allowedEquipTypes.includes(item));
+    })()
   );
 
   if (slot.primaryMuscle) {
@@ -8431,7 +8485,7 @@ function pickPlanExercise(
 function generateRepIQPlan(profile: UserPsychProfile): RepIQPlan {
   const goal: TrainingGoal = profile.primaryGoal ?? "improve_fitness";
   const exp: ExperienceLevel = profile.experienceLevel ?? "beginner";
-  const days = profile.daysPerWeekPref ?? 3;
+  const days = getSafeTargetPerWeek(profile.scheduleCommitment, profile.daysPerWeekPref);
   const equipment: EquipmentAccess = profile.equipmentAccess ?? "full_gym";
   const sessionLen = profile.sessionLengthPref ?? 45;
   const cycleDays = profile.cycleDays ?? null;   // null = standard weekly
@@ -8460,7 +8514,7 @@ function generateRepIQPlan(profile: UserPsychProfile): RepIQPlan {
       completedAt: null,
       exercises: tmpl.slots
         .map((slot, slotIdx) => {
-          const exerciseId = pickPlanExercise(allCatalogExercises, slot, exp, used, equipment);
+          const exerciseId = pickPlanExercise(generationCatalogExercises, slot, exp, used, equipment);
           if (!exerciseId) return null;
           // Warm-up sets: compound movements get 2 warm-up sets, first exercise of
           // each session always gets at least 1 (even if isolation)
@@ -10994,7 +11048,7 @@ function InfoIcon({ onClick }: { onClick?: (e: React.MouseEvent<HTMLButtonElemen
 }
 
 // ── Bottom Navigation Bar ─────────────────────────────────────────────────────
-function BottomNav({ activeView, onNavigate, onMore }: { activeView: AppView; onNavigate: (view: "home" | "planner" | "insights") => void; onMore?: () => void }) {
+function BottomNav({ activeView, onNavigate, onMore }: { activeView: AppView; onNavigate: (view: "home" | "planner" | "insights" | "community") => void; onMore?: () => void }) {
   return (
     <nav className="bottom-nav" aria-label="Main navigation">
       <button className={`bottom-nav-tab${activeView === "home" ? " is-active" : ""}`} type="button" onClick={() => onNavigate("home")} aria-label="Home">
@@ -11014,6 +11068,12 @@ function BottomNav({ activeView, onNavigate, onMore }: { activeView: AppView; on
           <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
         </svg>
         <span>Insights</span>
+      </button>
+      <button className={`bottom-nav-tab${activeView === "community" ? " is-active" : ""}`} type="button" onClick={() => onNavigate("community")} aria-label="Community">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        <span>Community</span>
       </button>
       <button className={`bottom-nav-tab${activeView === "more" ? " is-active" : ""}`} type="button" onClick={onMore} aria-label="More">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -11906,6 +11966,8 @@ function WorkoutHistoryDetailPage({
 // ── Insights Page ─────────────────────────────────────────────────────────────
 function InsightsPage({
   savedWorkouts,
+  psychProfile,
+  library,
   onOpenReport,
   onRedoWorkout,
   onSaveToMyWorkouts,
@@ -11915,23 +11977,149 @@ function InsightsPage({
   initialTab,
 }: {
   savedWorkouts: SavedWorkoutData[];
+  psychProfile: UserPsychProfile;
+  library: ExerciseWithTaxonomy[];
   onOpenReport: (workout: SavedWorkoutData) => void;
   onRedoWorkout?: (workout: SavedWorkoutData) => void;
   onSaveToMyWorkouts?: (workout: SavedWorkoutData) => void;
   onDeleteWorkout?: (savedAt: string) => void;
   resolvedTheme?: string;
   onToggleTheme?: () => void;
-  initialTab?: "analyzer" | "reports";
+  initialTab?: "summary" | "stats" | "progress";
 }) {
-  const [tab, setTab] = useState<"analyzer" | "reports">(initialTab ?? "reports");
+  const [tab, setTab] = useState<"summary" | "stats" | "progress">(initialTab ?? "summary");
   const [savedToast, setSavedToast] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [expandedInsight, setExpandedInsight] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+
+  // ── Analytics (all memoized) ──────────────────────────────────────────────
+  const targetPerWeek = getSafeTargetPerWeek(psychProfile.scheduleCommitment, psychProfile.daysPerWeekPref);
+  const cycleDays = psychProfile.cycleDays ?? 7;
+
+  const consistency = useMemo(() => computeConsistencyStats(savedWorkouts, psychProfile), [savedWorkouts, psychProfile]);
+  const sessionSummary = useMemo(() => computeSessionSummary(savedWorkouts), [savedWorkouts]);
+  const laggingMuscles = useMemo(() => computeLaggingMuscles(savedWorkouts, psychProfile, library), [savedWorkouts, psychProfile, library]);
+  const exerciseProgress = useMemo(() => computeExerciseProgress(savedWorkouts), [savedWorkouts]);
+  const plateaus = useMemo(() => computePlateauExercises(savedWorkouts), [savedWorkouts]);
+  const rotations = useMemo(() => computeExerciseRotation(savedWorkouts), [savedWorkouts]);
+  const goalAlignment = useMemo(() => computeGoalAlignment(savedWorkouts, psychProfile), [savedWorkouts, psychProfile]);
+  const movementBalance = useMemo(() => computeMovementBalance(savedWorkouts, library), [savedWorkouts, library]);
+  const muscleCoverage = useMemo(() => computeMuscleCoverage(savedWorkouts, cycleDays), [savedWorkouts, cycleDays]);
+  const trainingTrend = useMemo(() => computeTrainingTrend(savedWorkouts, cycleDays), [savedWorkouts, cycleDays]);
+  const goalProgress = useMemo(() => computeGoalProgress(savedWorkouts, psychProfile), [savedWorkouts, psychProfile]);
+  const prsHistory = useMemo(() => computePRsHistory(savedWorkouts), [savedWorkouts]);
+  const actionPlan = useMemo(() => computeActionPlan(laggingMuscles, plateaus, rotations, goalAlignment, consistency, targetPerWeek), [laggingMuscles, plateaus, rotations, goalAlignment, consistency, targetPerWeek]);
+  const weekStats = useMemo(() => getThisWeekStats(savedWorkouts), [savedWorkouts]);
+
+  const hasEnoughData = savedWorkouts.length >= 3;
 
   function handleSave(w: SavedWorkoutData) {
     onSaveToMyWorkouts?.(w);
     setSavedToast(w.savedAt);
     setTimeout(() => setSavedToast(null), 2200);
   }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const coverageColor = (s: MuscleStatus) =>
+    s === "fresh" ? "#22c55e" : s === "fading" ? "#f59e0b" : s === "due" ? "#ef4444" : "var(--border)";
+  const formatVol = (kg: number) => kg >= 1000 ? `${(kg / 1000).toFixed(1)}t` : `${Math.round(kg)}kg`;
+  const trendArrow = (trend: SessionSummaryStats["volumeTrend"]) =>
+    trend === "up" ? "↑" : trend === "down" ? "↓" : trend === "stable" ? "→" : "";
+  const statusColor = (status: ExerciseProgressItem["status"]) =>
+    status === "improving" ? "#22c55e"
+    : status === "stalled" ? "#f59e0b"
+    : status === "regressing" ? "#ef4444"
+    : status === "building" ? "#3b82f6"
+    : "var(--subtle-text)";
+  const confidenceDot = (confidence: InsightConfidence) =>
+    confidence === "high" ? "●●●" : confidence === "medium" ? "●●○" : "●○○";
+
+  // Health ring scores (0–100)
+  const ringConsistency = Number.isFinite(consistency.consistencyPct) ? consistency.consistencyPct : 0;
+  const ringMuscle = (() => {
+    const statuses = Object.values(muscleCoverage);
+    if (statuses.length === 0) return 0;
+    const freshCount = statuses.filter(s => s === "fresh" || s === "fading").length;
+    return Math.round((freshCount / statuses.length) * 100);
+  })();
+  const ringGoal = goalAlignment.score;
+  const goalAlignColor =
+    goalAlignment.label === "aligned"
+      ? "#22c55e"
+      : goalAlignment.label === "partially_aligned"
+        ? "#f59e0b"
+        : "#ef4444";
+
+  // ── Synthesize insight feed cards ──────────────────────────────────────────
+  type FeedCard = { id: string; severity: "green" | "amber" | "red" | "info"; headline: string; detail: string; why: string; action: string };
+
+  const insightFeed = useMemo((): FeedCard[] => {
+    const cards: FeedCard[] = [];
+
+    // Consistency insights
+    if (consistency.lastGapDays > 7) {
+      cards.push({ id: "gap", severity: "red", headline: `${consistency.lastGapDays} days since your last workout`, detail: "Consistency is the strongest predictor of progress. Even a light session counts.", why: "Long breaks cause detraining — strength drops ~1% per day after 2 weeks of inactivity.", action: "Do any session today, even 20 minutes." });
+    } else if (consistency.consistencyPct < 50) {
+      cards.push({ id: "low-freq", severity: "amber", headline: `Hitting ${consistency.consistencyPct}% of your weekly target`, detail: `You're averaging ${consistency.avgPerWeek} sessions/week — target is ${targetPerWeek}.`, why: "Undershoot your frequency target too long and all your gains slow down.", action: `Add ${Math.max(1, Math.ceil(targetPerWeek - consistency.avgPerWeek))} more session${targetPerWeek - consistency.avgPerWeek > 1.5 ? "s" : ""} per week.` });
+    } else if (consistency.streak >= 5) {
+      cards.push({ id: "streak", severity: "green", headline: `${consistency.streak}-day streak — keep it going`, detail: `${consistency.consistencyPct}% consistency this month. Your longest streak is ${consistency.longestStreak} days.`, why: "Streaks build habit. Consistency beats intensity for long-term results.", action: "Keep showing up. You're doing great." });
+    }
+
+    // Lagging muscles
+    for (const m of laggingMuscles.slice(0, 3)) {
+      const sug = m.suggestedExercises.slice(0, 2).join(", ");
+      cards.push({
+        id: `lag-${m.muscle}`, severity: m.reason === "absent" ? "red" : "amber",
+        headline: `${m.muscle} is lagging`,
+        detail: m.reason === "absent"
+          ? `Not directly trained in ${m.lastTrainedDaysAgo ?? "14+"} days.`
+          : `Only ${m.directSets30d} sets this month — your goal needs ~${m.minEffectiveVolume}.`,
+        why: m.reason === "absent"
+          ? "Muscles you skip consistently will fall behind and create imbalances."
+          : "Below minimum effective volume — not enough stimulus to maintain, let alone grow.",
+        action: sug ? `Add ${m.muscle} work this week. Try: ${sug}.` : `Add direct ${m.muscle} work in your next 2 sessions.`,
+      });
+    }
+
+    // Plateaus
+    for (const p of plateaus.slice(0, 2)) {
+      cards.push({ id: `plat-${p.exerciseId}`, severity: "amber", headline: `${p.name} has plateaued`, detail: `Performance flat across ${p.sessionsAnalyzed} recent sessions.`, why: p.cause === "volume_stuck" ? "Volume dropped while load stayed the same — not enough total work to force adaptation." : "Same weight and reps repeated without progression. Your body has adapted to this stimulus.", action: p.action });
+    }
+
+    // Rotation warnings
+    for (const r of rotations.filter(x => x.rotationLevel === "high").slice(0, 2)) {
+      cards.push({ id: `rot-${r.muscle}`, severity: "amber", headline: `Too many ${r.muscle} variations`, detail: `${r.variantsUsed} different exercises in 8 weeks. Hard to track real progress.`, why: "Switching exercises too often means no single lift gets enough repeated exposure to show clear progression.", action: r.recommendation ?? `Keep ${r.anchorExercise} as your anchor lift for 4–6 weeks.` });
+    }
+
+    // Goal alignment
+    if (goalAlignment.label === "misaligned" && goalAlignment.mismatches.length > 0) {
+      cards.push({ id: "goal-mismatch", severity: "red", headline: "Training doesn't match your goal", detail: goalAlignment.mismatches[0], why: "Your actual training pattern diverges from what your stated goal requires.", action: goalAlignment.suggestions[0] ?? "Review your training split against your goal." });
+    } else if (goalAlignment.label === "partially_aligned" && goalAlignment.mismatches.length > 0) {
+      cards.push({ id: "goal-partial", severity: "amber", headline: "Partially aligned with your goal", detail: goalAlignment.mismatches[0], why: "Close, but there's a gap between what you're doing and optimal training for your goal.", action: goalAlignment.suggestions[0] ?? "Small adjustments will get you aligned." });
+    }
+
+    // Movement balance
+    for (const im of movementBalance.imbalances.slice(0, 1)) {
+      cards.push({ id: "balance", severity: "amber", headline: "Movement imbalance detected", detail: im, why: "Unbalanced patterns increase injury risk and limit overall development.", action: "Adjust your next session to include the missing movement type." });
+    }
+
+    // Improving exercises (positive feedback)
+    const improving = exerciseProgress.filter(e => e.status === "improving").slice(0, 2);
+    for (const ex of improving) {
+      cards.push({ id: `prog-${ex.exerciseId}`, severity: "green", headline: `${ex.name} is progressing`, detail: ex.recentBestSet ? `Recent best: ${ex.recentBestSet.weight}kg × ${ex.recentBestSet.reps}` : `Trending up over ${ex.sessionsCount} sessions.`, why: "Consistent progressive overload — this exercise is responding to your training.", action: "Keep this movement in your rotation. Don't fix what isn't broken." });
+    }
+
+    // PRs
+    if (prsHistory.length > 0) {
+      const recentPRs = prsHistory.slice(0, 3);
+      cards.push({ id: "prs", severity: "green", headline: `${prsHistory.length} personal record${prsHistory.length > 1 ? "s" : ""}`, detail: recentPRs.map(p => p.detail).join(" | "), why: "PRs confirm your training is working — real measurable progress.", action: "Celebrate it. Then keep pushing." });
+    }
+
+    return cards;
+  }, [consistency, laggingMuscles, plateaus, rotations, goalAlignment, movementBalance, exerciseProgress, prsHistory, targetPerWeek]);
+
+  const toggleInsight = (id: string) => setExpandedInsight(prev => prev === id ? null : id);
 
   return (
     <main className="shell selector-shell" data-theme={resolvedTheme}>
@@ -11950,82 +12138,207 @@ function InsightsPage({
           )}
         </header>
 
-        <div className="planner-tabs" role="tablist" aria-label="Insights sections">
+        <div className="planner-tabs" role="tablist" aria-label="Analytics sections">
           <div className="planner-tabs-track">
-            <button type="button" className={tab === "reports" ? "is-active" : ""} aria-selected={tab === "reports"} onClick={() => setTab("reports")}>Reports</button>
-            <button type="button" className={tab === "analyzer" ? "is-active" : ""} aria-selected={tab === "analyzer"} onClick={() => setTab("analyzer")}>Analyzer</button>
+            <button type="button" className={tab === "summary" ? "is-active" : ""} aria-selected={tab === "summary"} onClick={() => setTab("summary")}>Summary</button>
+            <button type="button" className={tab === "stats" ? "is-active" : ""} aria-selected={tab === "stats"} onClick={() => setTab("stats")}>Stats</button>
+            <button type="button" className={tab === "progress" ? "is-active" : ""} aria-selected={tab === "progress"} onClick={() => setTab("progress")}>Progress</button>
           </div>
         </div>
 
-        {tab === "reports" ? (
-          <section className="planner-section">
+        {tab === "summary" && (
+          <section className="planner-section az-section">
             {savedWorkouts.length === 0 ? (
               <div className="planner-builder-stub">
-                <p className="planner-empty-title">No workouts logged yet</p>
-                <p className="planner-empty-sub">Complete a workout to see your reports here.</p>
+                <p className="planner-empty-title">No workouts yet</p>
+                <p className="planner-empty-sub">Complete a workout to see your insights here.</p>
+              </div>
+            ) : insightFeed.length === 0 ? (
+              <div className="planner-builder-stub">
+                <p className="planner-empty-title">Still learning your patterns</p>
+                <p className="planner-empty-sub">Complete {Math.max(0, 3 - savedWorkouts.length)} more workout{savedWorkouts.length < 2 ? "s" : ""} to unlock insights.</p>
               </div>
             ) : (
-              <div className="plan-list">
-                {savedWorkouts.map((w) => {
-                  const isRepIQ = !!w.repiqSourceKey || w.workoutSource === "repiq";
-                  const alreadySaved = savedToast === w.savedAt;
-                  // Determine source label + style
-                  const src = w.workoutSource ?? (isRepIQ ? "repiq" : undefined);
-                  const sourceTag: { label: string; cls: string } | null =
-                    src === "repiq"      ? { label: "✦ RepIQ Plan",   cls: "src-repiq" }
-                    : src === "saved"    ? { label: "My Workout",     cls: "src-saved" }
-                    : src === "library"  ? { label: "Library",        cls: "src-library" }
-                    : src === "generated"? { label: "Generated",      cls: "src-generated" }
-                    : src === "history"  ? { label: "Redo",           cls: "src-history" }
-                    : null;
-                  return (
-                    <article key={w.savedAt} className="report-card">
-                      <div className="report-card-header" onClick={() => onOpenReport(w)}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
-                            <p className="report-card-meta">{new Date(w.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</p>
-                            {sourceTag && (
-                              <span className={`report-card-source-badge ${sourceTag.cls}`}>{sourceTag.label}</span>
-                            )}
-                          </div>
-                          <p className="report-card-name">{w.sessionName}</p>
-                          <p className="report-card-stats">{w.duration} · {w.totalSets} sets · {w.exerciseCount} exercises</p>
-                        </div>
-                        <span className="report-card-chevron">›</span>
+              <div className="az-content">
+                {insightFeed.map(card => (
+                  <div key={card.id} className={`az-card az-insight-card az-severity-${card.severity}`}>
+                    <div className="az-card-header-row">
+                      <p className="az-card-title">{card.headline}</p>
+                      <span className={`az-severity-badge az-severity-${card.severity}`}>
+                        {card.severity === "green" ? "✓" : card.severity === "amber" ? "⚠" : card.severity === "red" ? "!" : "ℹ"}
+                      </span>
+                    </div>
+                    <p className="az-card-sub">{card.detail}</p>
+                    <button
+                      type="button"
+                      className="az-expand-btn"
+                      onClick={() => toggleInsight(card.id)}
+                      aria-expanded={expandedInsight === card.id}
+                    >
+                      {expandedInsight === card.id ? "Hide details" : "Show details"}
+                    </button>
+                    {expandedInsight === card.id && (
+                      <div className="az-insight-details" style={{ marginTop: 12 }}>
+                        <p style={{ fontSize: "0.9rem", color: "var(--subtle-text)", marginBottom: 8 }}>
+                          <strong>Why:</strong> {card.why}
+                        </p>
+                        <p style={{ fontSize: "0.9rem", color: "var(--accent)" }}>
+                          <strong>Next step:</strong> {card.action}
+                        </p>
                       </div>
-                      <div className="report-card-actions">
-                        {onRedoWorkout && (
-                          <button
-                            type="button"
-                            className="report-card-action-btn"
-                            onClick={() => onRedoWorkout(w)}
-                          >
-                            Redo
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="report-card-action-btn"
-                          onClick={() => handleSave(w)}
-                          disabled={alreadySaved}
-                        >
-                          {alreadySaved ? "Saved ✓" : "Save to My Workouts"}
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </section>
-        ) : (
-          <section className="planner-section">
+        )}
+
+        {tab === "stats" && (
+          /* ── STATS ──────────────────────────────────────────────────────────── */
+          <section className="planner-section az-section">
+            {!hasEnoughData && (
+              <div className="az-learning-banner">
+                <span className="az-learning-icon">📊</span>
+                <div>
+                  <p className="az-learning-title">Still learning your patterns</p>
+                  <p className="az-learning-sub">Complete {Math.max(0, 3 - savedWorkouts.length)} more workout{savedWorkouts.length < 2 ? "s" : ""} to unlock full insights.</p>
+                </div>
+              </div>
+            )}
+              <div className="az-content">
+                {/* Action plan */}
+                {actionPlan.length > 0 && (
+                  <div className="az-card">
+                    <p className="az-card-title">Recommended next actions</p>
+                    <div className="az-action-list">
+                      {actionPlan.map((a, i) => (
+                        <div key={a.id} className="az-action-item">
+                          <span className="az-action-num">{i + 1}</span>
+                          <div className="az-action-body">
+                            <p className="az-action-title">{a.title}</p>
+                            <p className="az-action-detail">{a.detail}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Consistency card */}
+                <div className="az-card">
+                  <p className="az-card-title">Consistency</p>
+                  <div className="az-stat-grid">
+                    <div className="az-stat">
+                      <p className="az-stat-val">{consistency.streak}</p>
+                      <p className="az-stat-lbl">Day streak</p>
+                    </div>
+                    <div className="az-stat">
+                      <p className="az-stat-val">{consistency.sessions7d}</p>
+                      <p className="az-stat-lbl">This week</p>
+                    </div>
+                    <div className="az-stat">
+                      <p className="az-stat-val">{consistency.sessions30d}</p>
+                      <p className="az-stat-lbl">Last 30 days</p>
+                    </div>
+                    <div className="az-stat">
+                      <p className="az-stat-val">{ringConsistency}%</p>
+                      <p className="az-stat-lbl">vs target</p>
+                    </div>
+                    <div className="az-stat">
+                      <p className="az-stat-val">{consistency.longestStreak}</p>
+                      <p className="az-stat-lbl">Best streak</p>
+                    </div>
+                    <div className="az-stat">
+                      <p className="az-stat-val">{consistency.avgPerWeek}</p>
+                      <p className="az-stat-lbl">Avg/week</p>
+                    </div>
+                  </div>
+                  {consistency.lastGapDays > 7 && (
+                    <p className="az-card-note az-note-warn">Last session was {consistency.lastGapDays} days ago — get back on track.</p>
+                  )}
+                  {consistency.isReturningAfterGap && consistency.lastGapDays <= 5 && (
+                    <p className="az-card-note az-note-pos">Returning after a break — great to see you back.</p>
+                  )}
+                </div>
+
+                {/* Training trend */}
+                <div className="az-card">
+                  <p className="az-card-title">Training trend</p>
+                  <div className="az-trend-weeks">
+                    {trainingTrend.recentWeeks.map(w => (
+                      <div key={w.label} className={`az-trend-wk az-trend-wk--${w.zone}${w.isCurrent ? " is-current" : ""}`}>
+                        <span className="az-trend-wk-label">{w.label}</span>
+                        <span className="az-trend-wk-zone">{w.zone === "progress" ? "↑" : w.zone === "plateau" ? "↓" : w.zone === "missed" ? "–" : "→"}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="az-card-sub">{trainingTrend.insight}</p>
+                </div>
+
+                {/* Session output */}
+                <div className="az-card">
+                  <div className="az-card-header-row">
+                    <p className="az-card-title">Session output</p>
+                    {sessionSummary.volumeTrend !== "insufficient" && (
+                      <span className={`az-trend-badge az-trend-badge--${sessionSummary.volumeTrend}`}>
+                        Volume {trendArrow(sessionSummary.volumeTrend)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="az-stat-grid">
+                    <div className="az-stat">
+                      <p className="az-stat-val">{sessionSummary.totalWorkouts}</p>
+                      <p className="az-stat-lbl">Total workouts</p>
+                    </div>
+                    <div className="az-stat">
+                      <p className="az-stat-val">{sessionSummary.totalSets}</p>
+                      <p className="az-stat-lbl">Total sets</p>
+                    </div>
+                    <div className="az-stat">
+                      <p className="az-stat-val">{formatVol(sessionSummary.totalVolumeKg)}</p>
+                      <p className="az-stat-lbl">Total volume</p>
+                    </div>
+                    <div className="az-stat">
+                      <p className="az-stat-val">{sessionSummary.avgDurationMin}m</p>
+                      <p className="az-stat-lbl">Avg duration</p>
+                    </div>
+                    <div className="az-stat">
+                      <p className="az-stat-val">{sessionSummary.avgSets}</p>
+                      <p className="az-stat-lbl">Avg sets</p>
+                    </div>
+                    <div className="az-stat">
+                      <p className="az-stat-val">{sessionSummary.avgExercises}</p>
+                      <p className="az-stat-lbl">Avg exercises</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Goal progress */}
+                <div className="az-card">
+                  <div className="az-card-header-row">
+                    <p className="az-card-title">Goal progress</p>
+                    <span className="az-goal-score">{goalProgress.score}/100</span>
+                  </div>
+                  <div className="az-progress-bar-wrap">
+                    <div className="az-progress-bar" style={{ width: `${goalProgress.score}%` }} />
+                  </div>
+                  <p className="az-goal-label">{goalProgress.label}</p>
+                  <p className="az-card-sub">{goalProgress.insight}</p>
+                </div>
+              </div>
+          </section>
+        )}
+
+        {tab === "progress" && (
+          <section className="planner-section az-section">
             <div className="planner-builder-stub">
-              <p className="planner-empty-title">Analyzer coming soon</p>
-              <p className="planner-empty-sub">Trends, plateaus, and volume tracking will appear here.</p>
+              <p className="planner-empty-title">Progress tracking</p>
+              <p className="planner-empty-sub">Coming soon — track your fitness journey with photos and milestone tracking.</p>
             </div>
           </section>
         )}
+
         {deleteConfirmId && (() => {
           const w = savedWorkouts.find(x => x.savedAt === deleteConfirmId);
           return (
@@ -12240,6 +12553,15 @@ function getScoreTier(score: number): ScoreTier {
   return "great";
 }
 
+function getSafeTargetPerWeek(scheduleCommitment?: number | null, daysPerWeekPref?: number | null): number {
+  for (const candidate of [scheduleCommitment, daysPerWeekPref]) {
+    if (typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0) {
+      return Math.min(Math.max(Math.round(candidate), 1), 7);
+    }
+  }
+  return 3;
+}
+
 function pickInsight(bucket: GoalBucket, tier: ScoreTier, seed: number): string {
   const options = INSIGHT_LIBRARY[bucket][tier];
   return options[seed % options.length];
@@ -12267,7 +12589,7 @@ function computeGoalProgress(
     return wMs >= days56Ms && wMs < days28Ms;
   });
 
-  const targetPerWeek = profile.scheduleCommitment ?? profile.daysPerWeekPref ?? 3;
+  const targetPerWeek = getSafeTargetPerWeek(profile.scheduleCommitment, profile.daysPerWeekPref);
   const targetSessions = targetPerWeek * 4;
 
   // 1. Consistency (40pts)
@@ -12668,6 +12990,576 @@ function getThisWeekStats(workouts: SavedWorkoutData[]): {
     activeDayNumbers: [...seenDays],
   };
 }
+
+// ── Insights V1 Engine ────────────────────────────────────────────────────────
+
+type InsightConfidence = "low" | "medium" | "high";
+
+type ConsistencyStats = {
+  sessions7d: number;
+  sessions30d: number;
+  streak: number;
+  longestStreak: number;
+  avgPerWeek: number;
+  consistencyPct: number;
+  lastGapDays: number;
+  isReturningAfterGap: boolean;
+};
+
+type SessionSummaryStats = {
+  totalWorkouts: number;
+  totalSets: number;
+  totalVolumeKg: number;
+  totalDurationMin: number;
+  avgDurationMin: number;
+  avgSets: number;
+  avgVolumeKg: number;
+  avgExercises: number;
+  volumeTrend: "up" | "down" | "stable" | "insufficient";
+  sessionsTrend: "up" | "down" | "stable" | "insufficient";
+};
+
+type LaggingMuscleItem = {
+  muscle: string;
+  directSets30d: number;
+  minEffectiveVolume: number;
+  lastTrainedDaysAgo: number | null;
+  reason: "absent" | "low_volume" | "low_frequency";
+  suggestedExercises: string[];
+};
+
+type ExerciseProgressItem = {
+  exerciseId: string;
+  name: string;
+  primaryMuscle: string;
+  status: "improving" | "stable" | "building" | "stalled" | "regressing" | "insufficient_data";
+  sessionsCount: number;
+  bestSetEver: { weight: number; reps: number } | null;
+  recentBestSet: { weight: number; reps: number } | null;
+  volumeTrend: "up" | "down" | "stable";
+  confidence: InsightConfidence;
+};
+
+type PlateauItem = {
+  exerciseId: string;
+  name: string;
+  sessionsAnalyzed: number;
+  confidence: InsightConfidence;
+  cause: "weight_stuck" | "reps_stuck" | "volume_stuck";
+  action: string;
+};
+
+type RotationItem = {
+  muscle: string;
+  variantsUsed: number;
+  variantNames: string[];
+  anchorExercise: string | null;
+  rotationLevel: "high" | "acceptable" | "well_standardized";
+  warning?: string;
+  recommendation?: string;
+};
+
+type GoalAlignmentResult = {
+  score: number;
+  label: "aligned" | "partially_aligned" | "misaligned";
+  mismatches: string[];
+  suggestions: string[];
+};
+
+type MovementBalanceResult = {
+  byPattern: Record<string, { sets: number; volume: number }>;
+  pushSets: number;
+  pullSets: number;
+  squatSets: number;
+  hingeSets: number;
+  upperSets: number;
+  lowerSets: number;
+  imbalances: string[];
+};
+
+type PREntry = {
+  exerciseName: string;
+  prType: "weight" | "reps" | "estimated_1rm";
+  detail: string;
+  date: string;
+};
+
+type ActionItem = {
+  id: string;
+  priority: number;
+  title: string;
+  detail: string;
+  linkedType: "consistency" | "lagging_muscle" | "plateau" | "rotation" | "goal_alignment" | "balance";
+};
+
+function wkToMs(w: SavedWorkoutData): number {
+  const ds = (w.date ?? w.savedAt).slice(0, 10);
+  const [y, mo, d] = ds.split("-").map(Number);
+  return Date.UTC(y, mo - 1, d);
+}
+
+function computeConsistencyStats(workouts: SavedWorkoutData[], profile: UserPsychProfile): ConsistencyStats {
+  const msPerDay = 86400000;
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const sessions7d = workouts.filter(w => todayMs - wkToMs(w) <= 6 * msPerDay).length;
+  const sessions30d = workouts.filter(w => todayMs - wkToMs(w) <= 29 * msPerDay).length;
+  const streak = computeStreak(workouts);
+
+  // Longest streak
+  const sortedMs = [...new Set(workouts.map(wkToMs))].sort((a, b) => a - b);
+  let longest = 0, cur = 0;
+  for (let i = 0; i < sortedMs.length; i++) {
+    if (i === 0 || sortedMs[i] - sortedMs[i - 1] === msPerDay) { cur++; }
+    else { cur = 1; }
+    longest = Math.max(longest, cur);
+  }
+
+  // Avg per week (last 8 weeks)
+  const recent8w = workouts.filter(w => todayMs - wkToMs(w) <= 55 * msPerDay);
+  const avgPerWeek = Math.round((recent8w.length / 8) * 10) / 10;
+
+  // Consistency % vs target
+  const targetPerWeek = getSafeTargetPerWeek(profile.scheduleCommitment, profile.daysPerWeekPref);
+  const target30d = targetPerWeek * 4;
+  const consistencyPct = Math.min(Math.round((sessions30d / Math.max(target30d, 1)) * 100), 100);
+
+  // Days since last workout
+  const lastMs = workouts.length > 0 ? wkToMs(workouts[0]) : null;
+  const lastGapDays = lastMs != null ? Math.round((todayMs - lastMs) / msPerDay) : 999;
+
+  // Returning after gap: had a 14+ day break at some point in last 30 days
+  const recent = workouts.filter(w => todayMs - wkToMs(w) <= 30 * msPerDay);
+  let isReturningAfterGap = false;
+  if (recent.length >= 2) {
+    const rMs = recent.map(wkToMs).sort((a, b) => b - a);
+    for (let i = 0; i < rMs.length - 1; i++) {
+      if ((rMs[i] - rMs[i + 1]) / msPerDay >= 14) { isReturningAfterGap = true; break; }
+    }
+  }
+
+  return { sessions7d, sessions30d, streak, longestStreak: longest, avgPerWeek, consistencyPct, lastGapDays, isReturningAfterGap };
+}
+
+function computeSessionSummary(workouts: SavedWorkoutData[]): SessionSummaryStats {
+  const msPerDay = 86400000;
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const recent = workouts.filter(w => todayMs - wkToMs(w) <= 27 * msPerDay);
+  const prior = workouts.filter(w => { const d = todayMs - wkToMs(w); return d > 27 * msPerDay && d <= 55 * msPerDay; });
+
+  const n = workouts.length || 1;
+  const totalDurationSec = workouts.reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
+  const totalSets = workouts.reduce((s, w) => s + (w.totalSets ?? 0), 0);
+  const totalVolumeKg = workouts.reduce((s, w) => s + (w.totalVolume ?? 0), 0);
+
+  const recentVol = recent.reduce((s, w) => s + (w.totalVolume ?? 0), 0);
+  const priorVol = prior.reduce((s, w) => s + (w.totalVolume ?? 0), 0);
+  let volumeTrend: SessionSummaryStats["volumeTrend"] = "insufficient";
+  if (prior.length >= 2 && recent.length >= 2) {
+    const delta = priorVol > 0 ? (recentVol - priorVol) / priorVol : 0;
+    volumeTrend = delta > 0.08 ? "up" : delta < -0.08 ? "down" : "stable";
+  }
+  let sessionsTrend: SessionSummaryStats["sessionsTrend"] = "insufficient";
+  if (prior.length >= 2) {
+    sessionsTrend = recent.length > prior.length + 1 ? "up" : recent.length < prior.length - 1 ? "down" : "stable";
+  }
+
+  return {
+    totalWorkouts: workouts.length,
+    totalSets,
+    totalVolumeKg: Math.round(totalVolumeKg),
+    totalDurationMin: Math.round(totalDurationSec / 60),
+    avgDurationMin: Math.round(totalDurationSec / n / 60),
+    avgSets: Math.round((totalSets / n) * 10) / 10,
+    avgVolumeKg: Math.round(totalVolumeKg / n),
+    avgExercises: Math.round((workouts.reduce((s, w) => s + (w.exerciseCount ?? 0), 0) / n) * 10) / 10,
+    volumeTrend,
+    sessionsTrend,
+  };
+}
+
+function computeLaggingMuscles(workouts: SavedWorkoutData[], profile: UserPsychProfile, library: ExerciseWithTaxonomy[]): LaggingMuscleItem[] {
+  if (workouts.length < 3) return [];
+  const msPerDay = 86400000;
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const recent = workouts.filter(w => todayMs - wkToMs(w) <= 29 * msPerDay);
+
+  const goalBucket = getGoalBucket(profile.primaryGoal);
+  const MEV: Record<string, number> = goalBucket === "strength"
+    ? { Chest: 6, Back: 8, Shoulders: 6, Biceps: 4, Triceps: 4, Quads: 6, Hamstrings: 4, Glutes: 4, Calves: 4, Core: 4 }
+    : goalBucket === "endurance" || goalBucket === "fat"
+    ? { Chest: 4, Back: 6, Shoulders: 4, Biceps: 2, Triceps: 2, Quads: 6, Hamstrings: 4, Glutes: 4, Calves: 6, Core: 6 }
+    : { Chest: 8, Back: 10, Shoulders: 8, Biceps: 6, Triceps: 6, Quads: 8, Hamstrings: 6, Glutes: 6, Calves: 6, Core: 8 };
+
+  const directSets: Record<string, number> = {};
+  const lastTrained: Record<string, number> = {};
+  const sessionsByMuscle: Record<string, number> = {};
+
+  for (const w of recent) {
+    const wMs = wkToMs(w);
+    for (const ex of w.exercises) {
+      const canonical = getCanonicalMuscle(ex.primaryMuscle);
+      if (!canonical || canonical === "Other") continue;
+      directSets[canonical] = (directSets[canonical] ?? 0) + (ex.loggedSets ?? 0);
+      sessionsByMuscle[canonical] = (sessionsByMuscle[canonical] ?? 0) + 1;
+      if (!lastTrained[canonical] || wMs > lastTrained[canonical]) lastTrained[canonical] = wMs;
+    }
+  }
+
+  const lagging: LaggingMuscleItem[] = [];
+  for (const muscle of HEATMAP_MUSCLES) {
+    const mevPerWeek = MEV[muscle] ?? 6;
+    const target30d = mevPerWeek * 4;
+    const actual = directSets[muscle] ?? 0;
+    const lastMs = lastTrained[muscle];
+    const lastDays = lastMs != null ? Math.round((todayMs - lastMs) / msPerDay) : null;
+
+    let reason: LaggingMuscleItem["reason"] | null = null;
+    if (!lastMs || (lastDays !== null && lastDays > 14)) reason = "absent";
+    else if (actual < target30d * 0.5) reason = "low_volume";
+    else if (actual < target30d * 0.7 && (sessionsByMuscle[muscle] ?? 0) <= 2) reason = "low_frequency";
+    if (!reason) continue;
+
+    const suggested = library
+      .filter(ex => getCanonicalMuscle(ex.primaryMuscle) === muscle && ex.exerciseType !== "freestyle_cardio")
+      .slice(0, 3).map(ex => ex.name);
+
+    lagging.push({ muscle, directSets30d: actual, minEffectiveVolume: target30d, lastTrainedDaysAgo: lastDays, reason, suggestedExercises: suggested });
+  }
+
+  const order = { absent: 0, low_volume: 1, low_frequency: 2 } as const;
+  return lagging.sort((a, b) => order[a.reason] - order[b.reason]);
+}
+
+function computeExerciseProgress(workouts: SavedWorkoutData[]): ExerciseProgressItem[] {
+  if (workouts.length < 2) return [];
+  const byEx = new Map<string, { name: string; muscle: string; sessions: { wt: number; reps: number; vol: number }[][] }>();
+
+  for (const w of [...workouts].reverse()) {
+    for (const ex of w.exercises) {
+      if (!ex.sets || ex.sets.length === 0) continue;
+      const valid = ex.sets.filter(s => s.weight > 0 && s.reps > 0);
+      if (valid.length === 0) continue;
+      if (!byEx.has(ex.id)) byEx.set(ex.id, { name: ex.name, muscle: ex.primaryMuscle, sessions: [] });
+      byEx.get(ex.id)!.sessions.push(valid.map(s => ({ wt: s.weight, reps: s.reps, vol: s.weight * s.reps })));
+    }
+  }
+
+  const e1rm = (wt: number, reps: number) => wt * (1 + reps / 30);
+  const bestE1rm = (sets: { wt: number; reps: number }[]) => Math.max(...sets.map(s => e1rm(s.wt, s.reps)));
+
+  const results: ExerciseProgressItem[] = [];
+  for (const [id, data] of byEx) {
+    if (data.sessions.length < 2) continue;
+    const allSets = data.sessions.flat();
+    const bestAll = allSets.reduce((b, s) => e1rm(s.wt, s.reps) > e1rm(b.wt, b.reps) ? s : b, allSets[0]);
+    const recentSess = data.sessions.slice(-3);
+    const recentSets = recentSess.flat();
+    const recentBest = recentSets.reduce((b, s) => e1rm(s.wt, s.reps) > e1rm(b.wt, b.reps) ? s : b, recentSets[0]);
+
+    const oldVol = data.sessions.slice(-6, -3).flat().reduce((s, x) => s + x.vol, 0);
+    const newVol = recentSess.flat().reduce((s, x) => s + x.vol, 0);
+    let volumeTrend: ExerciseProgressItem["volumeTrend"] = "stable";
+    if (data.sessions.length >= 6) {
+      const delta = oldVol > 0 ? (newVol - oldVol) / oldVol : 0;
+      volumeTrend = delta > 0.08 ? "up" : delta < -0.08 ? "down" : "stable";
+    }
+
+    const recentE1 = bestE1rm(recentBest ? [recentBest] : []);
+    const allE1 = bestE1rm(bestAll ? [bestAll] : []);
+    let status: ExerciseProgressItem["status"] = "insufficient_data";
+    if (data.sessions.length >= 3) {
+      if (recentE1 >= allE1 * 0.98 && volumeTrend !== "down") status = "improving";
+      else if (recentE1 >= allE1 * 0.93 && volumeTrend !== "down") status = "stable";
+      else if (data.sessions.length <= 5 && volumeTrend !== "down") status = "building";
+      else if (volumeTrend === "down" && recentE1 < allE1 * 0.9) status = "regressing";
+      else status = "stalled";
+    }
+
+    const confidence: InsightConfidence = data.sessions.length >= 8 ? "high" : data.sessions.length >= 4 ? "medium" : "low";
+    results.push({
+      exerciseId: id, name: data.name, primaryMuscle: data.muscle, status,
+      sessionsCount: data.sessions.length,
+      bestSetEver: bestAll ? { weight: bestAll.wt, reps: bestAll.reps } : null,
+      recentBestSet: recentBest ? { weight: recentBest.wt, reps: recentBest.reps } : null,
+      volumeTrend, confidence,
+    });
+  }
+
+  const ord = { improving: 0, stable: 1, building: 2, stalled: 3, regressing: 4, insufficient_data: 5 };
+  return results.sort((a, b) => ord[a.status] - ord[b.status]).slice(0, 25);
+}
+
+function computePlateauExercises(workouts: SavedWorkoutData[]): PlateauItem[] {
+  if (workouts.length < 4) return [];
+  const byEx = new Map<string, { name: string; sessions: { e1rm: number; vol: number }[] }>();
+
+  for (const w of [...workouts].reverse()) {
+    for (const ex of w.exercises) {
+      if (!ex.sets) continue;
+      const valid = ex.sets.filter(s => s.weight > 0 && s.reps > 0);
+      if (!valid.length) continue;
+      const bestE1rm = Math.max(...valid.map(s => s.weight * (1 + s.reps / 30)));
+      const vol = valid.reduce((s, x) => s + x.weight * x.reps, 0);
+      if (!byEx.has(ex.id)) byEx.set(ex.id, { name: ex.name, sessions: [] });
+      byEx.get(ex.id)!.sessions.push({ e1rm: bestE1rm, vol });
+    }
+  }
+
+  const plateaus: PlateauItem[] = [];
+  for (const [id, data] of byEx) {
+    if (data.sessions.length < 5) continue;
+    const recent4 = data.sessions.slice(-4);
+    const older = data.sessions.slice(-8, -4);
+    if (older.length < 2) continue;
+
+    const maxRecent = Math.max(...recent4.map(s => s.e1rm));
+    const minRecent = Math.min(...recent4.map(s => s.e1rm));
+    if (maxRecent === 0 || (maxRecent - minRecent) / maxRecent > 0.15) continue; // too noisy
+
+    const maxOlder = Math.max(...older.map(s => s.e1rm));
+    if (maxOlder === 0) continue;
+    if ((maxRecent - maxOlder) / maxOlder > 0.03) continue; // improving
+
+    const recentVol = recent4.reduce((s, x) => s + x.vol, 0) / recent4.length;
+    const olderVol = older.reduce((s, x) => s + x.vol, 0) / older.length;
+    const volDelta = olderVol > 0 ? (recentVol - olderVol) / olderVol : 0;
+
+    let cause: PlateauItem["cause"] = "weight_stuck";
+    let action: string;
+    if (volDelta < -0.1) {
+      cause = "volume_stuck";
+      action = "Add 1 set per session for 2 weeks before increasing load.";
+    } else {
+      cause = "reps_stuck";
+      action = "Build reps at current weight — hit the top of your rep range before adding load.";
+    }
+
+    plateaus.push({
+      exerciseId: id, name: data.name, sessionsAnalyzed: data.sessions.length,
+      confidence: data.sessions.length >= 8 ? "high" : "medium",
+      cause, action,
+    });
+  }
+  return plateaus.slice(0, 5);
+}
+
+function computeExerciseRotation(workouts: SavedWorkoutData[]): RotationItem[] {
+  if (workouts.length < 4) return [];
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const recent = workouts.filter(w => todayMs - wkToMs(w) <= 55 * 86400000);
+  if (recent.length < 4) return [];
+
+  const byMuscle = new Map<string, Map<string, { name: string; count: number }>>();
+  for (const w of recent) {
+    for (const ex of w.exercises) {
+      const canonical = getCanonicalMuscle(ex.primaryMuscle);
+      if (!canonical || canonical === "Other") continue;
+      if (!byMuscle.has(canonical)) byMuscle.set(canonical, new Map());
+      const mm = byMuscle.get(canonical)!;
+      if (!mm.has(ex.id)) mm.set(ex.id, { name: ex.name, count: 0 });
+      mm.get(ex.id)!.count++;
+    }
+  }
+
+  const results: RotationItem[] = [];
+  for (const [muscle, mm] of byMuscle) {
+    if (mm.size < 2) continue;
+    const sorted = [...mm.values()].sort((a, b) => b.count - a.count);
+    const total = sorted.reduce((s, e) => s + e.count, 0);
+    const anchor = sorted[0];
+    const anchorPct = anchor.count / total;
+
+    let rotationLevel: RotationItem["rotationLevel"];
+    let warning: string | undefined, recommendation: string | undefined;
+    if (mm.size >= 4 && anchorPct < 0.4) {
+      rotationLevel = "high";
+      warning = `${mm.size} different ${muscle} exercises in 8 weeks — hard to track progress.`;
+      recommendation = `Keep ${anchor.name} as your anchor lift. Rotate accessories, not your main movement.`;
+    } else if (mm.size >= 3 && anchorPct < 0.55) {
+      rotationLevel = "acceptable";
+      recommendation = `${anchor.name} is appearing most — keep it in every session.`;
+    } else {
+      rotationLevel = "well_standardized";
+    }
+    results.push({ muscle, variantsUsed: mm.size, variantNames: sorted.map(e => e.name), anchorExercise: anchor.name, rotationLevel, warning, recommendation });
+  }
+  return results.filter(r => r.rotationLevel !== "well_standardized").slice(0, 6);
+}
+
+function computeGoalAlignment(workouts: SavedWorkoutData[], profile: UserPsychProfile): GoalAlignmentResult {
+  if (workouts.length < 3) return { score: 0, label: "misaligned", mismatches: ["Not enough data yet"], suggestions: ["Complete at least 3 workouts to see goal alignment"] };
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const recent = workouts.filter(w => todayMs - wkToMs(w) <= 27 * 86400000);
+  if (recent.length < 2) return { score: 50, label: "partially_aligned", mismatches: ["Need more recent sessions"], suggestions: ["Keep training — more sessions give better insights"] };
+
+  const goalBucket = getGoalBucket(profile.primaryGoal);
+  const mismatches: string[] = [], suggestions: string[] = [];
+  let score = 100;
+
+  let totalSets = 0, totalReps = 0;
+  for (const w of recent) {
+    for (const ex of w.exercises) {
+      for (const s of (ex.sets ?? [])) {
+        if (s.reps > 0) { totalReps += s.reps; totalSets++; }
+      }
+    }
+  }
+  const avgReps = totalSets > 0 ? totalReps / totalSets : 0;
+  const targetPerWeek = getSafeTargetPerWeek(profile.scheduleCommitment, profile.daysPerWeekPref);
+  const actualPerWeek = recent.length / 4;
+
+  if (goalBucket === "muscle") {
+    if (avgReps > 0 && (avgReps < 6 || avgReps > 20)) {
+      score -= 15;
+      mismatches.push(`Avg ${Math.round(avgReps)} reps/set — hypertrophy range is 8–15`);
+      suggestions.push("Aim for 8–12 reps on most sets for muscle growth.");
+    }
+    if (actualPerWeek < targetPerWeek * 0.65) {
+      score -= 20;
+      mismatches.push(`Training ~${Math.round(actualPerWeek * 10) / 10}×/week vs goal of ${targetPerWeek}×`);
+      suggestions.push(`Add ${Math.ceil(targetPerWeek - actualPerWeek)} more sessions per week.`);
+    }
+    const weeklySets = recent.reduce((s, w) => s + (w.totalSets ?? 0), 0) / 4;
+    if (weeklySets > 0 && weeklySets < 15) {
+      score -= 15;
+      mismatches.push(`Only ~${Math.round(weeklySets)} sets/week — muscle growth needs more volume`);
+      suggestions.push("Aim for 15–25 sets per session or train more frequently.");
+    }
+  } else if (goalBucket === "strength") {
+    if (avgReps > 8) {
+      score -= 15;
+      mismatches.push(`Avg ${Math.round(avgReps)} reps/set — strength responds best to 3–6 reps`);
+      suggestions.push("Work heavier at 3–6 reps on your compound lifts.");
+    }
+    if (actualPerWeek < 2) {
+      score -= 20;
+      mismatches.push("Strength needs at least 2–3 sessions/week on main lifts");
+      suggestions.push("Add a second dedicated strength session.");
+    }
+  } else if (goalBucket === "endurance" || goalBucket === "fat") {
+    if (actualPerWeek < targetPerWeek * 0.7) {
+      score -= 25;
+      mismatches.push(`Training ~${Math.round(actualPerWeek * 10) / 10}×/week — your goal needs frequent sessions`);
+      suggestions.push(`Aim for ${targetPerWeek}+ sessions per week.`);
+    }
+    if (avgReps > 0 && avgReps < 12) {
+      score -= 10;
+      mismatches.push(`Low rep ranges (avg ${Math.round(avgReps)}) — higher reps build endurance capacity`);
+      suggestions.push("Use 12–20 rep ranges with shorter rest intervals.");
+    }
+  } else {
+    if (actualPerWeek < 2) {
+      score -= 20;
+      mismatches.push("Very low frequency for general fitness");
+      suggestions.push("Aim for 3 sessions per week.");
+    }
+  }
+
+  score = Math.max(0, Math.min(100, score));
+  const label: GoalAlignmentResult["label"] = score >= 75 ? "aligned" : score >= 45 ? "partially_aligned" : "misaligned";
+  return { score, label, mismatches, suggestions };
+}
+
+function computeMovementBalance(workouts: SavedWorkoutData[], library: ExerciseWithTaxonomy[]): MovementBalanceResult {
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const recent = workouts.filter(w => todayMs - wkToMs(w) <= 27 * 86400000);
+
+  const patternLookup = new Map<string, MovementPattern>();
+  for (const ex of library) { if (ex.movementPattern) patternLookup.set(ex.id, ex.movementPattern); }
+
+  const byPattern: Record<string, { sets: number; volume: number }> = {};
+  for (const w of recent) {
+    for (const ex of w.exercises) {
+      const pat = patternLookup.get(ex.id);
+      if (!pat || pat === "cardio") continue;
+      if (!byPattern[pat]) byPattern[pat] = { sets: 0, volume: 0 };
+      byPattern[pat].sets += ex.loggedSets ?? 0;
+      byPattern[pat].volume += ex.loggedVolume ?? 0;
+    }
+  }
+
+  const g = (p: string) => byPattern[p]?.sets ?? 0;
+  const pushSets = g("horizontal_push") + g("vertical_push") + g("isolation_push");
+  const pullSets = g("horizontal_pull") + g("vertical_pull") + g("isolation_pull");
+  const squatSets = g("squat") + g("lunge");
+  const hingeSets = g("hip_hinge");
+  const upperSets = pushSets + pullSets;
+  const lowerSets = squatSets + hingeSets + g("isolation_legs");
+
+  const imbalances: string[] = [];
+  if (pushSets > 0 && pullSets === 0) imbalances.push("No pulling movements — add rows or pull-ups");
+  else if (pullSets > 0 && pushSets === 0) imbalances.push("No pushing movements — add press work");
+  else if (pushSets > 0 && pullSets > 0 && pushSets / pullSets > 1.6) imbalances.push("Push-heavy — add more rows/pull-ups to balance");
+  if (squatSets > 0 && hingeSets === 0) imbalances.push("No hip hinge work — add deadlifts or RDLs");
+  if (hingeSets > 0 && squatSets === 0) imbalances.push("No squat pattern — add squats or leg press");
+  if (upperSets > 0 && lowerSets === 0) imbalances.push("No lower body work this month");
+  if (lowerSets > 0 && upperSets === 0) imbalances.push("No upper body work this month");
+
+  return { byPattern, pushSets, pullSets, squatSets, hingeSets, upperSets, lowerSets, imbalances };
+}
+
+function computePRsHistory(workouts: SavedWorkoutData[]): PREntry[] {
+  const prs: PREntry[] = [];
+  for (const w of workouts) {
+    for (const r of (w.rewards ?? [])) {
+      if (r.category === "pr" && r.detail) {
+        prs.push({
+          exerciseName: r.detail.split(":")[0]?.trim() ?? r.detail,
+          prType: r.shortLabel === "Max Wt" ? "weight" : r.shortLabel === "Rep PR" ? "reps" : "estimated_1rm",
+          detail: r.detail,
+          date: w.date ?? w.savedAt,
+        });
+      }
+    }
+  }
+  const seen = new Set<string>();
+  return prs.filter(p => { const k = `${p.exerciseName}:${p.prType}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 20);
+}
+
+function computeActionPlan(
+  lagging: LaggingMuscleItem[],
+  plateaus: PlateauItem[],
+  rotations: RotationItem[],
+  goalAlignment: GoalAlignmentResult,
+  consistency: ConsistencyStats,
+  targetPerWeek: number,
+): ActionItem[] {
+  const actions: ActionItem[] = [];
+  if (consistency.lastGapDays > 7) {
+    actions.push({ id: "gap", priority: 1, title: "Get back on track", detail: `${consistency.lastGapDays} days since your last session. Start lighter today.`, linkedType: "consistency" });
+  } else if (consistency.consistencyPct < 60) {
+    actions.push({ id: "freq", priority: 1, title: "Train more consistently", detail: `You're hitting ${consistency.consistencyPct}% of your ${targetPerWeek}×/week target.`, linkedType: "consistency" });
+  }
+  for (const m of lagging.slice(0, 2)) {
+    const sug = m.suggestedExercises.slice(0, 2).join(", ");
+    actions.push({
+      id: `lag-${m.muscle}`, priority: 2,
+      title: `Bring up ${m.muscle}`,
+      detail: m.reason === "absent"
+        ? `Not trained in ${m.lastTrainedDaysAgo ?? "many"} days.${sug ? ` Try: ${sug}.` : ""}`
+        : `Only ${m.directSets30d} sets this month (target: ${m.minEffectiveVolume}).${sug ? ` Try: ${sug}.` : ""}`,
+      linkedType: "lagging_muscle",
+    });
+  }
+  for (const p of plateaus.slice(0, 1)) {
+    actions.push({ id: `plat-${p.exerciseId}`, priority: 3, title: `Unstick ${p.name}`, detail: p.action, linkedType: "plateau" });
+  }
+  for (const r of rotations.filter(x => x.rotationLevel === "high").slice(0, 1)) {
+    actions.push({ id: `rot-${r.muscle}`, priority: 4, title: `Standardize ${r.muscle}`, detail: r.recommendation ?? `Too many variants — pick one anchor movement.`, linkedType: "rotation" });
+  }
+  if (actions.length < 5 && goalAlignment.suggestions.length > 0) {
+    actions.push({ id: "goal-0", priority: 5, title: "Goal alignment", detail: goalAlignment.suggestions[0], linkedType: "goal_alignment" });
+  }
+  return actions.slice(0, 5);
+}
+
+// ── End Insights V1 Engine ────────────────────────────────────────────────────
 
 function getRelativeDate(dateStr: string): string {
   const today = new Date();
@@ -13414,6 +14306,12 @@ function MoreSheet({ open, onClose, onGoTo, resolvedTheme }: { open: boolean; on
       <div className="more-sheet-card" onClick={(e) => e.stopPropagation()}>
         <div className="more-sheet-handle" />
         <p className="more-sheet-title">More</p>
+        <button className="more-sheet-item" type="button" onClick={() => onGoTo("history-detail")}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          History
+        </button>
         <button className="more-sheet-item" type="button" onClick={() => onGoTo("profile")}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -13435,9 +14333,10 @@ function MoreSheet({ open, onClose, onGoTo, resolvedTheme }: { open: boolean; on
 
 export function App() {
   const storedPlanBuilderState = getStoredPlanBuilderDraft();
+  const [psychProfile, setPsychProfile] = useState<UserPsychProfile>(getStoredPsychProfile);
   const [appView, setAppView] = useState<AppView>("home");
   const [showMoreSheet, setShowMoreSheet] = useState(false);
-  const [insightsInitialTab, setInsightsInitialTab] = useState<"analyzer" | "reports">("reports");
+  const [insightsInitialTab, setInsightsInitialTab] = useState<"summary" | "stats" | "progress">("summary");
   const [glossaryTerm, setGlossaryTerm] = useState("");
   const [hasActiveWorkout, setHasActiveWorkout] = useState(false);
   const [showReadinessSheet, setShowReadinessSheet] = useState(false);
@@ -13482,6 +14381,13 @@ export function App() {
     storedPlanBuilderState?.mode ?? "create"
   );
   const [lastGenConfig, setLastGenConfig] = useState<GenConfig | null>(null);
+  const [plannerGenDraftConfig, setPlannerGenDraftConfig] = useState<GenConfig>({
+    goal: "Hypertrophy",
+    muscles: [],
+    duration: "45 min",
+    equipment: psychProfile.equipmentAccess ?? "full_gym",
+    seedOffset: 0,
+  });
   const [plannerView, setPlannerView] = useState<"mine" | "library" | "generate">("mine");
   const [activePlanSession, setActivePlanSession] = useState<ActivePlanSession>(null);
   const [discardReturnView, setDiscardReturnView] = useState<"home" | "planner">("home");
@@ -13517,7 +14423,6 @@ export function App() {
   const swipeStateRef = useRef<SwipeState>(createInitialSwipeState());
   const [revealedDeleteRowId, setRevealedDeleteRowId] = useState<string | null>(null);
   const [state, setState] = useState<FlowState>(defaultState);
-  const [psychProfile, setPsychProfile] = useState<UserPsychProfile>(getStoredPsychProfile);
   const onboardingComplete = psychProfile.onboardingCompletedAt !== null;
   const [showPostOnboarding, setShowPostOnboarding] = useState(false);
   const [repiqPlan, setRepiqPlan] = useState<RepIQPlan | null>(getStoredRepIQPlan);
@@ -14014,9 +14919,9 @@ export function App() {
     return () => mediaQuery.removeEventListener("change", updateTheme);
   }, []);
 
-  // Reset insights tab to Reports whenever user navigates away from Insights
+  // Reset insights tab to Analyzer whenever user navigates away from Insights
   useEffect(() => {
-    if (appView !== "insights") setInsightsInitialTab("reports");
+    if (appView !== "insights") setInsightsInitialTab("summary");
   }, [appView]);
 
   useEffect(() => {
@@ -16181,7 +17086,7 @@ export function App() {
           ...day,
           exercises: tmpl.slots
             .map((slot, slotIdx) => {
-              const exerciseId = pickPlanExercise(allCatalogExercises, slot, exp, used);
+              const exerciseId = pickPlanExercise(generationCatalogExercises, slot, exp, used, psychProfile.equipmentAccess ?? "full_gym");
               if (!exerciseId) return null;
               const isCompound = slot.patterns.some((p) => COMPOUND_PATTERNS.has(p));
               const warmupSets = isCompound ? 2 : slotIdx === 0 ? 1 : 0;
@@ -16313,7 +17218,7 @@ export function App() {
           const tmpl = dayTemplates[di % dayTemplates.length];
           const newExercises = tmpl.slots
             .map((slot) => {
-              const id = pickPlanExercise(allCatalogExercises, slot, exp, usedIds);
+              const id = pickPlanExercise(generationCatalogExercises, slot, exp, usedIds, psychProfile.equipmentAccess ?? "full_gym");
               if (!id) return null;
               usedIds.add(id);
               return { exerciseId: id, sets: scheme.sets, reps: scheme.reps, restSeconds: scheme.restSeconds } satisfies RepIQPlanExercise;
@@ -16523,10 +17428,8 @@ export function App() {
       ? exercises.find(e => e.id === smartReplaceExerciseId)
       : null;
     const smartReplaceAvailableEquipment: CustomExerciseType[] = (() => {
-      const access = psychProfile.equipmentAccess;
-      if (access === "bodyweight" || access === "dumbbell_pair") return ["bodyweight_only", "freestyle_cardio"];
-      if (access === "home_setup") return ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "barbell", "freestyle_cardio"];
-      return ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories", "barbell", "machine", "freestyle_cardio"];
+      const access = psychProfile.equipmentAccess ?? "full_gym";
+      return EQUIPMENT_ALLOWED_TYPES[access] ?? EQUIPMENT_ALLOWED_TYPES.full_gym;
     })();
     const smartReplacementResults = replaceTarget
       ? getSmartReplacements(
@@ -16690,6 +17593,8 @@ export function App() {
       <div data-theme={resolvedTheme}>
         <InsightsPage
           savedWorkouts={savedWorkoutsList}
+          psychProfile={psychProfile}
+          library={availableExerciseTemplates as ExerciseWithTaxonomy[]}
           onOpenReport={(workout) => { setReportWorkout(workout); setAppView("report"); }}
           onRedoWorkout={redoWorkout}
           onSaveToMyWorkouts={saveHistoryWorkoutToMyWorkouts}
@@ -16698,6 +17603,24 @@ export function App() {
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
           initialTab={insightsInitialTab}
         />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
+      </div>
+    );
+  }
+
+  if (appView === "community") {
+    return (
+      <div data-theme={resolvedTheme}>
+        <main className="page-container">
+          <div className="page-header">
+            <h1>Community</h1>
+          </div>
+          <div style={{ padding: "2rem", textAlign: "center" }}>
+            <p style={{ fontSize: "1.1rem", color: "var(--subtle-text)" }}>Coming soon...</p>
+            <p style={{ fontSize: "0.9rem", color: "var(--subtle-text)", marginTop: "1rem" }}>Connect with other RepIQ users, share workouts, and build your fitness community.</p>
+          </div>
+        </main>
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
@@ -16830,6 +17753,7 @@ export function App() {
         <PlannerHomePage
           plans={workoutPlans}
           library={availableExerciseTemplates}
+          generationLibrary={generationCatalogExercises}
           existingTags={existingUserTags}
           activeView={plannerView}
           onViewChange={setPlannerView}
@@ -16980,6 +17904,8 @@ export function App() {
           onCompressSessions={() => {
             setShowCompressDurationSheet(true);
           }}
+          genDraftConfig={plannerGenDraftConfig}
+          onGenDraftConfigChange={(config) => setPlannerGenDraftConfig(config)}
           savedWorkouts={savedWorkoutsList}
           onOpenHistoryWorkout={(workout, weekIdx, dayIdx, label, sessionNum) => {
             setHistoryDetailWorkout(workout);
@@ -17047,7 +17973,7 @@ export function App() {
                 focus: tmpl.focus,
                 exercises: tmpl.slots
                   .map(slot => {
-                    const exId = pickPlanExercise(allCatalogExercises, slot, exp, used, equipment);
+                    const exId = pickPlanExercise(generationCatalogExercises, slot, exp, used, equipment);
                     if (!exId) return null;
                     used.add(exId);
                     return {
@@ -17284,12 +18210,19 @@ export function App() {
             // Start the generated session immediately (saves time vs. save → find → start)
             setPlanBuilderDraft(null);
             setPlanBuilderMode("create");
+            setPlannerGenDraftConfig({
+              goal: "Hypertrophy",
+              muscles: [],
+              duration: "45 min",
+              equipment: psychProfile.equipmentAccess ?? "full_gym",
+              seedOffset: 0,
+            });
             startPlanWorkout(plan, "generated");
           } : undefined}
           onShuffle={planBuilderMode === "generate" && lastGenConfig ? () => {
             const nextConfig = { ...lastGenConfig, seedOffset: lastGenConfig.seedOffset + 1 };
             setLastGenConfig(nextConfig);
-            const newPlan = buildGeneratedPlan(nextConfig, availableExerciseTemplates as ExerciseWithTaxonomy[]);
+            const newPlan = buildGeneratedPlan(nextConfig, generationCatalogExercises);
             if (newPlan) setPlanBuilderDraft(newPlan);
           } : undefined}
           resolvedTheme={resolvedTheme}
@@ -17313,7 +18246,11 @@ export function App() {
     const latestWorkout = savedWorkoutsList[0] ?? null;
     const streak = computeStreak(savedWorkoutsList);
     const cycleDays = psychProfile.cycleDays ?? 7;
-    const weekStreak = computeWeekStreak(savedWorkoutsList, psychProfile.daysPerWeekPref ?? 3, cycleDays);
+    const weekStreak = computeWeekStreak(
+      savedWorkoutsList,
+      getSafeTargetPerWeek(psychProfile.scheduleCommitment, psychProfile.daysPerWeekPref),
+      cycleDays,
+    );
     const weekStats = getThisWeekStats(savedWorkoutsList);
     const firstName = psychProfile.name?.split(" ")[0] ?? null;
     const greeting = getGreeting();
@@ -17494,8 +18431,8 @@ export function App() {
               className="home-goal-card home-card-tappable"
               role="button"
               tabIndex={0}
-              onClick={() => { setInsightsInitialTab("analyzer"); setAppView("insights"); }}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setInsightsInitialTab("analyzer"); setAppView("insights"); } }}
+              onClick={() => { setInsightsInitialTab("summary"); setAppView("insights"); }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setInsightsInitialTab("summary"); setAppView("insights"); } }}
             >
               <div className="home-trend-header">
                 <p className="home-goal-label">Training Trend · Overall Volume <InfoIcon onClick={(e) => { e.stopPropagation(); setGlossaryTerm("training trend"); setAppView("glossary"); }} /></p>
@@ -17528,7 +18465,7 @@ export function App() {
             {/* ── Muscle nudge — compact, only shows when muscles are due ── */}
             <HomeMuscleNudge
               coverage={muscleCoverage}
-              onTap={() => { setInsightsInitialTab("analyzer"); setAppView("insights"); }}
+              onTap={() => { setInsightsInitialTab("summary"); setAppView("insights"); }}
             />
 
 
@@ -19695,9 +20632,13 @@ export function App() {
 
           function equipLabel(type: string | undefined): string {
             switch (type) {
+              case "bodyweight": return "Bodyweight";
+              case "dumbbell": return "Dumbbell";
+              case "cable": return "Cable";
+              case "resistance_band": return "Band";
               case "bodyweight_only": return "Bodyweight";
               case "bodyweight_weighted": return "Weighted BW";
-              case "free_weights_accessories": return "Dumbbells";
+              case "free_weights_accessories": return "Free weights / accessories";
               case "barbell": return "Barbell";
               case "machine": return "Machine";
               case "freestyle_cardio": return "Cardio";
