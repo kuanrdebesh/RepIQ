@@ -7370,6 +7370,9 @@ function FinishWorkoutPage({
   draft,
   onTitleChange,
   onNoteChange,
+  onPersonalNoteChange,
+  onQuoteNoteChange,
+  onProgressPicChange,
   onBack,
   onSave,
   resolvedTheme,
@@ -7378,6 +7381,9 @@ function FinishWorkoutPage({
   draft: FinishWorkoutDraft;
   onTitleChange: (value: string) => void;
   onNoteChange: (value: string) => void;
+  onPersonalNoteChange: (value: string) => void;
+  onQuoteNoteChange: (value: string) => void;
+  onProgressPicChange: (index: number | undefined) => void;
   onBack: () => void;
   onSave: (images: WorkoutMediaAsset[]) => Promise<void>;
   resolvedTheme?: string;
@@ -7833,10 +7839,24 @@ function FinishWorkoutPage({
               {finishPhotosEnabled && photos.length > 0 && (
                 <div className="finish-media-previews">
                   {photos.map((photo, index) => (
-                    <div key={index} className="finish-media-thumb" onClick={() => openPhotoEdit(index)} role="button" aria-label="Edit photo">
-                      <img src={photo.display} alt="" />
-                      <div className="finish-media-edit-badge" aria-hidden="true">✎</div>
-                      <button type="button" className="finish-media-remove" onClick={(e) => { e.stopPropagation(); removePhoto(index); }} aria-label="Remove photo">×</button>
+                    <div key={index} className={`finish-media-thumb${draft.progressPicIndex === index ? " is-progress-pic" : ""}`}>
+                      <img src={photo.display} alt="" onClick={() => openPhotoEdit(index)} role="button" style={{ cursor: "pointer" }} />
+                      <div className="finish-media-edit-badge" aria-hidden="true" onClick={() => openPhotoEdit(index)} style={{ cursor: "pointer" }}>✎</div>
+                      {draft.progressPicIndex === index && (
+                        <div className="finish-media-progress-badge">⭐ Progress Pic</div>
+                      )}
+                      <div className="finish-media-actions">
+                        <button
+                          type="button"
+                          className={`finish-media-progress-btn${draft.progressPicIndex === index ? " is-active" : ""}`}
+                          onClick={() => onProgressPicChange(draft.progressPicIndex === index ? undefined : index)}
+                          aria-label={draft.progressPicIndex === index ? "Unmark as progress pic" : "Mark as progress pic"}
+                          title="Mark as progress picture"
+                        >
+                          📸
+                        </button>
+                        <button type="button" className="finish-media-remove" onClick={() => removePhoto(index)} aria-label="Remove photo">×</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -7937,12 +7957,53 @@ function FinishWorkoutPage({
               )}
             </div>
           )}
-          <textarea
-            className="notes-textarea finish-workout-notes"
-            placeholder="Add a note about this workout"
-            value={draft.note}
-            onChange={(event) => onNoteChange(event.target.value)}
-          />
+          {/* Notes Section with Two Modes */}
+          <div className="finish-notes-section">
+            <div className="finish-notes-mode-tabs">
+              <button
+                type="button"
+                className={`finish-notes-mode-btn${(draft.noteType ?? "personal") === "personal" ? " is-active" : ""}`}
+                onClick={() => onPersonalNoteChange(draft.personalNote ?? "")}
+              >
+                📝 Personal Note
+              </button>
+              <button
+                type="button"
+                className={`finish-notes-mode-btn${draft.noteType === "quote" ? " is-active" : ""}`}
+                onClick={() => onQuoteNoteChange(draft.quoteNote ?? "")}
+              >
+                ✨ Quote
+              </button>
+            </div>
+
+            {(draft.noteType ?? "personal") === "personal" ? (
+              <textarea
+                className="notes-textarea finish-workout-notes"
+                placeholder="Add a personal note about this workout. Only visible to you."
+                value={draft.personalNote ?? ""}
+                onChange={(event) => onPersonalNoteChange(event.target.value)}
+              />
+            ) : (
+              <>
+                <textarea
+                  className="notes-textarea finish-workout-notes"
+                  placeholder="Share an inspiring quote from your workout. This can be shared in the community."
+                  value={draft.quoteNote ?? ""}
+                  onChange={(event) => onQuoteNoteChange(event.target.value)}
+                />
+                {draft.quoteNote && (
+                  <div className="finish-quote-preview">
+                    <div className="quote-preview-box">
+                      <p className="quote-preview-text">"{draft.quoteNote}"</p>
+                      <p className="quote-preview-author">— {draft.sessionName || "Your Name"}</p>
+                    </div>
+                    <p className="quote-preview-hint">This is how your quote will appear when shared</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           <p className="settings-note">
             {formatSessionDate(draft.date)} • {draft.loggedExerciseCount} logged{" "}
             {draft.loggedExerciseCount === 1 ? "exercise" : "exercises"}
@@ -17700,6 +17761,38 @@ export function App() {
                 ? {
                     ...current,
                     note: value
+                  }
+                : current
+            )
+          }
+          onPersonalNoteChange={(value) =>
+            setFinishWorkoutDraft((current) =>
+              current
+                ? {
+                    ...current,
+                    personalNote: value,
+                    noteType: "personal"
+                  }
+                : current
+            )
+          }
+          onQuoteNoteChange={(value) =>
+            setFinishWorkoutDraft((current) =>
+              current
+                ? {
+                    ...current,
+                    quoteNote: value,
+                    noteType: "quote"
+                  }
+                : current
+            )
+          }
+          onProgressPicChange={(index) =>
+            setFinishWorkoutDraft((current) =>
+              current
+                ? {
+                    ...current,
+                    progressPicIndex: index ?? undefined
                   }
                 : current
             )

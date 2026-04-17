@@ -568,6 +568,10 @@ export type FinishWorkoutDraft = {
   takeawayTitle: string;
   takeawayBody: string;
   images: WorkoutMediaAsset[];
+  progressPicIndex?: number; // index of the progress picture
+  personalNote?: string; // personal note for future reference
+  quoteNote?: string; // quote for sharing in community
+  noteType?: "personal" | "quote"; // which type of note is active
 };
 
 export type SavedWorkoutData = FinishWorkoutDraft & {
