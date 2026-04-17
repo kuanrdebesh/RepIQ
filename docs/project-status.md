@@ -489,31 +489,25 @@ These are documented and should not be forgotten:
 
 ## Smart Replace
 
-- Smart exercise replacement is now implemented through the shared `AddExercisePage` replace mode
-- Core types added to App.tsx:
-  - `MovementPattern` — 14 patterns covering all movement types
-  - `ExerciseAngle` — flat / incline / decline / overhead / neutral / prone / none
-  - `ExerciseEquipment` — barbell / dumbbell / cable / machine / bodyweight / kettlebell / band / landmine / smith_machine
-  - `ExerciseDifficulty` — beginner / intermediate / advanced
-  - `ReplacementReason` — machine_taken / no_equipment / too_difficult / pain_discomfort / preference
-  - `ReplacementEvent` — logged per swap for V2 pattern learning
-- Scoring functions implemented:
-  - `scoreReplacement()` — scores candidates 0–100 using pattern + angle + muscle + equipment + session fatigue
-  - `getSmartReplacements()` — returns top 5 ranked alternatives with human-readable match reason chips
-  - `getMovementFamily()` — groups patterns into push/pull/legs/core/carry/cardio families
-  - `groupSetsByMovementPattern()` — aggregates session volume by pattern family for Insights
-- Storage: `repiq-replacement-events` key with `persistReplacementEvent()` / `getStoredReplacementEvents()`
-- Current shipped behavior:
-  - logger `Replace` opens `AddExercisePage` directly in replace mode
-  - reason chips inside replace mode drive reason-specific sorting without adding a blocking step
-  - replace mode shows the top 5 ranked same-primary-muscle suggestions by default, with a `Browse all exercises` escape hatch
-  - there is no dedicated ranked Smart Replace suggestion sheet in the main flow
-  - scoring checks exact equipment classes, including TRX / suspension trainer and resistance band variants
-  - swaps preserve rest timer, note, and superset placement
-  - swaps with logged sets require confirmation before clearing and replacing
-  - replacement events are persisted with reason, logged-set count, and score
-  - repeated user replacements are promoted in future ranking through stored preference history
-- Design spec in `docs/smart-replace.md`
+- Smart exercise replacement is fully implemented through the shared `AddExercisePage` replace mode
+- Core types: `MovementPattern` (14 patterns), `ExerciseAngle`, `ExerciseEquipment`, `ExerciseDifficulty`, `ReplacementReason`, `ReplacementEvent`
+- Engine functions (`App.tsx`):
+  - `rankCandidate()` — all hard exclusions + 10-dimension weighted base score (max 119 pts)
+  - `getSmartReplacements()` — scores all candidates, sorts by score, then applies `diversifyByEquipment()`
+  - `diversifyByEquipment()` — post-sort pass capping each equipment type at 2 representatives before appending overflow (prevents same-equipment domination)
+  - `inferMovementSide()` — infers bilateral/unilateral from `movementSide` field or exercise name tokens
+  - `scoreEquipmentMatch()` — same/close-family/gym-tier/zero; close families: barbell↔dumbbell, barbell↔smith, cable↔machine, dumbbell↔kettlebell
+  - `getMovementFamily()` — push / pull / legs / core / carry / cardio
+  - `getBaseExerciseId()` — strips timestamp suffix from session exercise IDs for history matching
+  - `persistReplacementEvent()` / `getStoredReplacementEvents()` — localStorage key `repiq-replacement-events`
+- Scoring dimensions (weight): movementMatch(30) + muscleMatch(24) + equipmentMatch(12) + fatigueFit(10) + difficultyFit(10) + unilateralFit(10) + angleMatch(8) + roleMatch(6) + trackingFit(5) + preferenceFit(4)
+- Hard exclusions: same exercise, already in session, unavailable equipment, reason-specific (machine_taken/no_equipment/too_difficult), **zero shared muscles** between candidate's full muscle set and original's full muscle set
+- UI — **Suggested tab**: only ranked candidates, search-filtered, with Equipment unavailable chip to toggle out same-equipment exercises
+- UI — **Browse All tab**: full exercise library, alphabetical, with muscle + equipment dropdowns
+- UI — **Last replaced with** section: up to 5 prior replacements for this exact exercise (from `ReplacementEvent` history), shown above Possible replacements
+- UI — Reason chips (Best match / Machine taken / No equipment / Too difficult / Pain-discomfort / Just a change) rerank Suggested; default: Best match (⋮ menu) or Just a change (swap icon)
+- Swaps: in-place (preserves position, rest timer, note, superset); silent if 0 sets logged, confirmation required if sets exist
+- Full spec in `docs/smart-replace.md`
 
 ## Exercise Taxonomy
 

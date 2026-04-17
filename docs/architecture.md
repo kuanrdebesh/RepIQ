@@ -161,11 +161,15 @@ These are not first-slice blockers, but they are part of the intended product di
 
 ## Smart Replace Architecture
 
-- Scoring is a pure function: `scoreReplacement(original, candidate, sessionContext, reason, equipment, level) → number`
-- Score components: movement pattern match (30), angle match (20 bonus), primary muscle match (30), secondary overlap (15), equipment accessibility (5), session fatigue penalty (−10 to −25)
-- `getSmartReplacements()` returns top 5 scored alternatives with a `matchReason` string for the UI
+- Scoring is a pure function: `rankCandidate(original, candidate, sessionExercises, reason, availableEquipment, userLevel, replacementHistory) → RankedReplacement | null`
+- 10 weighted dimensions (max 119 pts): movementMatch(30) + muscleMatch(24) + equipmentMatch(12) + fatigueFit(10) + difficultyFit(10) + unilateralFit(10) + angleMatch(8) + roleMatch(6) + trackingFit(5) + preferenceFit(4)
+- Hard exclusions applied before scoring: same exercise, already in session, unavailable equipment, reason-specific filters, zero shared muscles between full muscle sets
+- `diversifyByEquipment()` — post-sort pass capping each equipment type at 2 reps before appending overflow; ensures ranked results span multiple equipment classes
+- `inferMovementSide()` — reads `movementSide` field if set; otherwise checks exercise name for "single-arm", "single-leg", "one-arm", "one-leg", "unilateral" tokens
+- `getBaseExerciseId()` — strips timestamp suffix (e.g. `bench-press-1748...-1` → `bench-press`); used for history matching and session-duplicate checks
+- `getSmartReplacements()` returns the full ranked + diversified list; UI filters to Suggested or Browse All depending on active tab
 - `ReplacementEvent` is logged per swap to `repiq-replacement-events` for V2 pattern learning
-- The scoring engine has no external dependencies — it runs entirely client-side against the exerciseLibrary array
+- The scoring engine has no external dependencies — it runs entirely client-side against the exercise catalog
 - V2 will extend this with server-side personalisation using replacement history and psych profile
 
 ## Community Data Boundary (Future)

@@ -366,27 +366,37 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 
 ### Entry Point
 - Existing ⋮ menu item "Replace exercise" is the entry point — no new UI anchor needed
-- A secondary contextual hint may appear below exercises with 0 logged sets after 5+ minutes
-- Both paths open the same SmartReplaceSheet
+- A secondary contextual hint may appear below exercises with 0 logged sets after 5+ minutes (not yet built)
+- Both paths open `AddExercisePage` in replace mode — no separate sheet
 
-### Reason Picker is Not Optional UX
-- The reason picker (machine taken / no equipment / too difficult / pain / preference) is not a nice-to-have — it drives the equipment filter and therefore the quality of suggestions
-- "Machine taken" → exclude machines from results
-- "No equipment" → bodyweight only
-- "Too difficult" → exclude advanced exercises if user is beginner/intermediate
-- The reason is also logged as a ReplacementEvent for V2 learning
+### Two-Tab Structure
+- **Suggested tab**: shows only exercises that passed all hard exclusions, ranked by the scoring engine, diversified by equipment (max 2 per equipment type in the leading results)
+- **Browse All tab**: full exercise library, alphabetical, with optional muscle + equipment dropdown filters — no algorithmic filtering
+- Last replaced with: up to 5 prior choices for this exercise appear above Possible replacements when history exists
 
-### Suggestions Sheet Principles
-- Maximum 5 suggestions — if fewer than 3 score above threshold, show "no great matches" + "Browse all" fallback
-- The top suggestion gets a ✦ badge — the user should tap it without reading the others
-- Each card shows a 1-line match reason chip in plain language: "Same movement, different equipment" / "Targets same muscle" / "Bodyweight alternative"
-- No numeric scores shown to the user. Ever.
-- "Browse all →" opens the Add Exercise sheet pre-filtered to the same primary muscle
+### Reason Chips (Inline, Not Blocking)
+- Reason chips live inside replace mode — the user refines sorting without being forced through a separate step
+- Chips: Best match / Machine taken / No equipment / Too difficult / Pain-discomfort / Just a change
+- Default: Best match (⋮ menu entry); Just a change (swap icon entry)
+- "Machine taken" → hard-excludes machine + smith_machine candidates
+- "No equipment" → hard-excludes everything except bodyweight/cardio
+- "Too difficult" → hard-excludes candidates harder than original (non-advanced users only)
+- Reason is logged as part of the ReplacementEvent for V2 learning
+
+### Equipment Unavailable Chip
+- Toggle chip above Suggested results: when active, removes all same-equipment candidates from the list
+- Addresses the common case where the original equipment is unavailable without changing the reason
+
+### Ranking Principles
+- No overconfident labels: no "Best replacement", "Perfect swap", "Top pick", "✦ badge"
+- No numeric scores shown to the user, ever
+- Diversity pass ensures top results span multiple equipment types — not dominated by same-equipment variations
+- Laterality is respected: bilateral exercises prefer bilateral replacements (unilateralFit weight = 10); inferred from exercise name when movementSide is unset
+- Muscle overlap is a hard requirement: any candidate with zero shared muscles (primary or secondary) is excluded before scoring
 
 ### Session Balance Preservation
-- Smart Replace is aware of what's already been done in the session
-- A candidate exercise is penalised if its primary muscle already has 6+ sets in the session
-- The movement pattern match ensures push stays push, hinge stays hinge — the user doesn't need to understand this
+- fatigueFit dimension penalises candidates whose primary muscle already has 3–5+ completed sets in the session
+- movementMatch ensures push stays push, hinge stays hinge — the user doesn't need to understand this
 
 ## Exercise Taxonomy Decisions
 
@@ -599,26 +609,20 @@ System classifies users silently by engagement signals:
 - Thresholds intentionally proportional to cycleDays (cycle-aware)
 - Available at Layer 3 (100 exercises milestone)
 
-## Exercise Replacement — Deferred Until Exercise Repository Is Built
+## Exercise Replacement — Shipped
 
-**Decision (2026-04-11):** Smart Replace will not ship as an in-session flow until a curated exercise repository exists with verified, complete taxonomy for every exercise.
+Smart Replace is fully implemented as an in-session flow. See `docs/smart-replace.md` for the complete scoring spec and UI details.
 
-**What exists today:**
-- `getSmartReplacements()` scoring engine is fully implemented (movement pattern, angle, equipment, difficulty, session fatigue)
-- `smartReplaceCatalog` has ~136 exercises with full taxonomy
-- Movement pattern is shown as an informational pill in the exercise detail Summary tab
-- "Browse all exercises →" link on the detail page lets users manually find a replacement
+**What is built:**
+- 10-dimension scoring engine with `diversifyByEquipment()` post-sort pass
+- Suggested / Browse All two-tab UI within `AddExercisePage` replace mode
+- Inline reason chips, Equipment unavailable toggle chip, Last replaced with history section
+- Hard muscle-overlap exclusion, laterality-aware scoring, learned preference weighting
+- `ReplacementEvent` logged per swap for V2 learning
 
-**Why deferred:**
-- Scoring accuracy depends on complete, correct taxonomy across the full library — partial data produces misleading suggestions
-- Showing ranked suggestions creates false confidence when the ranking can be wrong
-- The user experience of "replace with a single tap" requires trust in the list; that trust can only come from a verified catalog
-
-**When to build:**
-- Phase: after the exercise repository is built with full taxonomy coverage
-- Entry point: ⋮ menu → Replace exercise → scored suggestion sheet (the scoring engine is already written)
-- The UI should show movement pattern + equipment of each suggestion, not just name
-- Reason picker (machine taken / no equipment / too difficult / pain / preference) can be added at that point to tune scoring
+**Remaining work:**
+- Contextual hint on 0-progress exercises after 5+ minutes (UP-11)
+- Ranking quality will continue improving as the exercise taxonomy CSV (435 exercises) is imported to replace the current ~136-exercise library
 
 ## Deferred Topics (Separate Discussion Required)
 

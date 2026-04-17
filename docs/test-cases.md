@@ -300,24 +300,38 @@ Living registry of test cases across all built modules. Updated as features are 
 
 | ID | Test | Expected | Status |
 |---|---|---|---|
-| SR-01 | Replace exercise via ⋮ menu | Opens AddExercisePage directly in replace mode | ✅ |
-| SR-02 | Top-5 suggestions | Replace mode shows the 5 highest-ranked suggestions first | ✅ |
-| SR-03 | Inline reason chips | Reason choices are visible in replace mode without blocking the user first | ✅ |
-| SR-04 | Reason — machine_taken | Re-sorts replace mode for non-machine substitutes | ✅ |
-| SR-05 | Reason — no_equipment | Re-sorts replace mode with bodyweight / no-equipment options prioritized | ✅ |
-| SR-06 | Reason — too_difficult | Re-sorts replace mode with easier matched variations ranked higher | ✅ |
-| SR-07 | Reason — pain_discomfort | Re-sorts replace mode with safer same-muscle alternatives ranked higher | ✅ |
-| SR-08 | Browse all exercises | Leaves replace mode active but removes the same-muscle restriction | ✅ |
-| SR-09 | Replace mode ranking hints | Matching copy appears on exercise rows in replace mode | ✅ |
-| SR-10 | Equipment eligibility | Candidates the user cannot perform are excluded from reason-specific replace mode, including TRX-specific options when unavailable | ✅ |
-| SR-11 | Hard exclusion — same exercise | Original exercise never appears as a replacement option | ✅ |
-| SR-12 | Hard exclusion — session duplicate | Exercises already in the session are excluded | ✅ |
-| SR-13 | Confirm swap — 0 sets logged | Silent swap; no confirmation modal | ✅ |
-| SR-14 | Confirm swap — sets already logged | Confirmation modal: "Clear N logged sets and replace..." | ✅ |
-| SR-15 | Exercise replaced in-place | Same position in session; rest timer, note, and superset preserved; sets reset | ✅ |
-| SR-16 | ReplacementEvent stored | Written to `repiq-replacement-events`; includes normalized reason, setsAlreadyLogged, and matchScore | ✅ |
-| SR-17 | Repeated replacement preference | Previously chosen replacement gains extra ranking weight next time | ✅ |
-| SR-18 | Replace mode query reset | Search query is `""`; same-muscle prefilter is applied separately from the query | ✅ |
+| SR-01 | Replace exercise via ⋮ menu | Opens AddExercisePage in replace mode; Suggested tab active | ✅ |
+| SR-02 | Suggested tab — only ranked candidates shown | Only exercises that passed hard exclusions appear; not the full library | ✅ |
+| SR-03 | Browse All tab — full library | All exercises shown alphabetically; no smart ranking filter applied | ✅ |
+| SR-04 | Browse All — muscle dropdown filter | Filters list to selected muscle group | ✅ |
+| SR-05 | Browse All — equipment dropdown filter | Filters list to selected equipment | ✅ |
+| SR-06 | Inline reason chips | Reason choices visible in replace mode without blocking the user | ✅ |
+| SR-07 | Reason — machine_taken | Hard-excludes machine + smith_machine candidates from Suggested | ✅ |
+| SR-08 | Reason — no_equipment | Hard-excludes all non-bodyweight/cardio candidates | ✅ |
+| SR-09 | Reason — too_difficult | Hard-excludes candidates harder than original (non-advanced users) | ✅ |
+| SR-10 | Reason — pain_discomfort | Safer options rise via difficultyFit scoring | ✅ |
+| SR-11 | Equipment unavailable chip | Toggling removes same-equipment exercises from Suggested | ✅ |
+| SR-12 | Equipment unavailable chip — off | Returns full Suggested list including same-equipment exercises | ✅ |
+| SR-13 | Hard exclusion — same exercise | Original exercise never appears in Suggested | ✅ |
+| SR-14 | Hard exclusion — session duplicate | Exercises already in the session are excluded from Suggested | ✅ |
+| SR-15 | Hard exclusion — zero shared muscles | Candidates with no primary or secondary muscle overlap with original are excluded | ✅ |
+| SR-16 | Laterality — bilateral replaces bilateral | Bilateral exercises rank above unilateral when replacing a bilateral exercise | ✅ |
+| SR-17 | Laterality — unilateral replaces unilateral | Unilateral exercises rank above bilateral when replacing a unilateral exercise | ✅ |
+| SR-18 | Laterality — inferred from name | "Single-Arm Dumbbell Press" inferred as unilateral even without movementSide field | ✅ |
+| SR-19 | Equipment diversity — max 2 per type | After sorting, no more than 2 barbell (or any) exercises appear consecutively before other equipment types fill in | ✅ |
+| SR-20 | Equipment eligibility | Unavailable equipment classes excluded (including TRX via implement field) | ✅ |
+| SR-21 | Last replaced with section — shown | Appears above Possible replacements when user has replaced this exercise before | ✅ |
+| SR-22 | Last replaced with section — hidden | Not shown when no replacement history exists for this exercise | ✅ |
+| SR-23 | Last replaced with — max 5 | Shows up to 5 most recent unique replacements | ✅ |
+| SR-24 | Last replaced with — search applies | Search query filters the Last replaced with section | ✅ |
+| SR-25 | History matching uses base IDs | Session exercise `bench-press-1748...-1` matches history entry `bench-press` | ✅ |
+| SR-26 | Replace mode ranking hints | Match reason copy appears on exercise rows in Suggested | ✅ |
+| SR-27 | Confirm swap — 0 sets logged | Silent swap; no confirmation modal | ✅ |
+| SR-28 | Confirm swap — sets already logged | Confirmation modal before clearing and replacing | ✅ |
+| SR-29 | Exercise replaced in-place | Same position; rest timer, note, superset preserved; sets reset | ✅ |
+| SR-30 | ReplacementEvent stored | Written to `repiq-replacement-events`; includes reason, setsAlreadyLogged, matchScore | ✅ |
+| SR-31 | Learned preference — ranking boost | Previously chosen replacement scores higher (preferenceFit) on next replace | ✅ |
+| SR-32 | Search in Suggested | Filters Suggested candidates by name/muscle; no non-candidate exercises appear | ✅ |
 
 ---
 
@@ -448,15 +462,13 @@ Living registry of test cases across all built modules. Updated as features are 
 
 | ID | Module | Test | Status |
 |---|---|---|---|
-| UP-01 | Home | Streak counter always visible | 🚧 |
-| UP-02 | Home | Context-aware CTA (plan / no plan / rest day) | 🚧 |
-| UP-03 | Home | This-week snapshot (sessions vs target) | 🚧 |
-| UP-04 | Home | PR highlight from last session | 🚧 |
-| UP-05 | Psych | Post-workout mood + energy chips after Report | 🚧 |
-| UP-06 | Psych | Home daily readiness card | 🚧 |
-| UP-07 | Progress | Progress photo prompt at Finish Workout | 🚧 |
-| UP-08 | Progress | Insights → Progress tab timeline | 🚧 |
-| UP-09 | History | Edit-save overwrites original entry (not duplicate) | 🚧 |
-| UP-10 | Payments | Paywall and feature gates | 🚧 |
-| UP-11 | Smart Replace | Contextual hint on 0-progress exercises after 5 min | 🚧 |
-| UP-12 | Smart Replace | Difficulty filter for too_difficult reason (verified taxonomy required) | 🚧 |
+| UP-01 | Home | Daily Readiness Card (persistent card showing today's readiness score) | 🚧 |
+| UP-02 | Home | Consent toggles in Profile → Preferences | 🚧 |
+| UP-03 | Insights | Analyzer tab real UI (Training Trend, Muscle Coverage, Goal Progress surfaced) | 🚧 |
+| UP-04 | Progress | Progress photo prompt at Finish Workout | 🚧 |
+| UP-05 | Progress | Insights → Progress tab timeline + compare mode | 🚧 |
+| UP-06 | History | Edit-save overwrites original entry (not duplicate) | 🚧 |
+| UP-07 | Payments | Paywall and feature gates | 🚧 |
+| UP-08 | Smart Replace | Contextual hint on 0-progress exercises after 5 min | 🚧 |
+| UP-09 | Exercise Library | 435-exercise taxonomy CSV import (replaces current ~136 exercises) | 🚧 |
+| UP-10 | Custom Exercise | Duplicate name warning / rename prompt during creation | 🔲 |
