@@ -7967,27 +7967,27 @@ function FinishWorkoutPage({
           )}
           {/* Notes Section with Two Modes */}
           <div className="finish-notes-section">
-            <div className="finish-notes-mode-tabs">
+            <div className="finish-notes-track">
               <button
                 type="button"
-                className={`finish-notes-mode-btn${(draft.noteType ?? "personal") === "personal" ? " is-active" : ""}`}
+                className={`finish-notes-tab${(draft.noteType ?? "personal") === "personal" ? " is-active" : ""}`}
                 onClick={() => onPersonalNoteChange(draft.personalNote ?? "")}
               >
-                📝 Personal Note
+                Personal Note
               </button>
               <button
                 type="button"
-                className={`finish-notes-mode-btn${draft.noteType === "quote" ? " is-active" : ""}`}
+                className={`finish-notes-tab${draft.noteType === "quote" ? " is-active" : ""}`}
                 onClick={() => onQuoteNoteChange(draft.quoteNote ?? "")}
               >
-                ✨ Quote
+                Session Highlight
               </button>
             </div>
 
             {(draft.noteType ?? "personal") === "personal" ? (
               <textarea
                 className="notes-textarea finish-workout-notes"
-                placeholder="Add a personal note about this workout. Only visible to you."
+                placeholder="Private note — only visible to you."
                 value={draft.personalNote ?? ""}
                 onChange={(event) => onPersonalNoteChange(event.target.value)}
               />
@@ -7995,7 +7995,7 @@ function FinishWorkoutPage({
               <>
                 <textarea
                   className="notes-textarea finish-workout-notes"
-                  placeholder="Share an inspiring quote from your workout. This can be shared in the community."
+                  placeholder="A moment worth remembering — shown in your history and shareable."
                   value={draft.quoteNote ?? ""}
                   onChange={(event) => onQuoteNoteChange(event.target.value)}
                 />

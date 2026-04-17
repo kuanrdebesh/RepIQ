@@ -990,6 +990,42 @@ ol {
   min-height: 104px;
 }
 
+/* ── Notes section segmented control ─────────────────────────── */
+.finish-notes-section {
+  margin-top: 14px;
+}
+
+.finish-notes-track {
+  display: flex;
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+.finish-notes-tab {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.finish-notes-tab.is-active {
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1), 0 0 0 0.5px var(--line);
+}
+
 .finish-workout-heading {
   display: flex;
   align-items: baseline;
