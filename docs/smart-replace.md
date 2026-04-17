@@ -196,12 +196,30 @@ diversifyByEquipment(sorted, maxPerEquipment = 2):
 
 ## Equipment access levels
 
-| Access level | Available equipment classes |
+Equipment access is split into two independent axes:
+
+### Tier (pick one — gym level)
+
+| Tier | Available equipment classes |
 |---|---|
-| `bodyweight` | bodyweight, cardio |
-| `dumbbell_pair` | bodyweight, dumbbell, cardio |
-| `home_setup` | bodyweight, dumbbell, barbell, resistance_band, trx, cardio |
-| `basic_gym` / `full_gym` | bodyweight, dumbbell, barbell, cable, machine, resistance_band, trx, kettlebell, landmine, smith_machine, cardio |
+| `bodyweight` | bodyweight |
+| `dumbbell_pair` | bodyweight, dumbbell, kettlebell |
+| `home_setup` | bodyweight, dumbbell, kettlebell, barbell |
+| `basic_gym` | bodyweight, dumbbell, kettlebell, barbell, cable, machine, smith_machine, landmine |
+| `full_gym` | same as basic_gym |
+
+### Standalone add-ons (opt-in, independent of tier)
+
+| Add-on | Key | Notes |
+|---|---|---|
+| Resistance band | `resistance_band` | Not implied by any tier — user must opt in |
+| TRX / Suspension trainer | `suspension_trainer` | Detected on exercises via `implement` field; user declares ownership separately |
+| Cardio machines | `cardio` | Rower, treadmill, bike, ski erg etc.; not implied by gym tier |
+
+A user with `home_setup` + `resistance_band` add-on gets: bodyweight, dumbbell, kettlebell, barbell, resistance_band.
+A user with `basic_gym` + `cardio` + `suspension_trainer` gets: the full basic_gym set plus those two add-ons.
+
+> **Code note:** `EQUIPMENT_ALLOWED_TYPES` in `App.tsx` currently bundles `resistance_band` and `freestyle_cardio` into the tier table. That needs to be refactored: (1) remove add-ons from the tier table, (2) add `additionalEquipment: string[]` to `UserPsychProfile`, (3) add opt-in toggles to the onboarding equipment step and Profile → Preferences, (4) merge tier + add-ons when building the allowed-types set for scoring and generation.
 
 ---
 

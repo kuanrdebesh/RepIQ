@@ -147,6 +147,19 @@ These are not first-slice blockers, but they are part of the intended product di
 - Each preset should define background, surface, text, accent/button, and highlight tones together
 - Apply changes live without restart wherever possible
 
+## Equipment Access Model
+
+Equipment access is split into two independent axes:
+
+**Tier** (`EquipmentAccess` — pick one): `bodyweight` → `dumbbell_pair` → `home_setup` → `basic_gym` → `full_gym`. Each tier is a superset of the one below. Kettlebell is included from `dumbbell_pair` upward.
+
+**Standalone add-ons** (`additionalEquipment: string[]` on `UserPsychProfile` — opt-in, independent of tier):
+- `resistance_band` — bands are not implied by any gym tier
+- `suspension_trainer` — TRX; detected on exercises via `implement` field
+- `cardio` — cardio machines (rower, treadmill, bike, ski erg etc.)
+
+Scoring and generation build the allowed-equipment set as: `tierTypes ∪ additionalEquipment`. This replaces the current code which incorrectly bundles `resistance_band` and `freestyle_cardio` into the tier table. Refactor is tied to the CSV import sprint.
+
 ## Exercise Taxonomy Architecture
 
 - Each exercise in the library carries three structural metadata fields in addition to existing muscle data:
@@ -163,7 +176,7 @@ These are not first-slice blockers, but they are part of the intended product di
 
 - Scoring is a pure function: `rankCandidate(original, candidate, sessionExercises, reason, availableEquipment, userLevel, replacementHistory) → RankedReplacement | null`
 - 10 weighted dimensions (max 119 pts): movementMatch(30) + muscleMatch(24) + equipmentMatch(12) + fatigueFit(10) + difficultyFit(10) + unilateralFit(10) + angleMatch(8) + roleMatch(6) + trackingFit(5) + preferenceFit(4)
-- Hard exclusions applied before scoring: same exercise, already in session, unavailable equipment, reason-specific filters, zero shared muscles between full muscle sets
+- Hard exclusions applied before scoring: same exercise, already in session, unavailable equipment (tier + add-ons), reason-specific filters, zero shared muscles between full muscle sets
 - `diversifyByEquipment()` — post-sort pass capping each equipment type at 2 reps before appending overflow; ensures ranked results span multiple equipment classes
 - `inferMovementSide()` — reads `movementSide` field if set; otherwise checks exercise name for "single-arm", "single-leg", "one-arm", "one-leg", "unilateral" tokens
 - `getBaseExerciseId()` — strips timestamp suffix (e.g. `bench-press-1748...-1` → `bench-press`); used for history matching and session-duplicate checks
