@@ -17,7 +17,8 @@ import anatomyBackImg from "./assets/anatomy-back.png";
 import { makeExercise, exerciseCatalog, _additionalExercises, _finalExercises, _strongExercises, _userExercises, allCatalogExercises } from "./catalog";
 import { getStoredReplacementEvents, persistReplacementEvent, getStoredExercisePreferences, persistExercisePreference, getStoredHiddenSuggestions, persistHiddenSuggestion, removeHiddenSuggestion, themeStorageKey, workoutSettingsStorageKey, customExercisesStorageKey, savedWorkoutsStorageKey, workoutPlansStorageKey, planBuilderDraftStorageKey, psychProfileStorageKey, postWorkoutPsychStorageKey, dailyReadinessStorageKey, sessionBehaviorStorageKey, derivedPsychStorageKey, repiqPlanStorageKey, getStoredSavedWorkouts, persistSavedWorkout, persistSavedWorkoutsList, getStoredPsychProfile, persistPsychProfile, getStoredRepIQPlan, persistRepIQPlan, getStoredPostWorkoutPsych, persistPostWorkoutPsych, getStoredDailyReadiness, persistDailyReadiness, getStoredSessionBehavior, persistSessionBehavior, getStoredWorkoutPlans, persistWorkoutPlans, getStoredPlanBuilderDraft, persistPlanBuilderDraft, SAMPLE_WORKOUT_PLANS, SAMPLE_PLAN_IDS } from "./storage";
 import { DEFAULT_PSYCH_PROFILE, deriveTimeOfDay, buildSessionBehaviorSignals, createInitialSwipeState, COMPOUND_PATTERNS } from "./types";
-import type { FlowState, DraftSet, ExerciseDraft, DetailTab, ThemePreference, DraftSetType, AppView, MotivationalWhy, TrainingGoal, ExperienceLevel, EquipmentAccess, ScheduleCommitment, MoodRating, EnergyRating, RPERating, ThreePointScale, TimeOfDay, SessionSource, Trend, MotivationStyle, UserPsychProfile, PostWorkoutPsych, DailyReadiness, SessionBehaviorSignals, DerivedPsychProfile, SplitType, RepIQPlanExercise, RepIQPlanDay, RepIQPlanWeek, RepIQPlan, PlannedExercise, WorkoutPlan, PlanBuilderMode, PlanSessionSource, ActivePlanSession, WorkoutSettings, WorkoutMeta, RewardCategory, RewardLevel, AddExerciseMode, CreateExerciseStep, CustomExerciseType, MeasurementType, MovementSide, MovementPattern, ExerciseDifficulty, ExerciseAngle, ExerciseEquipment, ReplacementReason, ReplacementEvent, ExerciseWithTaxonomy, ExercisePreferenceEntry, ExercisePreferenceMap, CustomExerciseInput, LoggerReward, RewardSummary, FinishedExerciseSummary, FinishWorkoutDraft, SavedWorkoutData, ExerciseRestDefaults, SwipeState, ActiveRestTimer, MuscleRegion } from "./types";
+import { seedDemoWorkouts } from "./demoData";
+import type { FlowState, DraftSet, ExerciseDraft, DetailTab, ThemePreference, DraftSetType, AppView, MotivationalWhy, TrainingGoal, ExperienceLevel, EquipmentAccess, ScheduleCommitment, MoodRating, EnergyRating, RPERating, ThreePointScale, TimeOfDay, SessionSource, Trend, MotivationStyle, UserPsychProfile, PostWorkoutPsych, DailyReadiness, SessionBehaviorSignals, DerivedPsychProfile, SplitType, RepIQPlanExercise, RepIQPlanDay, RepIQPlanWeek, RepIQPlan, PlannedExercise, WorkoutPlan, PlanBuilderMode, PlanSessionSource, ActivePlanSession, WorkoutSettings, WorkoutMeta, RewardCategory, RewardLevel, AddExerciseMode, CreateExerciseStep, CustomExerciseType, MeasurementType, MovementSide, MovementPattern, ExerciseDifficulty, ExerciseAngle, ExerciseEquipment, PerformanceMetric, ExerciseImplement, ReplacementReason, ReplacementEvent, ExerciseWithTaxonomy, ExercisePreferenceEntry, ExercisePreferenceMap, CustomExerciseInput, LoggerReward, RewardSummary, FinishedExerciseSummary, FinishWorkoutDraft, SavedWorkoutData, WorkoutPhotoAsset, ExerciseRestDefaults, SwipeState, ActiveRestTimer, MuscleRegion } from "./types";
 
 // ── Types — see types.ts ──────────────────────────────────────────────────────
 
@@ -45,18 +46,25 @@ const EQUIPMENT_ALLOWED_TYPES: Record<EquipmentAccess, CustomExerciseType[]> = {
 // Equipment accessibility — maps exerciseType to what the user needs available
 function getEquipmentAccessibility(type: CustomExerciseType): CustomExerciseType[] {
   switch (type) {
-    case "bodyweight_only":          return ["bodyweight_only"];
-    case "bodyweight_weighted":      return ["bodyweight_only", "bodyweight_weighted"];
-    case "free_weights_accessories": return ["bodyweight_only", "bodyweight_weighted", "free_weights_accessories"];
+    // v2 schema values
+    case "bodyweight":               return ["bodyweight", "bodyweight_only"];
+    case "bodyweight_weighted":      return ["bodyweight", "bodyweight_only", "bodyweight_weighted"];
+    case "dumbbell":                 return ["dumbbell", "free_weights_accessories"];
+    case "cable":                    return ["cable", "machine", "free_weights_accessories"];
     case "barbell":                  return ["barbell"];
     case "machine":                  return ["machine"];
+    case "resistance_band":          return ["resistance_band"]; // library-only, never generated
+    // legacy values — kept for backward compat until full CSV import
+    case "bodyweight_only":          return ["bodyweight_only", "bodyweight"];
+    case "free_weights_accessories": return ["free_weights_accessories", "dumbbell", "cable"];
     case "freestyle_cardio":         return ["freestyle_cardio"];
   }
 }
 
 // ── Exercise Replacement Engine ───────────────────────────────────────────────
-// Lexicographic 10-tuple ranking: movement > muscle > angle > equipment > reason
+// Lexicographic 14-tuple ranking: movement > muscle > angle > equipment > reason
 //   > difficulty > tracking > preference > fatigue > novelty
+//   > laterality > compound/load > metric > superset
 // Each tier is computed independently; higher tiers are never overridden by lower.
 
 type ReplacementRankTuple = [
@@ -70,6 +78,10 @@ type ReplacementRankTuple = [
   number, // preference
   number, // fatigue
   number, // novelty
+  number, // laterality
+  number, // compound/load (goal-weighted)
+  number, // metric (performanceMetric match)
+  number, // superset context
 ];
 
 type RankedReplacement = {
@@ -383,6 +395,68 @@ function computeNoveltyTier(candidate: ExerciseWithTaxonomy): number {
   return 2;
 }
 
+const STRENGTH_GOALS = new Set<TrainingGoal>(["get_stronger", "build_muscle", "muscle_strength"]);
+
+function computeLateralityTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy): number {
+  const orig = original.movementSide;
+  const cand = candidate.movementSide;
+  if (!orig || !cand) return 2;
+  if (orig === cand) return 2;
+  if (orig === "bilateral" && cand === "unilateral") return 1;
+  return 0; // unilateral → bilateral: drops single-limb isolation
+}
+
+function computeCompoundLoadTier(
+  original: ExerciseWithTaxonomy,
+  candidate: ExerciseWithTaxonomy,
+  goal: TrainingGoal | null,
+): number {
+  const origCompound = original.movementPattern ? COMPOUND_PATTERNS.has(original.movementPattern) : null;
+  const candCompound = candidate.movementPattern ? COMPOUND_PATTERNS.has(candidate.movementPattern) : null;
+  if (origCompound === null || candCompound === null) return 2;
+
+  const isStrength = goal !== null && STRENGTH_GOALS.has(goal);
+  if (isStrength) {
+    if (origCompound && candCompound) {
+      if (original.supportsExternalLoad !== false && candidate.supportsExternalLoad === false) return 1;
+      return 3;
+    }
+    if (!origCompound && !candCompound) return 2;
+    if (!origCompound && candCompound) return 2; // upgrading to compound for strength goal
+    return 0; // compound → isolation for strength goal
+  }
+
+  return origCompound === candCompound ? 2 : 1;
+}
+
+function computeMetricTier(original: ExerciseWithTaxonomy, candidate: ExerciseWithTaxonomy): number {
+  const orig = original.performanceMetric;
+  const cand = candidate.performanceMetric;
+  if (!orig || !cand) return 2;
+  if (orig === cand) return 2;
+  if ((orig === "reps" && cand === "mixed") || (orig === "mixed" && cand === "reps")) return 1;
+  if ((orig === "time" && cand === "distance_or_time") || (orig === "distance_or_time" && cand === "time")) return 1;
+  return 0;
+}
+
+function computeSupersetTier(
+  original: ExerciseWithTaxonomy,
+  candidate: ExerciseWithTaxonomy,
+  sessionExercises: ExerciseDraft[],
+): number {
+  if (!original.supersetGroupId) return 2;
+  const partners = sessionExercises.filter(
+    (e) => e.supersetGroupId === original.supersetGroupId && e.id !== original.id,
+  );
+  if (partners.length === 0) return 2;
+  const candidatePrimary = getExercisePrimaryMuscles(candidate);
+  for (const partner of partners) {
+    const partnerPrimary = getExercisePrimaryMuscles(partner);
+    if (candidatePrimary.some((m) => partnerPrimary.includes(m))) return 0;
+  }
+  return 2;
+}
+
 function compareRankTuples(left: ReplacementRankTuple, right: ReplacementRankTuple): number {
   for (let index = 0; index < left.length; index += 1) {
     if (left[index] !== right[index]) {
@@ -442,6 +516,7 @@ function rankCandidate(
   reason: ReplacementReason,
   availableEquipment: CustomExerciseType[],
   userLevel: ExperienceLevel | null,
+  goal: TrainingGoal | null,
 ): RankedReplacement | null {
   if (getBaseExerciseId(candidate.id) === getBaseExerciseId(original.id)) return null;
   if (sessionExercises.some((exercise) => getBaseExerciseId(exercise.id) === getBaseExerciseId(candidate.id))) return null;
@@ -484,6 +559,10 @@ function rankCandidate(
     computePreferenceTier(original, candidate, reason),
     computeFatigueTier(candidate, sessionExercises),
     computeNoveltyTier(candidate),
+    computeLateralityTier(original, candidate),
+    computeCompoundLoadTier(original, candidate, goal),
+    computeMetricTier(original, candidate),
+    computeSupersetTier(original, candidate, sessionExercises),
   ];
 
   return {
@@ -502,10 +581,11 @@ function getSmartReplacements(
   availableEquipment: CustomExerciseType[],
   allExercises: ExerciseWithTaxonomy[],
   userLevel: ExperienceLevel | null,
+  goal: TrainingGoal | null,
 ): RankedReplacement[] {
   return allExercises
     .map((candidate) =>
-      rankCandidate(original, candidate, sessionExercises, reason, availableEquipment, userLevel)
+      rankCandidate(original, candidate, sessionExercises, reason, availableEquipment, userLevel, goal)
     )
     .filter((candidate): candidate is RankedReplacement => candidate !== null)
     .sort((left, right) => {
@@ -542,13 +622,14 @@ export type GenConfig = {
   goal: string;
   muscles: string[];
   duration: string;
+  equipment: string; // EquipmentAccess value or "any"
   seedOffset: number;
 };
 
 // Pure function — deterministically builds a WorkoutPlan from user inputs + library.
 // Called both by WorkoutPlannerPage (initial generate) and root App (shuffle on review).
 function buildGeneratedPlan(config: GenConfig, library: ExerciseWithTaxonomy[]): WorkoutPlan | null {
-  const { goal, muscles, duration, seedOffset } = config;
+  const { goal, muscles, duration, equipment, seedOffset } = config;
   const muscleKeywords: Record<string, string[]> = {
     Chest:      ["chest", "pec"],
     Back:       ["back", "lat", "row", "rhomboid", "trap"],
@@ -586,6 +667,10 @@ function buildGeneratedPlan(config: GenConfig, library: ExerciseWithTaxonomy[]):
     ex.exerciseType !== "freestyle_cardio" &&
     !STRETCH_IDS.has(ex.id)
   );
+  if (equipment && equipment !== "any") {
+    const allowed = EQUIPMENT_ALLOWED_TYPES[equipment as EquipmentAccess] ?? [];
+    candidates = candidates.filter(ex => allowed.includes(ex.exerciseType as CustomExerciseType));
+  }
   if (keywords.length > 0) {
     candidates = candidates.filter((ex) =>
       keywords.some(
@@ -597,7 +682,7 @@ function buildGeneratedPlan(config: GenConfig, library: ExerciseWithTaxonomy[]):
     );
   }
 
-  const inputKey = `${goal}|${[...muscles].sort().join(",")}|${duration}`;
+  const inputKey = `${goal}|${[...muscles].sort().join(",")}|${duration}|${equipment}`;
   const seed = hashString(inputKey) + seedOffset;
 
   const scored = candidates.map(ex => ({
@@ -2319,6 +2404,37 @@ const exerciseTemplates: ExerciseWithTaxonomy[] = [
     ]
   },
   {
+    id: "horizontal-leg-press",
+    name: "Horizontal Leg Press",
+    note: "",
+    restTimer: "01:30",
+    goal: "hypertrophy",
+    imageSrc: benchPressImage,
+    exerciseType: "machine" as const,
+    primaryMuscle: "Quads",
+    secondaryMuscles: ["Glutes", "Hamstrings"],
+    movementPattern: "squat" as const,
+    angle: "none" as const,
+    equipment: "machine" as const,
+    difficultyLevel: "beginner" as const,
+    howTo: [
+      "Sit upright in the seat with back flat against the pad.",
+      "Place feet shoulder-width on the platform directly in front.",
+      "Push the platform away in a horizontal plane — no sled angle.",
+      "Return with control; do not let knees cave inward."
+    ],
+    videoLabel: "Horizontal Leg Press",
+    history: [],
+    primaryMuscles: ["Quads"],
+    movementSide: "bilateral" as const,
+    draftSets: [
+      { id: "hlp-w", setType: "warmup", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false },
+      { id: "hlp-1", setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false },
+      { id: "hlp-2", setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false },
+      { id: "hlp-3", setType: "normal", weightInput: "", repsInput: "", rpeInput: "", done: false, failed: false }
+    ]
+  },
+  {
     id: "romanian-deadlift",
     name: "Romanian Deadlift",
     note: "",
@@ -2534,6 +2650,8 @@ const defaultWorkoutSettings: WorkoutSettings = {
   showRpe: true,
   guidanceTopStrip: false,
   guidanceInline: true,
+  showWarmup: true,
+  showCooldown: true,
   preferredGoal: null,
   preferredLevel: null,
   preferredEquipment: null,
@@ -3030,6 +3148,14 @@ function getStoredWorkoutSettings(): WorkoutSettings {
         typeof parsed.guidanceInline === "boolean"
           ? parsed.guidanceInline
           : defaultWorkoutSettings.guidanceInline,
+      showWarmup:
+        typeof parsed.showWarmup === "boolean"
+          ? parsed.showWarmup
+          : defaultWorkoutSettings.showWarmup,
+      showCooldown:
+        typeof parsed.showCooldown === "boolean"
+          ? parsed.showCooldown
+          : defaultWorkoutSettings.showCooldown,
       preferredGoal: typeof parsed.preferredGoal === "string" ? parsed.preferredGoal : null,
       preferredLevel: typeof parsed.preferredLevel === "string" ? parsed.preferredLevel : null,
       preferredEquipment: typeof parsed.preferredEquipment === "string" ? parsed.preferredEquipment : null,
@@ -4297,6 +4423,7 @@ function PlannerHomePage({
   existingTags,
   activeView,
   onViewChange,
+  onBrowseExercise,
   hasActiveWorkout,
   onBack,
   onStartEmpty,
@@ -4316,6 +4443,14 @@ function PlannerHomePage({
   defaultGoal,
   defaultLevel,
   defaultEquipment,
+  genGoal,
+  setGenGoal,
+  genMuscles,
+  setGenMuscles,
+  genDuration,
+  setGenDuration,
+  genEquipment,
+  setGenEquipment,
   repiqPlan,
   initialPlannerMode,
   onStartRepIQSession,
@@ -4334,17 +4469,27 @@ function PlannerHomePage({
   onApplyCustomSplit,
   onCarryOverSessions,
   onCompressSessions,
+  insightsWell,
 }: {
   plans: WorkoutPlan[];
   library: ExerciseDraft[];
   existingTags: string[];
-  activeView: "mine" | "library" | "generate";
-  onViewChange: (view: "mine" | "library" | "generate") => void;
+  activeView: "mine" | "library" | "generate" | "exercises";
+  onViewChange: (view: "mine" | "library" | "generate" | "exercises") => void;
+  onBrowseExercise: (exerciseId: string) => void;
   hasActiveWorkout: boolean;
   onBack: () => void;
   onStartEmpty: () => void;
   onCreateNew: () => void;
   onGeneratePlan: (plan: WorkoutPlan, config: GenConfig) => void;
+  genGoal: string;
+  setGenGoal: (v: string) => void;
+  genMuscles: string[];
+  setGenMuscles: (v: string[]) => void;
+  genDuration: string;
+  setGenDuration: (v: string) => void;
+  genEquipment: string;
+  setGenEquipment: (v: string) => void;
   onStartPlan: (plan: WorkoutPlan) => void;
   onEditPlan: (plan: WorkoutPlan) => void;
   onDuplicatePlan: (plan: WorkoutPlan) => void;
@@ -4377,16 +4522,17 @@ function PlannerHomePage({
   onApplyCustomSplit?: (arrangement: { label: string; muscles: string[] }[]) => void;
   onCarryOverSessions?: () => void;
   onCompressSessions?: () => void;
+  insightsWell?: InsightsWell | null;
 }) {
   // Generate state
-  const [genGoal, setGenGoal] = useState("Hypertrophy");
-  const [genMuscles, setGenMuscles] = useState<string[]>([]);
-  const [genDuration, setGenDuration] = useState("45 min");
   const [genError, setGenError] = useState<string | null>(null);
   const [dragPlanId, setDragPlanId] = useState<string | null>(null);
   const [activeTagFilter, setActiveTagFilter] = useState<string[]>([]);
   const [tagFilterSearch, setTagFilterSearch] = useState("");
-  const lastBrowseViewRef = useRef<"mine" | "library">("mine");
+  const lastBrowseViewRef = useRef<"mine" | "library" | "exercises">("mine");
+  // Exercise browse (Exercises tab)
+  const [exQuery, setExQuery] = useState("");
+  const [exMuscleFilter, setExMuscleFilter] = useState<string | null>(null);
   const [detailPlan, setDetailPlan] = useState<WorkoutPlan | null>(null);
   const [detailIsTemplate, setDetailIsTemplate] = useState(false);
   const [libCategory, setLibCategory] = useState<string | null>(null);
@@ -4475,11 +4621,11 @@ function PlannerHomePage({
   }, [activeView]);
 
   function toggleMuscle(m: string) {
-    setGenMuscles((prev) => prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]);
+    setGenMuscles(genMuscles.includes(m) ? genMuscles.filter((x) => x !== m) : [...genMuscles, m]);
   }
 
   function handleGenerate() {
-    const genConfig: GenConfig = { goal: genGoal, muscles: genMuscles, duration: genDuration, seedOffset: 0 };
+    const genConfig: GenConfig = { goal: genGoal, muscles: genMuscles, duration: genDuration, equipment: genEquipment, seedOffset: 0 };
     const plan = buildGeneratedPlan(genConfig, library as ExerciseWithTaxonomy[]);
     if (!plan) {
       setGenError("No exercises found for your selections. Try removing some filters.");
@@ -4531,16 +4677,20 @@ function PlannerHomePage({
             <div className="generate-field">
               <label className="generate-field-label">Target muscles <span className="generate-field-hint">(optional)</span></label>
               <div className="generate-field-chips">
-                {["Chest", "Back", "Shoulders", "Biceps", "Triceps", "Quads", "Hamstrings", "Glutes", "Calves", "Abductors", "Adductors", "Core / Abs", "Obliques"].map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    className={`generate-chip${genMuscles.includes(m) ? " is-selected" : ""}`}
-                    onClick={() => toggleMuscle(m)}
-                  >
-                    {m}
-                  </button>
-                ))}
+                {["Chest", "Back", "Shoulders", "Biceps", "Triceps", "Quads", "Hamstrings", "Glutes", "Calves", "Abductors", "Adductors", "Core / Abs", "Obliques"].map((m) => {
+                  const macroGroup = getMuscleMacroGroup(m === "Core / Abs" ? "Core" : m === "Abductors" || m === "Adductors" ? "Quads" : m);
+                  const isDue = !!insightsWell?.dueMuscleGroups.includes(macroGroup ?? "");
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      className={`generate-chip${genMuscles.includes(m) ? " is-selected" : ""}${isDue && !genMuscles.includes(m) ? " is-due" : ""}`}
+                      onClick={() => toggleMuscle(m)}
+                    >
+                      {m}{isDue && !genMuscles.includes(m) && <span className="gen-due-dot" />}
+                    </button>
+                  );
+                })}
               </div>
             </div>
             <div className="generate-field">
@@ -4554,6 +4704,28 @@ function PlannerHomePage({
                     onClick={() => setGenDuration(d)}
                   >
                     {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="generate-field">
+              <label className="generate-field-label">Equipment</label>
+              <div className="generate-field-chips">
+                {([
+                  ["any", "Any"],
+                  ["bodyweight", "Bodyweight"],
+                  ["dumbbell_pair", "Dumbbells"],
+                  ["home_setup", "Home Gym"],
+                  ["basic_gym", "Basic Gym"],
+                  ["full_gym", "Full Gym"],
+                ] as [string, string][]).map(([val, label]) => (
+                  <button
+                    key={val}
+                    type="button"
+                    className={`generate-chip${genEquipment === val ? " is-selected" : ""}`}
+                    onClick={() => setGenEquipment(val)}
+                  >
+                    {label}
                   </button>
                 ))}
               </div>
@@ -4692,7 +4864,7 @@ function PlannerHomePage({
     { label: "Type",      options: ["PPL", "Upper/Lower", "Full Body", "Specialisation", "Powerlifting", "Minimal", "Beginner"], draftValue: libDraftCategory, realSet: setLibCategory,    draftSet: setLibDraftCategory },
     { label: "Level",     options: ["Beginner", "Intermediate", "Advanced"],                                                     draftValue: libDraftLevel,    realSet: setLibLevel,       draftSet: setLibDraftLevel },
     { label: "Goal",      options: ["Hypertrophy", "Strength", "Endurance"],                                                     draftValue: libDraftGoal,     realSet: setLibGoal,        draftSet: setLibDraftGoal },
-    { label: "Equipment", options: ["Full Gym", "Dumbbells", "Bodyweight"],                                                      draftValue: libDraftEquipment,realSet: setLibEquipment,   draftSet: setLibDraftEquipment },
+    { label: "Equipment", options: ["Full Gym", "Dumbbells", "Bodyweight", "Resistance Band", "TRX"],                            draftValue: libDraftEquipment,realSet: setLibEquipment,   draftSet: setLibDraftEquipment },
   ];
   const filterVisibleDefs = libFilterFocus ? filterAllDefs.filter((f) => f.label === libFilterFocus) : filterAllDefs;
   const applyFiltersAndClose = () => {
@@ -5725,6 +5897,14 @@ function PlannerHomePage({
           >
             Library
           </button>
+          <button
+            type="button"
+            className={activeView === "exercises" ? "is-active" : ""}
+            aria-selected={activeView === "exercises"}
+            onClick={() => onViewChange("exercises")}
+          >
+            Exercises
+          </button>
         </div>
       </div>
 
@@ -5809,7 +5989,61 @@ function PlannerHomePage({
               );
             })()}
           </>
-        ) : (
+        ) : activeView === "exercises" ? (() => {
+          const allMuscles = [...new Set(library.map(e => e.primaryMuscle).filter(Boolean))].sort();
+          const q = exQuery.trim().toLowerCase();
+          const filteredExercises = library.filter(ex => {
+            if (exMuscleFilter && ex.primaryMuscle !== exMuscleFilter) return false;
+            if (q) return ex.name.toLowerCase().includes(q) || ex.primaryMuscle?.toLowerCase().includes(q) || ex.secondaryMuscles?.some(m => m.toLowerCase().includes(q));
+            return true;
+          }).sort((a, b) => a.name.localeCompare(b.name));
+          return (
+            <div className="ex-browse-wrap">
+              <div className="ex-browse-toolbar">
+                <div className="search-input-shell">
+                  <input
+                    className="search-input"
+                    type="text"
+                    placeholder="Search exercises or muscles…"
+                    value={exQuery}
+                    onChange={e => setExQuery(e.target.value)}
+                    aria-label="Search exercises"
+                  />
+                  {exQuery && (
+                    <button type="button" className="search-clear-button" onClick={() => setExQuery("")} aria-label="Clear">×</button>
+                  )}
+                </div>
+                <div className="ex-browse-muscle-chips">
+                  {allMuscles.map(m => (
+                    <button key={m} type="button"
+                      className={`generate-chip generate-chip--sm${exMuscleFilter === m ? " is-selected" : ""}`}
+                      onClick={() => setExMuscleFilter(exMuscleFilter === m ? null : m)}
+                    >{m}</button>
+                  ))}
+                </div>
+              </div>
+              <p className="planner-section-hint">{filteredExercises.length} {filteredExercises.length === 1 ? "exercise" : "exercises"}</p>
+              {filteredExercises.length === 0 ? (
+                <div className="planner-empty">
+                  <p className="planner-empty-title">No exercises match</p>
+                  <p className="planner-empty-sub">Try a different search or clear the muscle filter.</p>
+                </div>
+              ) : (
+                <div className="ex-browse-list">
+                  {filteredExercises.map(ex => (
+                    <button key={ex.id} type="button" className="ex-browse-row" onClick={() => onBrowseExercise(ex.id)}>
+                      <div className="ex-browse-row-name">{ex.name}</div>
+                      <div className="ex-browse-row-meta">
+                        <span className="ex-browse-muscle-tag">{ex.primaryMuscle}</span>
+                        {ex.exerciseType && <span className="ex-browse-type-tag">{ex.exerciseType.replace(/_/g, " ")}</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })() : (
           <>
             {/* Filter tray — compact summary + open button */}
             <div className="lib-filter-tray">
@@ -6869,7 +7103,7 @@ function MusclesShareCard({ draft }: { draft: FinishWorkoutDraft }) {
 
 function ExercisesShareCard({ draft }: { draft: FinishWorkoutDraft }) {
   const maxVol = Math.max(...draft.exercises.map((e) => e.loggedVolume), 1);
-  const displayed = draft.exercises.slice(0, 6);
+  const displayed = draft.exercises.slice(0, 4);
   const overflow = draft.exercises.length - displayed.length;
 
   return (
@@ -6893,7 +7127,7 @@ function ExercisesShareCard({ draft }: { draft: FinishWorkoutDraft }) {
             </div>
           </div>
         ))}
-        {overflow > 0 && <p className="share-card-exercise-overflow">+{overflow} more exercises</p>}
+        {overflow > 0 && <p className="share-card-exercise-overflow">… and {overflow} more</p>}
       </div>
       <RepIQWatermark />
     </div>
@@ -7321,18 +7555,28 @@ function FinishWorkoutPage({
   draft,
   onTitleChange,
   onNoteChange,
+  onShareNoteChange,
+  onShareNoteQuoteToggle,
+  authorName,
   onBack,
   onSave,
   resolvedTheme,
   onToggleTheme,
+  showCooldown,
+  onDisableCooldown,
 }: {
   draft: FinishWorkoutDraft;
   onTitleChange: (value: string) => void;
   onNoteChange: (value: string) => void;
+  onShareNoteChange: (value: string) => void;
+  onShareNoteQuoteToggle: (value: boolean) => void;
+  authorName: string;
   onBack: () => void;
   onSave: (images: WorkoutMediaAsset[]) => Promise<void>;
   resolvedTheme?: string;
   onToggleTheme?: () => void;
+  showCooldown: boolean;
+  onDisableCooldown: () => void;
 }) {
   // V1 decision: keep photo support visible for progress/self-reference.
   // Video stays parked behind a disabled flag until we design its real
@@ -7343,9 +7587,10 @@ function FinishWorkoutPage({
   const [rewardsExpanded, setRewardsExpanded] = useState(false);
   const [cooldownExpanded, setCooldownExpanded] = useState(false);
   const [cooldownDismissed, setCooldownDismissed] = useState(false);
-  // Each photo stores the original src (for re-editing) and the adjusted display URL
-  const [photos, setPhotos] = useState<{ name: string; src: string; display: string }[]>([]);
-  const [pendingCrop, setPendingCrop] = useState<{ name: string; src: string; index: number | null } | null>(null);
+  // Each photo stores the original src (for re-editing), the adjusted display URL, and its role
+  const [photos, setPhotos] = useState<{ name: string; src: string; display: string; role: "progress" | "workout" }[]>([]);
+  const [pendingCrop, setPendingCrop] = useState<{ name: string; src: string; index: number | null; role: "progress" | "workout" } | null>(null);
+  const pendingRoleRef = useRef<"progress" | "workout">("workout");
   const [video, setVideo] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoDuration, setVideoDuration] = useState(0);
@@ -7393,18 +7638,18 @@ function FinishWorkoutPage({
       setMediaError(`Photo must be under ${MEDIA_MAX_PHOTO_MB} MB.`);
       return;
     }
-    setPendingCrop({ name: file.name, src: URL.createObjectURL(file), index: null });
+    setPendingCrop({ name: file.name, src: URL.createObjectURL(file), index: null, role: pendingRoleRef.current });
   }
 
   function openPhotoEdit(index: number) {
-    setPendingCrop({ name: photos[index].name, src: photos[index].src, index });
+    setPendingCrop({ name: photos[index].name, src: photos[index].src, index, role: photos[index].role });
   }
 
   function handleCropDone(outputUrl: string) {
     if (!pendingCrop) return;
     if (pendingCrop.index === null) {
       // New photo
-      setPhotos((prev) => [...prev, { name: pendingCrop.name, src: pendingCrop.src, display: outputUrl }]);
+      setPhotos((prev) => [...prev, { name: pendingCrop.name, src: pendingCrop.src, display: outputUrl, role: pendingCrop.role }]);
     } else {
       // Re-edit: replace display URL only, keep original src
       setPhotos((prev) => {
@@ -7555,7 +7800,7 @@ function FinishWorkoutPage({
   const trimLength = trimEnd - trimStart;
   const needsTrim = videoDuration > MEDIA_MAX_VIDEO_SECONDS;
 
-  async function uploadPhotoAssets(): Promise<WorkoutMediaAsset[]> {
+  async function uploadPhotoAssets(): Promise<WorkoutPhotoAsset[]> {
     if (!finishPhotosEnabled || photos.length === 0) {
       return [];
     }
@@ -7576,7 +7821,7 @@ function FinishWorkoutPage({
       throw new Error(`You can upload up to ${mediaConfig.max_images_per_workout} images.`);
     }
 
-    const uploadedAssets: WorkoutMediaAsset[] = [];
+    const uploadedAssets: WorkoutPhotoAsset[] = [];
 
     for (const [index, photo] of photos.entries()) {
       const blobResponse = await fetch(photo.display);
@@ -7618,7 +7863,7 @@ function FinishWorkoutPage({
       }
 
       const uploadJson = await uploadResponse.json();
-      uploadedAssets.push(workoutMediaAssetSchema.parse(uploadJson.asset));
+      uploadedAssets.push({ ...workoutMediaAssetSchema.parse(uploadJson.asset), photoRole: photo.role });
     }
 
     return uploadedAssets;
@@ -7735,6 +7980,76 @@ function FinishWorkoutPage({
           <p className="settings-note finish-workout-takeaway-body">{draft.takeawayBody}</p>
         </section>
 
+        {/* ── Cool-down / static stretching guidance ── */}
+        {showCooldown && !cooldownDismissed && (() => {
+          const sessionMuscles = [...new Set(draft.exercises.map(e => e.primaryMuscle).filter(Boolean))];
+          if (sessionMuscles.length === 0) return null;
+          const STRETCH_MAP: Record<string, string[]> = {
+            "Chest":      ["Doorway chest stretch (30s each)", "Cross-body arm stretch (20s each)"],
+            "Back":       ["Child's pose (30s)", "Seated spinal twist (20s each)"],
+            "Shoulders":  ["Cross-body shoulder stretch (20s each)", "Overhead tricep/shoulder stretch (20s each)"],
+            "Biceps":     ["Wall bicep stretch (20s each)"],
+            "Triceps":    ["Overhead tricep stretch (20s each)"],
+            "Quads":      ["Standing quad stretch (30s each)", "Couch stretch (20s each)"],
+            "Hamstrings": ["Standing toe touch (30s)", "Seated hamstring stretch (30s each)"],
+            "Glutes":     ["Pigeon pose (30s each)", "Seated figure-4 stretch (20s each)"],
+            "Calves":     ["Wall calf stretch (30s each)", "Downward dog (30s)"],
+            "Core":       ["Cobra stretch (20s)", "Cat-cow (10 reps)"],
+            "Abs":        ["Cobra stretch (20s)", "Lying spinal twist (20s each)"],
+            "Obliques":   ["Standing side bend (20s each)", "Lying spinal twist (20s each)"],
+          };
+          const stretches: string[] = [];
+          const seen = new Set<string>();
+          for (const m of sessionMuscles) {
+            for (const s of STRETCH_MAP[m] ?? []) {
+              if (!seen.has(s)) { seen.add(s); stretches.push(s); }
+            }
+          }
+          if (stretches.length === 0) return null;
+          return (
+            <>
+              {cooldownExpanded && (
+                <div className="guidance-backdrop" onClick={() => setCooldownExpanded(false)} />
+              )}
+              <section className={`cooldown-guidance-block${cooldownExpanded ? " is-expanded" : ""}`}>
+                <button
+                  type="button"
+                  className="cooldown-guidance-toggle"
+                  onClick={() => setCooldownExpanded(prev => !prev)}
+                >
+                  <span className="cooldown-guidance-icon">🧊</span>
+                  <span className="cooldown-guidance-title">Cool Down</span>
+                  <span className="cooldown-guidance-hint">{stretches.length} stretches · ~3 min</span>
+                  <span className="cooldown-guidance-chevron">{cooldownExpanded ? "▾" : "›"}</span>
+                  <button
+                    type="button"
+                    className="guidance-dismiss-x"
+                    onClick={(e) => { e.stopPropagation(); setCooldownDismissed(true); }}
+                    aria-label="Close cool-down"
+                  >×</button>
+                </button>
+                {cooldownExpanded && (
+                  <div className="cooldown-guidance-content">
+                    <p className="cooldown-guidance-sub">Static stretches for {sessionMuscles.slice(0, 3).join(", ")}{sessionMuscles.length > 3 ? "…" : ""}</p>
+                    <ul className="cooldown-guidance-list">
+                      {stretches.slice(0, 8).map((s) => (
+                        <li key={s} className="cooldown-guidance-item">{s}</li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      className="cooldown-guidance-dismiss"
+                      onClick={() => { onDisableCooldown(); setCooldownDismissed(true); }}
+                    >
+                      Don't show again
+                    </button>
+                  </div>
+                )}
+              </section>
+            </>
+          );
+        })()}
+
         <section className="finish-workout-card">
           <p className="label">Save Details</p>
           <label className="finish-title-row">
@@ -7750,15 +8065,25 @@ function FinishWorkoutPage({
             <div className="finish-media-strip">
               <div className="finish-media-btns">
                 {finishPhotosEnabled && (
-                  <button
-                    type="button"
-                    className={`finish-media-add-btn${photos.length >= MEDIA_MAX_PHOTOS ? " is-maxed" : ""}`}
-                    onClick={() => photos.length < MEDIA_MAX_PHOTOS && photoInputRef.current?.click()}
-                    aria-disabled={photos.length >= MEDIA_MAX_PHOTOS}
-                  >
-                    📷 Photo
-                    <span className="finish-media-count">{photos.length}/{MEDIA_MAX_PHOTOS}</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className={`finish-media-add-btn${photos.length >= MEDIA_MAX_PHOTOS ? " is-maxed" : ""}`}
+                      onClick={() => { if (photos.length < MEDIA_MAX_PHOTOS) { pendingRoleRef.current = "progress"; photoInputRef.current?.click(); } }}
+                      aria-disabled={photos.length >= MEDIA_MAX_PHOTOS}
+                    >
+                      <span className="finish-media-btn-icon">🧍</span> Progress
+                    </button>
+                    <button
+                      type="button"
+                      className={`finish-media-add-btn${photos.length >= MEDIA_MAX_PHOTOS ? " is-maxed" : ""}`}
+                      onClick={() => { if (photos.length < MEDIA_MAX_PHOTOS) { pendingRoleRef.current = "workout"; photoInputRef.current?.click(); } }}
+                      aria-disabled={photos.length >= MEDIA_MAX_PHOTOS}
+                    >
+                      <span className="finish-media-btn-icon">🏋️</span> Workout
+                    </button>
+                    <span className="finish-media-pool-count">{photos.length}/{MEDIA_MAX_PHOTOS}</span>
+                  </>
                 )}
                 {finishVideoEnabled && (
                   <button
@@ -7787,6 +8112,7 @@ function FinishWorkoutPage({
                     <div key={index} className="finish-media-thumb" onClick={() => openPhotoEdit(index)} role="button" aria-label="Edit photo">
                       <img src={photo.display} alt="" />
                       <div className="finish-media-edit-badge" aria-hidden="true">✎</div>
+                      <span className={`finish-media-role-strip finish-media-role-strip--${photo.role}`} aria-hidden="true">{photo.role === "progress" ? "Progress" : "Workout"}</span>
                       <button type="button" className="finish-media-remove" onClick={(e) => { e.stopPropagation(); removePhoto(index); }} aria-label="Remove photo">×</button>
                     </div>
                   ))}
@@ -7888,13 +8214,57 @@ function FinishWorkoutPage({
               )}
             </div>
           )}
+          {/* Personal note */}
+          <hr className="finish-section-divider" />
+          <p className="finish-note-section-label">Personal note <span className="finish-note-private-badge">private</span></p>
           <textarea
             className="notes-textarea finish-workout-notes"
-            placeholder="Add a note about this workout"
+            placeholder="Raw thoughts, feelings, things to remember…"
             value={draft.note}
+            maxLength={200}
             onChange={(event) => onNoteChange(event.target.value)}
           />
-          <p className="settings-note">
+          <p className="finish-note-char-count">{draft.note.length}/200</p>
+
+          {/* Share note */}
+          <p className="finish-note-section-label" style={{ marginTop: 14 }}>Share note <span className="finish-note-public-badge">community</span></p>
+          <textarea
+            className="notes-textarea finish-workout-notes"
+            placeholder="Something worth sharing with others…"
+            value={draft.shareNote ?? ""}
+            maxLength={200}
+            onChange={(event) => onShareNoteChange(event.target.value)}
+          />
+          <p className="finish-note-char-count">{(draft.shareNote ?? "").length}/200</p>
+          {(draft.shareNote ?? "").trim().length > 0 && (
+            <label className="finish-quote-toggle">
+              <input
+                type="checkbox"
+                checked={!!draft.shareNoteIsQuote}
+                onChange={(e) => onShareNoteQuoteToggle(e.target.checked)}
+              />
+              <span className="finish-quote-toggle-label">
+                <span className="finish-quote-icon">"</span>
+                Format as quote
+              </span>
+              <span className="finish-quote-hint">Shows with your name &amp; attribution</span>
+            </label>
+          )}
+          {(draft.shareNote ?? "").trim().length > 0 && (
+            <div className={`finish-share-preview${draft.shareNoteIsQuote ? " is-quote" : ""}`}>
+              {draft.shareNoteIsQuote ? (
+                <>
+                  <span className="finish-share-preview-q">"</span>
+                  <span className="finish-share-preview-text">{draft.shareNote}</span>
+                  <span className="finish-share-preview-author">— {authorName}</span>
+                </>
+              ) : (
+                <span className="finish-share-preview-plain">{draft.shareNote}</span>
+              )}
+            </div>
+          )}
+
+          <p className="settings-note" style={{ marginTop: 14 }}>
             {formatSessionDate(draft.date)} • {draft.loggedExerciseCount} logged{" "}
             {draft.loggedExerciseCount === 1 ? "exercise" : "exercises"}
           </p>
@@ -7943,58 +8313,6 @@ function FinishWorkoutPage({
             </p>
           </section>
         )}
-
-        {/* ── Cool-down / static stretching guidance ── */}
-        {!cooldownDismissed && (() => {
-          const sessionMuscles = [...new Set(draft.exercises.map(e => e.primaryMuscle).filter(Boolean))];
-          if (sessionMuscles.length === 0) return null;
-          const STRETCH_MAP: Record<string, string[]> = {
-            "Chest":      ["Doorway chest stretch (30s each)", "Cross-body arm stretch (20s each)"],
-            "Back":       ["Child's pose (30s)", "Seated spinal twist (20s each)"],
-            "Shoulders":  ["Cross-body shoulder stretch (20s each)", "Overhead tricep/shoulder stretch (20s each)"],
-            "Biceps":     ["Wall bicep stretch (20s each)"],
-            "Triceps":    ["Overhead tricep stretch (20s each)"],
-            "Quads":      ["Standing quad stretch (30s each)", "Couch stretch (20s each)"],
-            "Hamstrings": ["Standing toe touch (30s)", "Seated hamstring stretch (30s each)"],
-            "Glutes":     ["Pigeon pose (30s each)", "Seated figure-4 stretch (20s each)"],
-            "Calves":     ["Wall calf stretch (30s each)", "Downward dog (30s)"],
-            "Core":       ["Cobra stretch (20s)", "Cat-cow (10 reps)"],
-            "Abs":        ["Cobra stretch (20s)", "Lying spinal twist (20s each)"],
-            "Obliques":   ["Standing side bend (20s each)", "Lying spinal twist (20s each)"],
-          };
-          const stretches: string[] = [];
-          const seen = new Set<string>();
-          for (const m of sessionMuscles) {
-            for (const s of STRETCH_MAP[m] ?? []) {
-              if (!seen.has(s)) { seen.add(s); stretches.push(s); }
-            }
-          }
-          if (stretches.length === 0) return null;
-          return (
-            <section className={`cooldown-guidance-block${cooldownExpanded ? " is-expanded" : ""}`}>
-              <button
-                type="button"
-                className="cooldown-guidance-toggle"
-                onClick={() => setCooldownExpanded(prev => !prev)}
-              >
-                <span className="cooldown-guidance-icon">🧊</span>
-                <span className="cooldown-guidance-title">Cool Down</span>
-                <span className="cooldown-guidance-hint">{stretches.length} stretches · ~3 min</span>
-                <span className="cooldown-guidance-chevron">{cooldownExpanded ? "▾" : "›"}</span>
-              </button>
-              {cooldownExpanded && (
-                <div className="cooldown-guidance-content">
-                  <p className="cooldown-guidance-sub">Static stretches for {sessionMuscles.slice(0, 3).join(", ")}{sessionMuscles.length > 3 ? "…" : ""}</p>
-                  <ul className="cooldown-guidance-list">
-                    {stretches.slice(0, 8).map((s) => (
-                      <li key={s} className="cooldown-guidance-item">{s}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </section>
-          );
-        })()}
 
         <div className="finish-workout-actions">
           <button className="primary-button logger-finish-button" type="button" onClick={() => void handleSaveClick()} disabled={isSaving}>
@@ -8662,6 +8980,8 @@ function DevLandingPage({
   onSeedRepIQData,
   onSeedMuscleGap,
   onClearHistoryData,
+  onGoToFinishDraft,
+  onReseedDemoWorkouts,
 }: {
   resolvedTheme: string;
   onToggleTheme: () => void;
@@ -8672,6 +8992,8 @@ function DevLandingPage({
   onSeedRepIQData: () => void;
   onSeedMuscleGap: () => void;
   onClearHistoryData: () => void;
+  onGoToFinishDraft: () => void;
+  onReseedDemoWorkouts: () => void;
 }) {
   const views: { view: AppView; label: string; emoji: string }[] = [
     { view: "home",         label: "Home",          emoji: "🏠" },
@@ -8705,6 +9027,10 @@ function DevLandingPage({
                 <span>{label}</span>
               </button>
             ))}
+            <button type="button" className="dev-btn dev-btn-accent" onClick={onGoToFinishDraft}>
+              <span className="dev-btn-icon">✅</span>
+              <span>Finish Screen (6 exercises)</span>
+            </button>
           </div>
         </section>
 
@@ -8736,6 +9062,10 @@ function DevLandingPage({
             <button type="button" className="dev-btn dev-btn-accent" onClick={onSeedMuscleGap}>
               <span className="dev-btn-icon">🦵</span>
               <span>Muscle Gap (legs+core overdue)</span>
+            </button>
+            <button type="button" className="dev-btn dev-btn-accent" onClick={onReseedDemoWorkouts}>
+              <span className="dev-btn-icon">📸</span>
+              <span>Re-seed Demo Workouts</span>
             </button>
             <button type="button" className="dev-btn dev-btn-warn" onClick={onClearHistoryData}>
               <span className="dev-btn-icon">🗑️</span>
@@ -8885,6 +9215,51 @@ function OnboardingPage({
   };
   const recommendedSplits: SplitType[] = VALID_SPLITS_FOR_DAYS[daysPerWeek] ?? ["full_body"];
   const autoRecommendedSplit = pickSplitType(daysPerWeek, experience ?? "beginner");
+
+  // ── Profile-based schedule recommendation ────────────────────────────────
+  const scheduleRecommendation = useMemo(() => {
+    const exp = experience ?? "beginner";
+    const age = dateOfBirth ? Math.floor((Date.now() - new Date(dateOfBirth).getTime()) / (365.25 * 24 * 3600 * 1000)) : null;
+    const isOlder = age !== null && age >= 40;
+
+    // Base frequency by experience
+    let baseDays =
+      exp === "beginner" ? 3 :
+      exp === "intermediate" ? 4 : 5;
+
+    // Age adjustment
+    if (isOlder && exp !== "beginner") baseDays = Math.max(baseDays - 1, 3);
+
+    // Goal adjustment
+    if (goal === "fat_loss") baseDays = Math.min(baseDays + 1, 5);
+    if ((goal === "general_fitness" || goal === "improve_fitness" || goal === "stay_active") && exp === "intermediate") baseDays = Math.max(baseDays - 1, 3);
+
+    // Base session length by experience
+    let baseDuration =
+      exp === "beginner" ? 45 :
+      exp === "intermediate" ? 60 : 75;
+
+    // Age adjustment for duration
+    if (isOlder) baseDuration = Math.max(baseDuration - 15, 45);
+
+    // Snap duration to valid chip options [30, 45, 60, 75, 90]
+    const durationOptions = [30, 45, 60, 75, 90];
+    const snapDuration = durationOptions.reduce((prev, cur) =>
+      Math.abs(cur - baseDuration) < Math.abs(prev - baseDuration) ? cur : prev
+    );
+
+    return { days: baseDays, duration: snapDuration };
+  }, [experience, dateOfBirth, goal]);
+
+  // Apply recommendation once when user reaches step 5
+  const scheduleRecommendationApplied = useRef(false);
+  useEffect(() => {
+    if (step === 5 && !scheduleRecommendationApplied.current) {
+      scheduleRecommendationApplied.current = true;
+      setDaysPerWeek(scheduleRecommendation.days);
+      setSessionLength(scheduleRecommendation.duration);
+    }
+  }, [step, scheduleRecommendation]);
 
   // Reset split pref when days change makes it invalid
   useEffect(() => {
@@ -9310,20 +9685,23 @@ function OnboardingPage({
         <div className="ob-fields">
           {/* 1. Training sessions per week */}
           <div className="ob-field" ref={daysFieldRef}>
-            <label className="ob-field-label">Training sessions per week</label>
+            <div className="ob-field-label-row">
+              <label className="ob-field-label">Training sessions per week</label>
+              <span className="ob-recommended-badge">✦ Set for you</span>
+            </div>
             <div className="ob-days-strip">
               {[1, 2, 3, 4, 5, 6, 7].map((d) => (
                 <button
                   key={d}
                   type="button"
-                  className={`ob-day-btn ${daysPerWeek === d ? "is-active" : ""}`}
+                  className={`ob-day-btn ${daysPerWeek === d ? "is-active" : ""}${d === scheduleRecommendation.days ? " is-recommended" : ""}`}
                   onClick={() => { setDaysPerWeek(d); scrollToNextField(daysFieldRef); }}
                 >
                   {d}
                 </button>
               ))}
             </div>
-            <p className="ob-field-hint" style={{ marginTop: 8 }}>Follow a rotating cycle instead of a fixed week? You can set that up in the Planner.</p>
+            <p className="ob-field-hint" style={{ marginTop: 8 }}>Based on your experience and goal. Adjust freely — you can also set a rotating cycle in the Planner.</p>
           </div>
 
           {/* 2. Session length */}
@@ -9546,6 +9924,7 @@ function AddExercisePage({
   preFilterMuscle,
   replaceMode,
   smartReplacementMeta,
+  muscleFreshness,
 }: {
   templates: ExerciseDraft[];
   existingExerciseNames: string[];
@@ -9560,6 +9939,7 @@ function AddExercisePage({
   preFilterMuscle?: string;
   replaceMode?: boolean;
   smartReplacementMeta?: Record<string, { rank: number; score: number; matchReason: string }>;
+  muscleFreshness?: Record<string, MuscleStatus>;
 }) {
   const isEditingCustomExercise = Boolean(editorExercise);
   const [mode, setMode] = useState<AddExerciseMode>(editorExercise ? "create" : "browse");
@@ -9574,6 +9954,8 @@ function AddExercisePage({
   const [filterOpen, setFilterOpen] = useState(false);
   const [query, setQuery] = useState(replaceMode ? "" : (preFilterMuscle ?? ""));
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
+  const [recentlyAddedId, setRecentlyAddedId] = useState<string | null>(null);
+  const [recentlyAddedCollapsed, setRecentlyAddedCollapsed] = useState(false);
   const [showInWorkoutOnly, setShowInWorkoutOnly] = useState(false);
   const [showSelectedOnly, setShowSelectedOnly] = useState(false);
   const [customName, setCustomName] = useState(editorExercise?.name ?? "");
@@ -9721,8 +10103,31 @@ function AddExercisePage({
       return sortDirection === "asc" ? nameDelta : -nameDelta;
     });
 
+    if (!query && !showInWorkoutOnly && !showSelectedOnly && !replaceMode) {
+      const recentCustom = sorted
+        .filter((t) => t.id.startsWith("custom-"))
+        .sort((a, b) => {
+          const tsA = parseInt(a.id.split("-").pop() ?? "0") || 0;
+          const tsB = parseInt(b.id.split("-").pop() ?? "0") || 0;
+          if (tsB !== tsA) return tsB - tsA;
+          return a.name.localeCompare(b.name);
+        })
+        .slice(0, 10);
+      if (recentCustom.length > 0) {
+        const customIdSet = new Set(recentCustom.map((t) => t.id));
+        const rest = sorted.filter((t) => !customIdSet.has(t.id));
+        sorted.splice(0, sorted.length, ...recentCustom, ...rest);
+      }
+    } else if (recentlyAddedId) {
+      const idx = sorted.findIndex((t) => t.id === recentlyAddedId);
+      if (idx > 0) {
+        const [item] = sorted.splice(idx, 1);
+        sorted.unshift(item);
+      }
+    }
+
     return sorted;
-  }, [existingExerciseNames, query, replaceMode, selectedTemplateIds, showInWorkoutOnly, showSelectedOnly, smartReplacementMeta, sortDirection, sortMode, templateOrder, templates]);
+  }, [existingExerciseNames, query, recentlyAddedId, replaceMode, selectedTemplateIds, showInWorkoutOnly, showSelectedOnly, smartReplacementMeta, sortDirection, sortMode, templateOrder, templates]);
 
   function selectSortMode(nextMode: "alphabetical" | "frequency" | "library") {
     if (nextMode === sortMode) {
@@ -9866,7 +10271,7 @@ function AddExercisePage({
     customName.trim().length > 1 && customPrimaryMuscles.length > 0;
 
   const hasSearchQuery = query.trim().length > 0;
-  const existingTemplateNames = useMemo(() => templates.map((template) => template.name), [templates]);
+  const existingTemplateNames = useMemo(() => templates.map((t) => t.name), [templates]);
 
   function openCreateMode(prefilledName?: string) {
     if (isEditingCustomExercise) {
@@ -9937,9 +10342,13 @@ function AddExercisePage({
       setDuplicateNamePrompt(null);
       if (isEditingCustomExercise) {
         onBack();
+      } else if (replaceMode) {
+        onAddSelected([createdId]);
       } else {
+        setRecentlyAddedId(createdId);
+        setSelectedTemplateIds([]);
+        setQuery("");
         setMode("browse");
-        setCreateStep(1);
       }
     }
   }
@@ -10043,6 +10452,13 @@ function AddExercisePage({
     const alreadyInWorkout = existingExerciseNames.includes(template.name);
     const selectionIndex = selectedTemplateIds.indexOf(template.id);
     const replacementHint = smartReplacementMeta?.[template.id]?.matchReason;
+    // Freshness dot: check all primary muscles, take worst status (due > fading > fresh)
+    const primaryMuscles = (template.primaryMuscles?.length ? template.primaryMuscles : [template.primaryMuscle]).filter(Boolean);
+    const freshnessStatuses = muscleFreshness ? primaryMuscles.map(m => muscleFreshness[m] ?? "none") : [];
+    const dominantFreshness: MuscleStatus = freshnessStatuses.includes("due") ? "due"
+      : freshnessStatuses.includes("fading") ? "fading"
+      : freshnessStatuses.includes("fresh") ? "fresh" : "none";
+    const freshnessDotColor = dominantFreshness === "due" ? "#ef4444" : dominantFreshness === "fading" ? "#f59e0b" : dominantFreshness === "fresh" ? "#22c55e" : null;
 
     return (
       <article
@@ -10060,6 +10476,10 @@ function AddExercisePage({
             <div className="template-card-top">
               <strong>{template.name}</strong>
               <div className="template-card-statuses">
+                {freshnessDotColor && (
+                  <span className="freshness-dot" style={{ background: freshnessDotColor }}
+                    title={`Muscle is ${dominantFreshness}`} aria-label={`Muscle ${dominantFreshness}`} />
+                )}
                 {template.id.startsWith("custom-") && (
                   <span className="custom-exercise-badge" aria-label="Custom exercise">Mine</span>
                 )}
@@ -10097,6 +10517,12 @@ function AddExercisePage({
       </article>
     );
   };
+
+  const noFilterActive = !query && !showInWorkoutOnly && !showSelectedOnly && !replaceMode;
+  const myExercises = noFilterActive ? filteredTemplates.filter((t) => t.id.startsWith("custom-")) : [];
+  const allExercisesForBrowse = noFilterActive
+    ? filteredTemplates.filter((t) => !t.id.startsWith("custom-"))
+    : filteredTemplates;
 
   return (
     <main className="detail-page add-exercise-page">
@@ -10142,7 +10568,7 @@ function AddExercisePage({
                 {resolvedTheme === "dark" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
               </button>
             )}
-            {mode === "browse" && (
+            {mode === "browse" && !replaceMode && (
               <button
                 className="icon-button add-exercise-header-icon"
                 type="button"
@@ -10162,71 +10588,75 @@ function AddExercisePage({
           <>
             <div className="add-exercise-browse">
               <div className="add-exercise-toolbar">
-                <div className="add-exercise-tab-strip">
-                  <button
-                    type="button"
-                    className={`theme-choice add-exercise-tab ${browseTab === "all" ? "is-active" : ""}`}
-                    onClick={() => setBrowseTab("all")}
-                  >
-                    All Exercises
-                  </button>
-                  <button
-                    type="button"
-                    className={`theme-choice add-exercise-tab ${browseTab === "muscle" ? "is-active" : ""}`}
-                    onClick={() => setBrowseTab("muscle")}
-                  >
-                    By Muscle
-                  </button>
-                  <button
-                    type="button"
-                    className={`theme-choice add-exercise-tab ${browseTab === "type" ? "is-active" : ""}`}
-                    onClick={() => setBrowseTab("type")}
-                  >
-                    Types
-                  </button>
-                </div>
+                {!replaceMode && (
+                  <div className="add-exercise-tab-strip">
+                    <button
+                      type="button"
+                      className={`theme-choice add-exercise-tab ${browseTab === "all" ? "is-active" : ""}`}
+                      onClick={() => setBrowseTab("all")}
+                    >
+                      All Exercises
+                    </button>
+                    <button
+                      type="button"
+                      className={`theme-choice add-exercise-tab ${browseTab === "muscle" ? "is-active" : ""}`}
+                      onClick={() => setBrowseTab("muscle")}
+                    >
+                      By Muscle
+                    </button>
+                    <button
+                      type="button"
+                      className={`theme-choice add-exercise-tab ${browseTab === "type" ? "is-active" : ""}`}
+                      onClick={() => setBrowseTab("type")}
+                    >
+                      Types
+                    </button>
+                  </div>
+                )}
 
                 <div className="search-shell">
-                  <div className="search-shell-head">
-                    <div className="search-shell-head-left">
-                      <span className="selected-count-label">{selectedTemplateIds.length} <span className="selected-count-word">selected</span></span>
-                      <div className="quick-filter-row" aria-label="Quick exercise filters">
-                        <button
-                          type="button"
-                          className={`quick-filter-chip ${showInWorkoutOnly ? "is-active" : ""}`}
-                          onClick={() => setShowInWorkoutOnly((current) => !current)}
-                        >
-                          <span>In workout</span>
-                        </button>
-                        <button
-                          type="button"
-                          className={`quick-filter-chip ${showSelectedOnly ? "is-active" : ""}`}
-                          onClick={() => setShowSelectedOnly((current) => !current)}
-                        >
-                          <span>Selected</span>
-                        </button>
+                  {!replaceMode && (
+                    <div className="search-shell-head">
+                      <div className="search-shell-head-left">
+                        <span className="selected-count-label">{selectedTemplateIds.length} <span className="selected-count-word">selected</span></span>
+                        <div className="quick-filter-row" aria-label="Quick exercise filters">
+                          <button
+                            type="button"
+                            className={`quick-filter-chip ${showInWorkoutOnly ? "is-active" : ""}`}
+                            onClick={() => setShowInWorkoutOnly((current) => !current)}
+                          >
+                            <span>In workout</span>
+                          </button>
+                          <button
+                            type="button"
+                            className={`quick-filter-chip ${showSelectedOnly ? "is-active" : ""}`}
+                            onClick={() => setShowSelectedOnly((current) => !current)}
+                          >
+                            <span>Selected</span>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="search-shell-head-right">
+                        {(browseTab === "type" || browseTab === "muscle") && (
+                          <button
+                            type="button"
+                            className="template-group-toolbar-button"
+                            onClick={
+                              browseTab === "type" ? toggleAllTypeGroups : toggleAllMuscleGroups
+                            }
+                          >
+                            {browseTab === "type"
+                              ? expandedTypeKeys.length === typeGroupKeys.length
+                                ? "Collapse all"
+                                : "Expand all"
+                              : (expandedMuscleKeys ?? muscleGroupKeys).length === muscleGroupKeys.length
+                                ? "Collapse all"
+                                : "Expand all"}
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <div className="search-shell-head-right">
-                      {(browseTab === "type" || browseTab === "muscle") && (
-                        <button
-                          type="button"
-                          className="template-group-toolbar-button"
-                          onClick={
-                            browseTab === "type" ? toggleAllTypeGroups : toggleAllMuscleGroups
-                          }
-                        >
-                          {browseTab === "type"
-                            ? expandedTypeKeys.length === typeGroupKeys.length
-                              ? "Collapse all"
-                              : "Expand all"
-                            : (expandedMuscleKeys ?? muscleGroupKeys).length === muscleGroupKeys.length
-                              ? "Collapse all"
-                              : "Expand all"}
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  )}
                   <div className="search-input-shell">
                     <input
                       className="search-input"
@@ -10271,7 +10701,23 @@ function AddExercisePage({
                   <>
                     {browseTab === "all" && (
                       <>
-                        <div className="template-list">{filteredTemplates.map(renderTemplateCard)}</div>
+                        {myExercises.length > 0 && (
+                          <>
+                            <button
+                              className="browse-section-label browse-section-label--toggle"
+                              type="button"
+                              onClick={() => setRecentlyAddedCollapsed((c) => !c)}
+                            >
+                              Last Added (up to 10)
+                              <span className={`browse-section-chevron${recentlyAddedCollapsed ? " browse-section-chevron--collapsed" : ""}`}>‹</span>
+                            </button>
+                            {!recentlyAddedCollapsed && (
+                              <div className="template-list">{myExercises.map(renderTemplateCard)}</div>
+                            )}
+                            <p className="browse-section-label">All Exercises</p>
+                          </>
+                        )}
+                        <div className="template-list">{allExercisesForBrowse.map(renderTemplateCard)}</div>
                       </>
                     )}
 
@@ -10646,6 +11092,16 @@ function AddExercisePage({
                     ))}
                   </div>
                 </div>
+
+                {canCreateCustom && (
+                  <button
+                    className="primary-button create-save-inline-btn"
+                    type="button"
+                    onClick={handleCreateCustomSubmit}
+                  >
+                    {isEditingCustomExercise ? "Save Changes" : replaceMode ? "Save and Replace" : "Save Exercise"}
+                  </button>
+                )}
               </>
             )}
 
@@ -10657,7 +11113,7 @@ function AddExercisePage({
                     : "Select at least one primary muscle"}
                 </p>
               )}
-              {createStep === 1 ? (
+              {createStep === 1 && (
                 <>
                   <button
                     className="secondary-button"
@@ -10679,20 +11135,6 @@ function AddExercisePage({
                     onClick={continueToCreateStepTwo}
                   >
                     Continue
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button className="secondary-button" type="button" onClick={() => setCreateStep(1)}>
-                    Back
-                  </button>
-                  <button
-                    className="primary-button"
-                    type="button"
-                    disabled={!canCreateCustom}
-                    onClick={handleCreateCustomSubmit}
-                  >
-                    {isEditingCustomExercise ? "Save Changes" : "Save Exercise"}
                   </button>
                 </>
               )}
@@ -10995,34 +11437,33 @@ function InfoIcon({ onClick }: { onClick?: (e: React.MouseEvent<HTMLButtonElemen
 }
 
 // ── Bottom Navigation Bar ─────────────────────────────────────────────────────
-function BottomNav({ activeView, onNavigate, onMore }: { activeView: AppView; onNavigate: (view: "home" | "planner" | "insights") => void; onMore?: () => void }) {
+function BottomNav({ activeView, onNavigate, onMore }: { activeView: AppView; onNavigate: (view: "home" | "planner" | "insights" | "community") => void; onMore?: () => void }) {
   return (
     <nav className="bottom-nav" aria-label="Main navigation">
       <button className={`bottom-nav-tab${activeView === "home" ? " is-active" : ""}`} type="button" onClick={() => onNavigate("home")} aria-label="Home">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
         </svg>
-        <span>Home</span>
       </button>
       <button className={`bottom-nav-tab${activeView === "planner" ? " is-active" : ""}`} type="button" onClick={() => onNavigate("planner")} aria-label="Planner">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
         </svg>
-        <span>Planner</span>
       </button>
       <button className={`bottom-nav-tab${activeView === "insights" ? " is-active" : ""}`} type="button" onClick={() => onNavigate("insights")} aria-label="Insights">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
         </svg>
-        <span>Insights</span>
       </button>
-      <button className={`bottom-nav-tab${activeView === "more" ? " is-active" : ""}`} type="button" onClick={onMore} aria-label="More">
+      <button className={`bottom-nav-tab${activeView === "community" ? " is-active" : ""}`} type="button" onClick={() => onNavigate("community")} aria-label="Community">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <line x1="3" y1="6" x2="21" y2="6"/>
-          <line x1="3" y1="12" x2="21" y2="12"/>
-          <line x1="3" y1="18" x2="21" y2="18"/>
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
         </svg>
-        <span>More</span>
+      </button>
+      <button className="bottom-nav-tab" type="button" onClick={onMore} aria-label="Menu">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/>
+        </svg>
       </button>
     </nav>
   );
@@ -11031,6 +11472,25 @@ function BottomNav({ activeView, onNavigate, onMore }: { activeView: AppView; on
 // ── Muscle Heatmap ────────────────────────────────────────────────────────────
 
 type MuscleStatus = "fresh" | "fading" | "due" | "none";
+
+// ── Master Insights Well ──────────────────────────────────────────────────────
+// Computed once on every workout save, persisted to localStorage.
+// Logger and Planner read from this instead of recomputing.
+type InsightsWell = {
+  computedAt: string;
+  streak: number;
+  weekStreak: number;
+  currentZone: "progress" | "maintenance" | "plateau" | "missed";
+  zoneLabel: string;
+  goalScore: number;
+  thisWeek: { sessions: number; sets: number; volume: number; activeDayNumbers: number[] };
+  // Per canonical-muscle freshness (for Logger exercise picker dots)
+  muscleFreshness: Record<string, MuscleStatus>;
+  // Macro groups with ≥1 "due" muscle (for Generate Session badges)
+  dueMuscleGroups: string[];
+  // Movement patterns with 0 sets in last 28 days (for Generate Session hints)
+  missingMovements: string[];
+};
 
 const HEATMAP_MUSCLES = [
   "Chest", "Back", "Shoulders", "Core",
@@ -11082,13 +11542,18 @@ function HomeMuscleNudge({
   onTap: () => void;
 }) {
   const hasHistory = HEATMAP_MUSCLES.some((m) => coverage[m] !== "none");
-  const due = HEATMAP_MUSCLES.filter((m) => coverage[m] === "due");
+  const due = HEATMAP_MUSCLES.filter((m) => coverage[m] === "due" || (hasHistory && coverage[m] === "none"));
   if (!hasHistory || due.length === 0) return null;
 
+  const total_muscles = HEATMAP_MUSCLES.length;
   const display =
-    due.length <= 3
+    due.length >= total_muscles
+      ? "All muscles need attention"
+      : due.length >= 7
+      ? `${due.length} muscles need attention`
+      : due.length <= 3
       ? due.join(" · ")
-      : `${due.slice(0, 2).join(", ")} +${due.length - 2} more`;
+      : `${due.slice(0, 3).join(" · ")} +${due.length - 3} more`;
 
   return (
     <button
@@ -11618,7 +12083,10 @@ function PsychCaptureCard({
 
       {showRPE && (
         <div className="psych-capture-row">
-          <p className="psych-capture-row-label">Session effort (RPE)</p>
+          <div className="psych-rpe-header">
+            <p className="psych-capture-row-label">Session effort (RPE)</p>
+            <p className="psych-rpe-hint">1 = very easy · 10 = absolute max effort</p>
+          </div>
           <div className="psych-rpe-row">
             {RPE_VALUES.map((v) => (
               <button
@@ -11741,8 +12209,20 @@ function WorkoutReportPage({
 
         {data.note && (
           <section className="finish-workout-card">
-            <p className="label" style={{ marginBottom: 6 }}>Note</p>
+            <p className="label" style={{ marginBottom: 6 }}>Personal note</p>
             <p className="settings-note" style={{ margin: 0 }}>{data.note}</p>
+          </section>
+        )}
+        {data.shareNote && (
+          <section className="finish-workout-card">
+            {data.shareNoteIsQuote ? (
+              <blockquote className="workout-quote-block">
+                <p className="workout-quote-text">"{data.shareNote}"</p>
+                <footer className="workout-quote-author">— {data.authorName ?? "You"}, {formatSessionDate(data.date)}</footer>
+              </blockquote>
+            ) : (
+              <p className="workout-share-note-plain">{data.shareNote}</p>
+            )}
           </section>
         )}
 
@@ -11880,8 +12360,20 @@ function WorkoutHistoryDetailPage({
 
         {workout.note && (
           <section className="finish-workout-card">
-            <p className="label" style={{ marginBottom: 6 }}>Note</p>
+            <p className="label" style={{ marginBottom: 6 }}>Personal note</p>
             <p className="settings-note" style={{ margin: 0 }}>{workout.note}</p>
+          </section>
+        )}
+        {workout.shareNote && (
+          <section className="finish-workout-card">
+            {workout.shareNoteIsQuote ? (
+              <blockquote className="workout-quote-block">
+                <p className="workout-quote-text">"{workout.shareNote}"</p>
+                <footer className="workout-quote-author">— {workout.authorName ?? "You"}, {formatSessionDate(workout.date)}</footer>
+              </blockquote>
+            ) : (
+              <p className="workout-share-note-plain">{workout.shareNote}</p>
+            )}
           </section>
         )}
 
@@ -11904,35 +12396,1552 @@ function WorkoutHistoryDetailPage({
   );
 }
 
+// ── Chart helper ──────────────────────────────────────────────────────────────
+function weekStartOf(d: Date): Date {
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + diff);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+}
+
+function VolumeChart({ periods, title, granularity, onDrill, onAction }: {
+  periods: { label: string; volume: number; sessions: number }[];
+  title: string;
+  granularity: "day" | "week" | "month";
+  onDrill: () => void;
+  onAction?: () => void;
+}) {
+  const maxVol = Math.max(...periods.map(w => w.volume), 1);
+  const W = 280, H = 90;
+  const n = periods.length;
+  const barW = n <= 6 ? 30 : n <= 10 ? 22 : n <= 14 ? 14 : 10;
+  const gap = Math.max(2, (W - n * barW) / (n + 1));
+  const skipLabel = n > 12;
+
+  const lastW = [...periods].reverse().find(w => w.volume > 0);
+  const prevW = lastW ? [...periods].slice(0, periods.indexOf(lastW)).reverse().find(w => w.volume > 0) : undefined;
+  const periodWord = granularity === "day" ? "day" : granularity === "week" ? "week" : "month";
+  let insight = "No sessions recorded yet";
+  if (lastW && prevW) {
+    const delta = Math.round(((lastW.volume - prevW.volume) / prevW.volume) * 100);
+    insight = delta > 5 ? `Volume up ${delta}% vs prior ${periodWord}` : delta < -5 ? `Volume down ${Math.abs(delta)}% vs prior ${periodWord}` : `Volume steady ${periodWord}-on-${periodWord}`;
+  } else if (lastW) {
+    insight = `Best ${periodWord}: ${Math.round(lastW.volume / 1000)}t lifted`;
+  }
+
+  return (
+    <button type="button" className="az-viz-card" onClick={onDrill}>
+      <div className="az-viz-header">
+        <span className="az-viz-title">{title}</span>
+        <span className="az-viz-chevron">›</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="az-viz-svg" aria-hidden="true">
+        {periods.map((w, i) => {
+          const x = gap + i * (barW + gap);
+          const pct = w.volume / maxVol;
+          const barH = w.volume === 0 ? 3 : Math.max(6, pct * 68);
+          const y = 72 - barH;
+          const fill = w.volume === 0 ? "var(--line)" : pct >= 0.75 ? "#5a9e7a" : pct >= 0.4 ? "#c9973f" : "#8b9ab0";
+          const showLabel = !skipLabel || i % 2 === 0;
+          return (
+            <g key={i}>
+              <rect x={x} y={y} width={barW} height={barH} rx={4} fill={fill} opacity={0.9} />
+              {showLabel && <text x={x + barW / 2} y={H - 2} textAnchor="middle" fontSize={7} fill="var(--muted)">{w.label}</text>}
+            </g>
+          );
+        })}
+      </svg>
+      <p className="az-viz-insight">{insight}</p>
+    </button>
+  );
+}
+
+function MusclesMovementSliderCard({
+  muscleCoverage,
+  onDrill,
+  onAction,
+}: {
+  muscleCoverage: Record<string, string>;
+  onDrill: () => void;
+  onAction?: () => void;
+}) {
+  // Muscle coverage stats
+  const fresh = Object.entries(muscleCoverage).filter(([, s]) => s === "fresh");
+  const fading = Object.entries(muscleCoverage).filter(([, s]) => s === "fading");
+  const due = Object.entries(muscleCoverage).filter(([, s]) => s === "due" || s === "none");
+  const total = fresh.length + fading.length + due.length;
+  const pct = (n: number) => total ? (n / total) * 100 : 0;
+  const insight = due.length > 0
+    ? `${due.slice(0, 2).map(([m]) => m).join(" & ")}${due.length > 2 ? ` +${due.length - 2} more` : ""} need attention`
+    : total === 0 ? "No muscle data yet" : "All muscles covered";
+
+  return (
+    <div className="az-viz-card" onClick={onDrill} style={{ cursor: "pointer" }} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && onDrill()}>
+      <div className="az-viz-header">
+        <span className="az-viz-title">MUSCLE COVERAGE</span>
+        <span className="az-viz-chevron">›</span>
+      </div>
+      <div className="az-cov-bar-wrap">
+        {fresh.length > 0 && <div className="az-cov-seg az-cov-fresh" style={{ width: `${pct(fresh.length)}%` }} />}
+        {fading.length > 0 && <div className="az-cov-seg az-cov-fading" style={{ width: `${pct(fading.length)}%` }} />}
+        {due.length > 0 && <div className="az-cov-seg az-cov-due" style={{ width: `${pct(due.length)}%` }} />}
+        {total === 0 && <div className="az-cov-seg" style={{ width: "100%", background: "var(--line)" }} />}
+      </div>
+      <div className="az-cov-legend">
+        <span className="az-cov-chip az-cov-chip--fresh">{fresh.length} Fresh</span>
+        <span className="az-cov-chip az-cov-chip--fading">{fading.length} Fading</span>
+        <span className="az-cov-chip az-cov-chip--due">{due.length} Due</span>
+      </div>
+      <p className="az-viz-insight">{insight}</p>
+    </div>
+  );
+}
+
+function ExerciseProgressChart({ exerciseProgress, onDrill, onAction }: {
+  exerciseProgress: { status: string }[];
+  onDrill: () => void;
+  onAction?: () => void;
+}) {
+  const tracked = exerciseProgress.filter(e => e.status !== "insufficient_data");
+  const counts = {
+    improving: tracked.filter(e => e.status === "improving").length,
+    building: tracked.filter(e => e.status === "building").length,
+    stable: tracked.filter(e => e.status === "stable").length,
+    stalled: tracked.filter(e => e.status === "stalled").length,
+    regressing: tracked.filter(e => e.status === "regressing").length,
+  };
+  const total = tracked.length;
+  const positive = counts.improving + counts.building;
+  const segments = [
+    { key: "improving", color: "#5a9e7a", label: "Improving", count: counts.improving },
+    { key: "building", color: "#5b8db5", label: "Building", count: counts.building },
+    { key: "stable", color: "#8b9ab0", label: "Stable", count: counts.stable },
+    { key: "stalled", color: "#c9973f", label: "Stalled", count: counts.stalled },
+    { key: "regressing", color: "#b55b4a", label: "Regressing", count: counts.regressing },
+  ].filter(s => s.count > 0);
+  const insight = total === 0 ? "Need more sessions to track progress"
+    : positive >= Math.ceil(total * 0.6) ? `${positive} of ${total} exercises progressing`
+    : counts.stalled + counts.regressing > 0 ? `${counts.stalled + counts.regressing} exercise${counts.stalled + counts.regressing !== 1 ? "s" : ""} need attention`
+    : `${total} exercises tracked`;
+  return (
+    <button type="button" className="az-viz-card" onClick={onDrill}>
+      <div className="az-viz-header">
+        <span className="az-viz-title">EXERCISE PROGRESS</span>
+        <span className="az-viz-chevron">›</span>
+      </div>
+      <div className="az-prog-bar-wrap">
+        {total === 0
+          ? <div style={{ width: "100%", height: "100%", background: "var(--line)" }} />
+          : segments.map(s => <div key={s.key} className="az-prog-seg" style={{ width: `${(s.count / total) * 100}%`, background: s.color }} />)
+        }
+      </div>
+      <div className="az-prog-legend">
+        {segments.map(s => <span key={s.key} className="az-prog-chip" style={{ color: s.color }}>{s.count} {s.label}</span>)}
+      </div>
+      <p className="az-viz-insight">{insight}</p>
+    </button>
+  );
+}
+
+function MovementBarsCard({ movementPatternSets, onDrill, onAction: _onAction }: {
+  movementPatternSets: Record<string, number>;
+  onDrill: () => void;
+  onAction?: () => void;
+}) {
+  const [showInfo, setShowInfo] = useState(false);
+  const axisValues = MOVE_RADAR_AXES.map(axis =>
+    axis.keys.reduce((sum, k) => sum + (movementPatternSets[k] ?? 0), 0)
+  );
+  const moveMaxVal = Math.max(...axisValues, 1);
+  const totalSets = axisValues.reduce((a, b) => a + b, 0);
+  const cx = 140, cy = 90, r = 58;
+  const angleStep = (2 * Math.PI) / MOVE_RADAR_AXES.length;
+  const toPoint = (i: number, norm: number): [number, number] => {
+    const angle = -Math.PI / 2 + i * angleStep;
+    return [cx + Math.cos(angle) * r * norm, cy + Math.sin(angle) * r * norm];
+  };
+  const radarPts = MOVE_RADAR_AXES.map((_, i) =>
+    toPoint(i, Math.min(axisValues[i] / moveMaxVal, 1)).join(",")
+  ).join(" ");
+  const missingAxes = MOVE_RADAR_AXES.filter((_, i) => axisValues[i] === 0).map(a => a.shortLabel);
+  const insight = totalSets === 0
+    ? "No movement data yet"
+    : missingAxes.length === 0
+    ? "All movement patterns covered"
+    : `Missing: ${missingAxes.slice(0, 2).join(", ")}${missingAxes.length > 2 ? ` +${missingAxes.length - 2}` : ""}`;
+
+  return (
+    <div className="az-viz-card" role="button" tabIndex={0}
+      onClick={onDrill} onKeyDown={e => e.key === "Enter" && onDrill()}
+      style={{ cursor: "pointer", userSelect: "none" }}>
+      <div className="az-viz-header">
+        <span className="az-viz-title">MOVEMENT BALANCE</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <InfoIcon onClick={e => { e.stopPropagation(); setShowInfo(v => !v); }} />
+          <span className="az-viz-chevron">›</span>
+        </div>
+      </div>
+
+      {/* Info overlay — explains which exercises are excluded */}
+      {showInfo && (
+        <div className="az-info-overlay" onClick={e => { e.stopPropagation(); setShowInfo(false); }}>
+          <div className="az-info-overlay-card" onClick={e => e.stopPropagation()}>
+            <p className="az-info-overlay-title">What's counted here?</p>
+            <p className="az-info-text">
+              Only exercises with a <strong>known movement pattern</strong> are included in this chart.<br /><br />
+              <strong>Not counted:</strong><br />
+              · Cardio (e.g. Treadmill Run, Stationary Bike)<br />
+              · Stretching (e.g. Hip Flexor Stretch, Chest Stretch)<br />
+              · Custom exercises without a pattern assigned
+            </p>
+            <button type="button" className="az-info-overlay-close"
+              onClick={e => { e.stopPropagation(); setShowInfo(false); }}>Got it</button>
+          </div>
+        </div>
+      )}
+
+      <svg viewBox="0 0 280 178" className="az-radar-svg" aria-hidden="true">
+        {[0.25, 0.5, 0.75, 1.0].map(lv => (
+          <polygon key={lv} points={MOVE_RADAR_AXES.map((_, i) => toPoint(i, lv).join(",")).join(" ")}
+            fill="none" stroke="var(--line)" strokeWidth="1.2" />
+        ))}
+        {MOVE_RADAR_AXES.map((_, i) => {
+          const [x, y] = toPoint(i, 1);
+          return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke="var(--line)" strokeWidth="1.2" />;
+        })}
+        {totalSets > 0 && (
+          <polygon points={radarPts} fill="#5b8db5" fillOpacity="0.35" stroke="#5b8db5" strokeWidth="3" strokeLinejoin="round" />
+        )}
+        {MOVE_RADAR_AXES.map((a, i) => {
+          const [x, y] = toPoint(i, 1.4);
+          return <text key={i} x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize="10" fontWeight="600" fill="var(--muted)">{a.label}</text>;
+        })}
+      </svg>
+      <p className="az-viz-insight">{insight}</p>
+    </div>
+  );
+}
+
+const RADAR_MUSCLE_GROUPS = ["Chest", "Back", "Shoulders", "Arms", "Core", "Quads", "Hamstrings/Glutes", "Calves"] as const;
+
+function getMuscleMacroGroup(canonical: string): string | null {
+  if (canonical === "Chest") return "Chest";
+  if (canonical === "Back") return "Back";
+  if (canonical === "Shoulders") return "Shoulders";
+  if (canonical === "Biceps" || canonical === "Triceps") return "Arms";
+  if (canonical === "Core") return "Core";
+  if (canonical === "Quads") return "Quads";
+  if (canonical === "Hamstrings" || canonical === "Glutes") return "Hamstrings/Glutes";
+  if (canonical === "Calves") return "Calves";
+  return null;
+}
+
+const MOVE_RADAR_AXES = [
+  { label: "V-Push",  shortLabel: "Vertical Push",     keys: ["vertical_push"] },
+  { label: "V-Pull",  shortLabel: "Vertical Pull",     keys: ["vertical_pull"] },
+  { label: "H-Push",  shortLabel: "Horizontal Push",   keys: ["horizontal_push"] },
+  { label: "H-Pull",  shortLabel: "Horizontal Pull",   keys: ["horizontal_pull"] },
+  { label: "Squat",   shortLabel: "Knee Dominant",     keys: ["squat", "lunge"] },
+  { label: "Hinge",   shortLabel: "Hip Dominant",      keys: ["hip_hinge"] },
+  { label: "Cardio",  shortLabel: "Cardio",            keys: ["cardio"] },
+];
+
+// Standard share of total weekly sets each macro muscle group should receive
+// Derived from balanced hypertrophy/strength principles; can be goal-adjusted in future
+const STANDARD_MUSCLE_SHARE: Record<string, number> = {
+  Chest:               16,
+  Back:                22,
+  Shoulders:           12,
+  Arms:                10,
+  Core:                 8,
+  Quads:               14,
+  "Hamstrings/Glutes": 14,
+  Calves:               4,
+};
+
+// Returns normalized score per group: 100 = on target, 50 = half the expected share, 150 = 1.5× expected
+function normalizeMuscleShare(counts: Record<string, number>): Record<string, number> {
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  if (total === 0) return Object.fromEntries(Object.keys(STANDARD_MUSCLE_SHARE).map(k => [k, 0]));
+  const result: Record<string, number> = {};
+  for (const [group, standardPct] of Object.entries(STANDARD_MUSCLE_SHARE)) {
+    const actualPct = ((counts[group] ?? 0) / total) * 100;
+    result[group] = Math.round((actualPct / standardPct) * 100);
+  }
+  return result;
+}
+
+function MusclesMovementRadarCard({ thisMonth, prevMonth, totalFilteredSets = 0, comparisonLabel, onDrill, onAction }: {
+  thisMonth: Record<string, number>;
+  prevMonth: Record<string, number>;
+  totalFilteredSets?: number;
+  comparisonLabel?: string;
+  onDrill: () => void;
+  onAction?: () => void;
+}) {
+  const [slide, setSlide] = useState(0);
+  const [showInfo, setShowInfo] = useState(false);
+  const touchStartX = useRef<number | null>(null);
+  const didSwipe = useRef(false);
+
+  const thisNormalized = normalizeMuscleShare(thisMonth);
+  const prevNormalized = normalizeMuscleShare(prevMonth);
+  const hasPrevMuscle = Object.values(prevMonth).some(v => v > 0);
+  const totalThis = Object.values(thisMonth).reduce((a, b) => a + b, 0);
+  const totalPrev = Object.values(prevMonth).reduce((a, b) => a + b, 0);
+  const groups = RADAR_MUSCLE_GROUPS as unknown as string[];
+  const N = groups.length; // now 8
+
+  // ── Swipe (pointer events work on both mouse and touch) ───────────────────
+  const handleTouchStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    touchStartX.current = e.clientX; didSwipe.current = false;
+  };
+  const handleTouchEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (touchStartX.current === null) return;
+    const dx = e.clientX - touchStartX.current;
+    if (Math.abs(dx) > 40) { didSwipe.current = true; setSlide(p => dx < 0 ? Math.min(1, p + 1) : Math.max(0, p - 1)); }
+    touchStartX.current = null;
+  };
+  const handleCardClick = () => { if (!didSwipe.current) onDrill(); };
+
+  // ── Spider chart (slide 0) ─────────────────────────────────────────────────
+  // CY=103 gives ≥10 px clearance for top (Chest) and bottom (Core) axis labels+% text
+  // viewBox height 215 is required: CY + R + labelOffset + textHalfHeight = 103+72+16+8=199 < 215
+  const CX = 170, CY = 103, R = 72, PCT_MAX = 50;
+  const angleOf = (i: number) => (i / N) * 2 * Math.PI - Math.PI / 2;
+  const ptOf = (pct: number, i: number): [number, number] => {
+    const r = (Math.min(Math.max(pct, 0), PCT_MAX) / PCT_MAX) * R;
+    const a = angleOf(i);
+    return [CX + r * Math.cos(a), CY + r * Math.sin(a)];
+  };
+  const rawPct = (counts: Record<string, number>, g: string, total: number) =>
+    total === 0 ? 0 : (counts[g] ?? 0) / total * 100;
+  const polyPts = (getPct: (g: string) => number) =>
+    groups.map((g, i) => ptOf(getPct(g), i).join(",")).join(" ");
+  const gridRings = [0.25, 0.5, 0.75, 1].map(f => R * f);
+  const labelPos = (i: number): [number, number] => {
+    const a = angleOf(i);
+    return [CX + (R + 16) * Math.cos(a), CY + (R + 16) * Math.sin(a)];
+  };
+
+  // ── Vertical bar chart (slide 1) ──────────────────────────────────────────
+  // viewBox "0 0 240 150": extra height accommodates angled labels
+  const VCL = 44, VCR = 394, VCT = 30, VCB = 112, VCH = VCB - VCT; // chart area (wide viewBox, VCT=30 for label room above tallest bars)
+  const Y_MAX = 150;
+  const slotW = (VCR - VCL) / N;  // ≈ 43.75 for N=8
+  const BAR_W = 15, BAR_GAP = 3, PAIR_W = BAR_W * 2 + BAR_GAP;  // PAIR_W = 33
+  const SHORT: Record<string, string> = {
+    Chest: "Chest", Back: "Back", Shoulders: "Shldr", Arms: "Arms",
+    Core: "Core", Quads: "Quads", "Hamstrings/Glutes": "H/Glutes", Calves: "Calves",
+  };
+  const scoreColor = (s: number) =>
+    s >= 90 ? "#5a9e7a" : s >= 65 ? "#c9973f" : s > 0 ? "#b55b4a" : "var(--layer)";
+
+  const SLIDE_TITLES = ["MUSCLE DISTRIBUTION", "MUSCLE GOAL ACHIEVED"];
+
+  return (
+    <div className="az-viz-card" role="button" tabIndex={0}
+      onClick={handleCardClick} onKeyDown={e => e.key === "Enter" && onDrill()}
+      onPointerDown={handleTouchStart} onPointerUp={handleTouchEnd} onPointerCancel={() => { touchStartX.current = null; }}
+      style={{ cursor: "pointer", userSelect: "none" }}>
+
+      {/* Header — slide title + dots inline + right controls */}
+      <div className="az-viz-header">
+        <div className="az-viz-title-row">
+          <span className="az-viz-title">{SLIDE_TITLES[slide]}</span>
+          {/* Slide dots live in the header so they don't consume a full row below the chart */}
+          <div className="az-slide-dots-inline" onClick={e => e.stopPropagation()}>
+            {[0, 1].map(i => (
+              <button key={i} type="button"
+                className={`az-slide-dot${slide === i ? " is-active" : ""}`}
+                onClick={e => { e.stopPropagation(); setSlide(i); setShowInfo(false); }}
+                aria-label={SLIDE_TITLES[i]} />
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {slide === 1 && (
+            <InfoIcon onClick={e => { e.stopPropagation(); setShowInfo(v => !v); }} />
+          )}
+          <span className="az-viz-chevron">›</span>
+        </div>
+      </div>
+
+      {comparisonLabel && <p className="az-comparison-label">{comparisonLabel}</p>}
+
+      {/* Info overlay */}
+      {showInfo && slide === 1 && (
+        <div className="az-info-overlay" onClick={e => { e.stopPropagation(); setShowInfo(false); }}>
+          <div className="az-info-overlay-card" onClick={e => e.stopPropagation()}>
+            <p className="az-info-overlay-title">How is this calculated?</p>
+            <p className="az-info-text">
+              <strong>Score = (your share ÷ target share) × 100</strong><br /><br />
+              Each muscle group has a target % of total sets. For example, Arms target = 10%.
+              If you did 12% of all sets on Arms:<br /><br />
+              12 ÷ 10 × 100 = <strong>120%</strong> — 20% over target.<br /><br />
+              100% = exactly on target. &lt;65% = undertrained for that group.
+            </p>
+            <button type="button" className="az-info-overlay-close"
+              onClick={() => setShowInfo(false)}>Got it</button>
+          </div>
+        </div>
+      )}
+
+      {totalThis === 0 ? (
+        <p className="az-balance-empty">No sets logged in this period</p>
+      ) : slide === 0 ? (
+
+        /* ── Slide 0: Spider / distribution ─────────────────────── */
+        <div className="az-slide-panel">
+          <div className="az-spider-row">
+            <svg viewBox="0 0 340 215" className="az-muscle-spider-svg">
+              {gridRings.map((r, ri) => (
+                <circle key={ri} cx={CX} cy={CY} r={r} fill="none"
+                  stroke="var(--line)" strokeWidth="1.2" opacity="0.7" />
+              ))}
+              {groups.map((_, i) => {
+                const [x, y] = ptOf(PCT_MAX, i);
+                return <line key={i} x1={CX} y1={CY} x2={x} y2={y}
+                  stroke="var(--line)" strokeWidth="1.2" opacity="0.7" />;
+              })}
+              <polygon points={polyPts(g => STANDARD_MUSCLE_SHARE[g] ?? 0)}
+                fill="var(--accent)" fillOpacity="0.07"
+                stroke="var(--accent)" strokeWidth="2" strokeDasharray="5 3" strokeOpacity="0.45" />
+              {hasPrevMuscle && totalPrev > 0 && (
+                <polygon points={polyPts(g => rawPct(prevMonth, g, totalPrev))}
+                  fill="#8b9ab0" fillOpacity="0.12" stroke="#8b9ab0" strokeWidth="2" strokeOpacity="0.6" />
+              )}
+              <polygon points={polyPts(g => rawPct(thisMonth, g, totalThis))}
+                fill="var(--accent)" fillOpacity="0.22" stroke="var(--accent)" strokeWidth="3" />
+              {groups.map((g, i) => {
+                const [lx, ly] = labelPos(i);
+                const pct = Math.round(rawPct(thisMonth, g, totalThis));
+                // Shorten label for 8-axis chart to avoid crowding
+                const shortLabel = g === "Hamstrings/Glutes" ? "H/Glutes" : g;
+                return (
+                  <g key={g}>
+                    <text x={lx} y={ly - 7} textAnchor="middle" dominantBaseline="middle"
+                      fontSize="12" fill="var(--muted)" fontWeight="700" fontFamily="inherit">{shortLabel}</text>
+                    <text x={lx} y={ly + 8} textAnchor="middle" dominantBaseline="middle"
+                      fontSize="12" fill="var(--ink)" fontWeight="600" fontFamily="inherit">{pct}%</text>
+                  </g>
+                );
+              })}
+            </svg>
+            {/* Legend on the right — no longer overlaps the chart */}
+            <div className="az-spider-legend">
+              <div className="az-spider-legend-item">
+                <div className="az-spider-legend-swatch" style={{ background: "var(--accent)", opacity: 0.8 }} />
+                <span>This period</span>
+              </div>
+              {hasPrevMuscle && totalPrev > 0 && (
+                <div className="az-spider-legend-item">
+                  <div className="az-spider-legend-swatch" style={{ background: "#8b9ab0" }} />
+                  <span>Prior period</span>
+                </div>
+              )}
+              <div className="az-spider-legend-item">
+                <div className="az-spider-legend-swatch"
+                  style={{ border: "1.5px dashed var(--accent)", background: "transparent", opacity: 0.6 }} />
+                <span>Target split</span>
+              </div>
+              <div className="az-spider-legend-sets"
+                title={totalFilteredSets > totalThis ? `${totalFilteredSets - totalThis} sets from exercises with unrecognised muscle groups are excluded` : undefined}>
+                {totalFilteredSets > 0 && totalThis < totalFilteredSets
+                  ? `${totalThis} / ${totalFilteredSets} sets`
+                  : `${totalThis} sets`}
+              </div>
+            </div>
+          </div>
+        </div>
+
+      ) : (
+
+        /* ── Slide 1: Vertical bar chart ─────────────────────────── */
+        <div className="az-slide-panel">
+          <svg viewBox="0 0 400 158" className="az-muscle-vbar-svg">
+            {/* Y-axis reference lines + labels (inside SVG, scales proportionally) */}
+            {([50, 100, 150] as const).map(pct => {
+              const y = VCB - (pct / Y_MAX) * VCH;
+              const is100 = pct === 100;
+              return (
+                <g key={pct}>
+                  <line x1={VCL} y1={y} x2={VCR} y2={y}
+                    stroke={is100 ? "var(--accent)" : "var(--line)"}
+                    strokeWidth={is100 ? 1.5 : 0.7}
+                    strokeDasharray={is100 ? "none" : "4 3"}
+                    opacity={is100 ? 0.7 : 0.5} />
+                  <text x={VCL - 4} y={y} textAnchor="end" dominantBaseline="middle"
+                    fontSize="11" fontFamily="inherit"
+                    fill={is100 ? "var(--accent)" : "var(--muted)"}
+                    fontWeight={is100 ? "700" : "500"}>{pct}%</text>
+                </g>
+              );
+            })}
+
+            {/* Bars + labels (all in stretched space) */}
+            {groups.map((g, i) => {
+              const thisScore = thisNormalized[g] ?? 0;
+              const prevScore = prevNormalized[g] ?? 0;
+              const slotX = VCL + i * slotW;
+              const pairX = slotX + (slotW - PAIR_W) / 2;
+              const thisBarX = pairX;
+              const prevBarX = pairX + BAR_W + BAR_GAP;
+              const thisH = (Math.min(thisScore, Y_MAX) / Y_MAX) * VCH;
+              const prevH = (Math.min(prevScore, Y_MAX) / Y_MAX) * VCH;
+              const color = scoreColor(thisScore);
+              const centerX = slotX + slotW / 2;
+              // Always 10 units above bar top — VCT=30 guarantees room even for 150% bars
+              const labelY = VCB - thisH - 10;
+
+              return (
+                <g key={g}>
+                  {hasPrevMuscle && prevScore > 0 && (
+                    <rect x={prevBarX} y={VCB - prevH} width={BAR_W}
+                      height={Math.max(prevH, 1)} rx="2" fill="#8b9ab0" opacity="0.35" />
+                  )}
+                  {thisScore > 0 && (
+                    <rect x={thisBarX} y={VCB - thisH} width={BAR_W}
+                      height={Math.max(thisH, 1)} rx="2" fill={color} />
+                  )}
+                  {thisScore > 0 && (
+                    <text x={thisBarX + BAR_W / 2} y={labelY}
+                      textAnchor="middle" dominantBaseline="middle"
+                      fontSize="11" fontWeight="500" fill="var(--ink)" fontFamily="inherit">
+                      {thisScore > 150 ? "150+" : `${thisScore}%`}
+                    </text>
+                  )}
+                  <text
+                    transform={`rotate(-38, ${centerX}, ${VCB + 6})`}
+                    x={centerX} y={VCB + 6}
+                    textAnchor="end" dominantBaseline="middle"
+                    fontSize="10" fontWeight="600" fill="var(--muted)" fontFamily="inherit">
+                    {SHORT[g] ?? g}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+          {/* Slide-1 legend: horizontal row below the chart */}
+          <div className="az-spider-legend az-spider-legend--bar">
+            <div className="az-spider-legend-item">
+              <div className="az-spider-legend-swatch" style={{ background: "#5a9e7a" }} />
+              <span>This period</span>
+            </div>
+            {hasPrevMuscle && (
+              <div className="az-spider-legend-item">
+                <div className="az-spider-legend-swatch" style={{ background: "#8b9ab0", opacity: 0.6 }} />
+                <span>Prior period</span>
+              </div>
+            )}
+            <div className="az-spider-legend-item" style={{ color: "var(--accent)" }}>
+              <span>— 100% = on target</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Slide dots moved to header — nothing here */}
+
+    </div>
+  );
+}
+
+// ── Adaptive frequency-grid helpers ──────────────────────────────────────────
+function toLocalDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+type FreqBucket = { label: string; start: Date; end: Date; counts: number[] /* Mon=0…Sun=6 */ };
+
+function buildFreqBuckets(workouts: SavedWorkoutData[], today: Date, maxCols?: number): FreqBucket[] {
+  if (workouts.length === 0) return [];
+  const msPerDay = 86_400_000;
+  const oldest = workouts.reduce((min, w) => (w.date < min ? w.date : min), workouts[0].date);
+  const oldestDate = new Date(oldest + "T12:00:00");
+  const totalDays = Math.ceil((today.getTime() - oldestDate.getTime()) / msPerDay) + 1;
+
+  // Determine bucket granularity
+  let bucketDays: number;
+  if      (totalDays <= 42)  bucketDays = 7;   // weekly
+  else if (totalDays <= 90)  bucketDays = 14;  // bi-weekly
+  else if (totalDays <= 200) bucketDays = 30;  // monthly
+  else                       bucketDays = 60;  // bi-monthly
+
+  // Build bucket start dates, aligned to week/month boundaries
+  const buckets: FreqBucket[] = [];
+  let cursor = new Date(oldestDate);
+  if (bucketDays === 7 || bucketDays === 14) {
+    // Align to Monday
+    const dow = cursor.getDay();
+    cursor.setDate(cursor.getDate() - (dow === 0 ? 6 : dow - 1));
+  } else {
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  }
+  cursor.setHours(0, 0, 0, 0);
+
+  while (cursor <= today) {
+    const start = new Date(cursor);
+    let end: Date;
+    if (bucketDays <= 14) {
+      end = new Date(start.getTime() + bucketDays * msPerDay);
+    } else if (bucketDays === 30) {
+      end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    } else {
+      end = new Date(start.getFullYear(), start.getMonth() + 2, 1);
+    }
+    end.setHours(0, 0, 0, 0);
+
+    // Count sessions per day-of-week within this bucket
+    const counts = new Array(7).fill(0) as number[];
+    for (const w of workouts) {
+      const d = new Date(w.date + "T12:00:00");
+      if (d >= start && d < end) {
+        const dow = d.getDay();
+        counts[dow === 0 ? 6 : dow - 1]++;
+      }
+    }
+
+    // Format label
+    let label: string;
+    if (bucketDays <= 14) {
+      label = start.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    } else if (bucketDays === 30) {
+      label = start.toLocaleDateString("en-US", { month: "short" });
+    } else {
+      const endMonth = new Date(end.getTime() - msPerDay);
+      const s = start.toLocaleDateString("en-US", { month: "short" });
+      const e = endMonth.toLocaleDateString("en-US", { month: "short" });
+      label = s === e ? s : `${s}–${e}`;
+    }
+
+    buckets.push({ label, start, end, counts });
+    cursor = new Date(end);
+  }
+
+  return maxCols ? buckets.slice(-maxCols) : buckets;
+}
+
+function FreqGrid({ buckets, compact }: { buckets: FreqBucket[]; compact?: boolean }) {
+  const maxCount = Math.max(...buckets.flatMap(b => b.counts), 1);
+  const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const DAY_SHORT  = ["M",   "T",   "W",   "T",   "F",   "S",   "S"];
+
+  if (buckets.length === 0) {
+    return <p className="az-balance-empty">No sessions yet — start training!</p>;
+  }
+
+  return (
+    <div className={`az-freq-grid${compact ? " az-freq-grid--compact" : ""}`}>
+      {/* Column header row */}
+      <div className="az-freq-header-row">
+        <div className="az-freq-day-col" />
+        {buckets.map((b, i) => (
+          <div key={i} className="az-freq-col-label">{b.label}</div>
+        ))}
+      </div>
+      {/* One row per day of week */}
+      {DAY_LABELS.map((day, di) => (
+        <div key={day} className="az-freq-row">
+          <div className="az-freq-day-label">{compact ? DAY_SHORT[di] : day}</div>
+          {buckets.map((b, bi) => {
+            const count = b.counts[di];
+            const alpha = count === 0 ? 0 : 0.18 + 0.82 * (count / maxCount);
+            return (
+              <div key={bi} className={`az-freq-cell${count > 0 ? " is-active" : ""}`}
+                style={count > 0 ? { background: `rgba(91, 141, 181, ${alpha})` } : undefined}>
+                {count > 0 && <span className="az-freq-count">{count}</span>}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── TrainingHeatmapChart helpers ─────────────────────────────────────────────
+
+function fmtRowLabel(dateStr: string): string {
+  const [, mo, d] = dateStr.split("-").map(Number);
+  return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][mo - 1]} ${d}`;
+}
+
+/** Shared RPE lookup: reads stored psych records once and returns a map + fallback */
+function buildRpeMap(): { rpeBySession: Map<string, number>; fallbackRPE: number } {
+  const psychRecords = getStoredPostWorkoutPsych();
+  const rpeBySession = new Map<string, number>();
+  for (const r of psychRecords) {
+    if (r.sessionRPE !== null) rpeBySession.set(r.sessionId, r.sessionRPE);
+  }
+  const vals = Array.from(rpeBySession.values());
+  const fallbackRPE = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 7;
+  return { rpeBySession, fallbackRPE };
+}
+
+type IntensityCell = { intensity: number; pct: number };
+type IntensityRow  = { label: string; cells: IntensityCell[] };
+
+/**
+ * Build intensity rows for the heatmap.
+ * - periodDays ≤ 35  →  1 row per actual week (up to 5 rows), week-aligned to Mon
+ * - periodDays > 35 or null (all time)  →  exactly 7 rows, time span divided evenly
+ * All time uses first-session → today as the span.
+ */
+function buildIntensityRows(
+  savedWorkouts: SavedWorkoutData[],
+  periodDays: number | null,
+  rpeBySession: Map<string, number>,
+  fallbackRPE: number,
+): IntensityRow[] {
+  const today = new Date();
+  const use7Grid = periodDays === null || periodDays > 35;
+
+  let numRows: number;
+  let rowDays: number;  // days per row (may be fractional for 7-grid)
+  let spanStart: Date;  // earliest point we care about
+
+  if (!use7Grid) {
+    // ≤1 month: week-aligned rows anchored to the Monday containing the filter period start,
+    // NOT this week's Monday — so sessions at the start of the period aren't cut off.
+    const periodStart = new Date(today.getTime() - (periodDays! - 1) * 86400000);
+    periodStart.setHours(0, 0, 0, 0);
+    spanStart = weekStartOf(periodStart);  // Monday of week that contains filter start
+    numRows = Math.min(Math.ceil(periodDays! / 7), 5);
+    rowDays = 7;
+  } else {
+    // >1 month or all time: fixed 7-row grid, span divided evenly
+    numRows = 7;
+    if (periodDays === null) {
+      if (savedWorkouts.length === 0) {
+        spanStart = new Date(today.getTime() - 48 * 86400000);
+      } else {
+        const oldest = savedWorkouts.reduce((m, w) => w.date < m ? w.date : m, savedWorkouts[0].date);
+        spanStart = new Date(oldest + "T00:00:00");
+      }
+    } else {
+      spanStart = new Date(today.getTime() - (periodDays - 1) * 86400000);
+      spanStart.setHours(0, 0, 0, 0);
+    }
+    const totalDays = Math.max(Math.ceil((today.getTime() - spanStart.getTime()) / 86400000) + 1, 7);
+    rowDays = totalDays / 7;
+  }
+
+  const rows: IntensityRow[] = [];
+  for (let r = 0; r < numRows; r++) {
+    const rowStart = new Date(spanStart.getTime() + r * rowDays * 86400000);
+    const rowEnd   = r === numRows - 1
+      ? today
+      : new Date(spanStart.getTime() + (r + 1) * rowDays * 86400000 - 86400000);
+    const rsStr = toLocalDateStr(rowStart);
+    const reStr = toLocalDateStr(rowEnd);
+
+    const rowWorkouts = savedWorkouts.filter(w => w.date >= rsStr && w.date <= reStr);
+    const cells: IntensityCell[] = [0, 1, 2, 3, 4, 5, 6].map(dow => {
+      const ws = rowWorkouts.filter(w => {
+        const d = new Date(w.date + "T12:00:00").getDay();
+        return (d === 0 ? 6 : d - 1) === dow;
+      });
+      const intensity = ws.reduce((sum, w) => {
+        const rpe = rpeBySession.get(w.savedAt) ?? fallbackRPE;
+        return sum + w.totalVolume * (rpe / 10);
+      }, 0);
+      return { intensity, pct: 0 };
+    });
+    rows.push({ label: fmtRowLabel(rsStr), cells });
+  }
+
+  // Min-max normalise on active cells + √ curve for visual contrast
+  const activeVals = rows.flatMap(r => r.cells.map(c => c.intensity)).filter(v => v > 0);
+  const minI = activeVals.length > 1 ? Math.min(...activeVals) * 0.6 : 0;
+  const maxI = Math.max(...activeVals, 1);
+  return rows.map(r => ({
+    ...r,
+    cells: r.cells.map(c => ({
+      ...c,
+      pct: c.intensity > 0 ? Math.sqrt(Math.max((c.intensity - minI) / (maxI - minI), 0)) : 0,
+    })),
+  }));
+}
+
+/** Shared bar + heatmap JSX for both card and drill-down views */
+function FreqLineChart({ dayCounts, bestDayIdx, VW = 280, CHART_H = 82 }: {
+  dayCounts: number[]; bestDayIdx: number; VW?: number; CHART_H?: number;
+}) {
+  const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+  const maxCount = Math.max(...dayCounts, 1);
+  const PAD_L = 6, PAD_R = 6, PAD_T = 16, PAD_B = 18;
+  const plotW = VW - PAD_L - PAD_R;
+  const plotH = CHART_H - PAD_T - PAD_B;
+  const ptX = (i: number) => PAD_L + (i / 6) * plotW;
+  const ptY = (v: number) => PAD_T + plotH - (v / maxCount) * plotH;
+  const linePoints = dayCounts.map((c, i) => `${ptX(i)},${ptY(c)}`).join(" ");
+  const areaPath = [
+    `M ${ptX(0)},${PAD_T + plotH}`,
+    ...dayCounts.map((c, i) => `L ${ptX(i)},${ptY(c)}`),
+    `L ${ptX(6)},${PAD_T + plotH}`,
+    "Z",
+  ].join(" ");
+  return (
+    <svg viewBox={`0 0 ${VW} ${CHART_H}`} className="az-freq-bar-svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="freqFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#5b8db5" stopOpacity="0.30" />
+          <stop offset="100%" stopColor="#5b8db5" stopOpacity="0.03" />
+        </linearGradient>
+      </defs>
+      {/* Filled area under line */}
+      <path d={areaPath} fill="url(#freqFill)" />
+      {/* Line */}
+      <polyline points={linePoints} fill="none" stroke="#5b8db5" strokeWidth="2"
+        strokeLinejoin="round" strokeLinecap="round" />
+      {/* Dots + labels */}
+      {dayCounts.map((count, i) => {
+        const x = ptX(i);
+        const y = ptY(count);
+        const isTop = i === bestDayIdx && count > 0;
+        return (
+          <g key={i}>
+            <circle cx={x} cy={y} r={isTop ? 5 : 3.5}
+              fill={isTop ? "var(--accent)" : "#5b8db5"}
+              stroke="white" strokeWidth="1.5" />
+            {count > 0 && (
+              <text x={x} y={y - 9}
+                textAnchor="middle" fontSize="9" fontWeight="600"
+                fill={isTop ? "var(--accent)" : "var(--muted)"}>
+                {count}
+              </text>
+            )}
+            <text x={x} y={CHART_H - 3}
+              textAnchor="middle" fontSize="9" fontWeight={isTop ? "700" : "500"}
+              fill={isTop ? "var(--accent)" : "var(--muted)"}>
+              {DAY_LABELS[i]}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function IntensityHeatmap({ rows, showLabels }: { rows: IntensityRow[]; showLabels: boolean }) {
+  const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+  return (
+    <div className={`az-heatmap${showLabels ? " az-heatmap--labeled" : ""}`}>
+      <div className="az-heatmap-day-row">
+        {showLabels && <span className="az-heatmap-row-label" aria-hidden="true" />}
+        {DAY_LABELS.map((l, i) => <span key={i}>{l}</span>)}
+      </div>
+      {rows.map((row, ri) => (
+        <div key={ri} className="az-heatmap-week-row">
+          {showLabels && <span className="az-heatmap-row-label">{row.label}</span>}
+          {row.cells.map((cell, di) => (
+            <div key={di}
+              className={`az-heatmap-cell${cell.pct > 0 ? " is-active" : ""}`}
+              style={cell.pct > 0 ? { opacity: 0.18 + 0.82 * cell.pct } : {}} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TrainingHeatmapChart({ savedWorkouts, periodDays = null, drillMode = false, onDrill, onAction: _onAction }: {
+  savedWorkouts: SavedWorkoutData[];
+  periodDays?: number | null;
+  drillMode?: boolean;
+  onDrill: () => void;
+  onAction?: () => void;
+}) {
+  const [slide, setSlide] = useState(0);
+  const touchStartX = useRef<number | null>(null);
+  const didSwipe = useRef(false);
+  const SLIDE_TITLES = ["TRAINING FREQUENCY", "SESSION INTENSITY"];
+
+  const handleTouchStart = (e: React.PointerEvent) => { touchStartX.current = e.clientX; didSwipe.current = false; };
+  const handleTouchEnd = (e: React.PointerEvent) => {
+    if (touchStartX.current === null) return;
+    const dx = e.clientX - touchStartX.current;
+    if (Math.abs(dx) > 40) { didSwipe.current = true; setSlide(p => dx < 0 ? Math.min(1, p + 1) : Math.max(0, p - 1)); }
+    touchStartX.current = null;
+  };
+  const handleCardClick = () => { if (!didSwipe.current) onDrill(); };
+
+  const { dayCounts, dayVolumes } = useMemo(() => {
+    const counts  = new Array(7).fill(0) as number[];
+    const volumes = new Array(7).fill(0) as number[];
+    for (const w of savedWorkouts) {
+      const dow = new Date(w.date + "T12:00:00").getDay();
+      const idx = dow === 0 ? 6 : dow - 1;
+      counts[idx]++;
+      volumes[idx] += w.totalVolume;
+    }
+    return { dayCounts: counts, dayVolumes: volumes };
+  }, [savedWorkouts]);
+
+  // Tie-break by volume so the highlighted point matches the darkest heatmap column
+  const maxCount   = Math.max(...dayCounts, 0);
+  const bestDayIdx = dayCounts.reduce<number>((best, count, i) => {
+    if (count < maxCount) return best;
+    if (best === -1) return i;
+    return dayVolumes[i] > dayVolumes[best] ? i : best;
+  }, -1);
+  const DAY_NAMES  = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const bestDay    = DAY_NAMES[Math.max(bestDayIdx, 0)];
+
+  // Detect ties: days sharing the same max count but not chosen (e.g. same freq, lower volume)
+  const tiedDays   = maxCount > 0
+    ? dayCounts
+        .map((count, i) => ({ count, i }))
+        .filter(({ count, i }) => count === maxCount && i !== bestDayIdx)
+        .map(({ i }) => DAY_NAMES[i])
+    : [];
+
+  // Active weeks = distinct calendar weeks that had ≥1 session
+  const activeWeeks = useMemo(() => {
+    const weekSet = new Set<string>();
+    for (const w of savedWorkouts) {
+      const mon = weekStartOf(new Date(w.date + "T12:00:00"));
+      weekSet.add(toLocalDateStr(mon));
+    }
+    return weekSet.size;
+  }, [savedWorkouts]);
+
+  const intensityRows = useMemo(() => {
+    const { rpeBySession, fallbackRPE } = buildRpeMap();
+    return buildIntensityRows(savedWorkouts, periodDays, rpeBySession, fallbackRPE);
+  }, [savedWorkouts, periodDays]);
+
+  const showRowLabels = intensityRows.length > 1;
+  const barInsight    = savedWorkouts.length === 0
+    ? "No sessions yet — start training!"
+    : [
+        `Most active: ${bestDay} — ${maxCount > 0 ? dayCounts[bestDayIdx] : 0} sessions in ${activeWeeks} active week${activeWeeks !== 1 ? "s" : ""}`,
+        tiedDays.length > 0 ? `· tied with ${tiedDays.join(", ")} (intensity decides)` : "",
+      ].filter(Boolean).join(" ");
+  const heatInsight   = "Intensity = volume × effort · darker = harder";
+
+  // ── Drill mode: both charts stacked, no slider ─────────────────────────────
+  if (drillMode) {
+    return (
+      <>
+        <div className="az-card">
+          <p className="az-card-title">Training Frequency</p>
+          <FreqLineChart dayCounts={dayCounts} bestDayIdx={bestDayIdx} />
+          <p className="az-viz-insight">{barInsight}</p>
+        </div>
+        <div className="az-card">
+          <p className="az-card-title">Session Intensity</p>
+          <IntensityHeatmap rows={intensityRows} showLabels={showRowLabels} />
+          <p className="az-viz-insight" style={{ marginTop: 6 }}>{heatInsight}</p>
+        </div>
+      </>
+    );
+  }
+
+  // ── Slider card ────────────────────────────────────────────────────────────
+  return (
+    <div className="az-viz-card" role="button" tabIndex={0}
+      onClick={handleCardClick} onKeyDown={e => e.key === "Enter" && onDrill()}
+      onPointerDown={handleTouchStart} onPointerUp={handleTouchEnd} onPointerCancel={() => { touchStartX.current = null; }}
+      style={{ cursor: "pointer", userSelect: "none" }}>
+
+      <div className="az-viz-header">
+        <div className="az-viz-title-row">
+          <span className="az-viz-title">{SLIDE_TITLES[slide]}</span>
+          <div className="az-slide-dots-inline" onClick={e => e.stopPropagation()}>
+            {[0, 1].map(i => (
+              <button key={i} type="button"
+                className={`az-slide-dot${slide === i ? " is-active" : ""}`}
+                onClick={e => { e.stopPropagation(); setSlide(i); }}
+                aria-label={SLIDE_TITLES[i]} />
+            ))}
+          </div>
+        </div>
+        <span className="az-viz-chevron">›</span>
+      </div>
+
+      {slide === 0
+        ? <FreqLineChart dayCounts={dayCounts} bestDayIdx={bestDayIdx} />
+        : <IntensityHeatmap rows={intensityRows} showLabels={showRowLabels} />
+      }
+
+      <p className="az-viz-insight">{slide === 0 ? barInsight : heatInsight}</p>
+    </div>
+  );
+}
+
+function ExerciseStatusGroups({
+  exerciseProgress,
+  hasRepIQPlan,
+  onNavigate,
+}: {
+  exerciseProgress: { exerciseId: string; name: string; status: string; primaryMuscle: string }[];
+  hasRepIQPlan: boolean;
+  onNavigate?: (view: AppView) => void;
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [expandedMuscle, setExpandedMuscle] = useState<string | null>(null);
+
+  const tracked = exerciseProgress.filter(e => e.status !== "insufficient_data");
+  const groups = [
+    {
+      id: "progressing",
+      label: "Progressing",
+      color: "#5a9e7a",
+      bg: "#e6f3ed",
+      exercises: tracked.filter(e => e.status === "improving" || e.status === "building"),
+      actionLabel: hasRepIQPlan ? "Keep it up in my plan →" : "Build a plan around this →",
+    },
+    {
+      id: "plateaued",
+      label: "Plateaued",
+      color: "#c9973f",
+      bg: "#f5edd8",
+      exercises: tracked.filter(e => e.status === "stable" || e.status === "stalled"),
+      actionLabel: hasRepIQPlan ? "Update plan to break plateau →" : "Create a plan to fix this →",
+    },
+    {
+      id: "lagging",
+      label: "Lagging",
+      color: "#b55b4a",
+      bg: "#f5e0db",
+      exercises: tracked.filter(e => e.status === "regressing"),
+      actionLabel: hasRepIQPlan ? "Fix these in my plan →" : "Create a plan to fix this →",
+    },
+  ];
+
+  if (tracked.length === 0) return null;
+
+  return (
+    <div className="az-card">
+      <p className="az-card-title">Exercise status</p>
+      <div className="az-status-groups">
+        {groups.map(g => {
+          const isOpen = expanded === g.id;
+          const muscles = [...new Set(g.exercises.map(e => e.primaryMuscle))].slice(0, 6);
+          return (
+            <div key={g.id} className="az-status-group">
+              <button
+                type="button"
+                className="az-status-group-header"
+                onClick={() => { setExpanded(isOpen ? null : g.id); setExpandedMuscle(null); }}
+              >
+                <span className="az-status-dot" style={{ background: g.color }} />
+                <span className="az-status-label">{g.label}</span>
+                <span className="az-status-count" style={{ background: g.bg, color: g.color }}>{g.exercises.length}</span>
+                <span className={`az-status-chevron${isOpen ? " is-open" : ""}`}>›</span>
+              </button>
+              {isOpen && g.exercises.length === 0 && (
+                <div className="az-status-group-body">
+                  <p className="az-status-empty-msg">
+                    {g.id === "progressing"
+                      ? "No exercises are consistently improving in this period. Try adding progressive overload to your lifts."
+                      : g.id === "plateaued"
+                      ? "No exercises appear stuck in this period. Keep training consistently to track plateau patterns."
+                      : "No exercises are trending down. Stay consistent to keep it this way."}
+                  </p>
+                </div>
+              )}
+              {isOpen && g.exercises.length > 0 && (
+                <div className="az-status-group-body">
+                  <div className="az-status-muscles">
+                    {muscles.map(m => (
+                      <button
+                        key={m}
+                        type="button"
+                        className="az-status-muscle-chip"
+                        style={{ borderColor: g.color, color: g.color }}
+                        onClick={() => setExpandedMuscle(prev => prev === m ? null : m)}
+                      >{m}</button>
+                    ))}
+                  </div>
+                  {expandedMuscle && (() => {
+                    const matchingExercises = g.exercises.filter(e =>
+                      getCanonicalMuscle(e.primaryMuscle) === expandedMuscle ||
+                      e.primaryMuscle === expandedMuscle
+                    );
+                    const statusReason =
+                      g.id === "progressing" ? "Making consistent progress — keep it up." :
+                      g.id === "plateaued" ? "Load or reps haven't changed in multiple sessions." :
+                      "Not enough sessions or volume has dropped.";
+                    return (
+                      <div className="az-muscle-drill">
+                        <p className="az-muscle-drill-why">{statusReason}</p>
+                        {matchingExercises.length > 0 && (
+                          <div className="az-muscle-drill-exs">
+                            {matchingExercises.map(e => (
+                              <div key={e.exerciseId} className="az-muscle-drill-ex-row">
+                                <span className="az-muscle-drill-ex-name">{e.name}</span>
+                                <span className="az-muscle-drill-ex-status" style={{ color: g.color }}>{e.status}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  <div className="az-status-ex-list">
+                    {g.exercises.slice(0, 5).map(ex => (
+                      <div key={ex.exerciseId} className="az-status-ex-item">
+                        <span className="az-status-ex-name">{ex.name}</span>
+                        <span className="az-status-ex-muscle">{ex.primaryMuscle}</span>
+                      </div>
+                    ))}
+                    {g.exercises.length > 5 && <p className="az-status-ex-more">+{g.exercises.length - 5} more</p>}
+                  </div>
+                  {onNavigate && (
+                    <button type="button" className="az-drill-cta-btn az-drill-cta-btn--primary" style={{ width: "100%", marginTop: 10 }} onClick={() => onNavigate("planner")}>
+                      {g.actionLabel}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+      </div>
+    </div>
+  );
+}
+
+// ── Timeline Slider ────────────────────────────────────────────────────────────
+// ── Range picker types & constants ────────────────────────────────────────────
+type RollingRange = "7d" | "14d" | "30d" | "60d" | "90d" | "180d" | "1y" | "all";
+type PtdRange     = "wtd" | "mtd" | "qtd" | "ytd";
+type RangeMode    = "rolling" | "ptd";
+
+const ROLLING_RANGES: RollingRange[] = ["7d", "14d", "30d", "60d", "90d", "180d", "1y", "all"];
+const ROLLING_LABELS: Record<RollingRange, string> = {
+  "7d": "Last 7 days", "14d": "Last 14 days", "30d": "Last 30 days",
+  "60d": "Last 60 days", "90d": "Last 90 days", "180d": "Last 180 days",
+  "1y": "Last year", "all": "All time",
+};
+const ROLLING_TICK_LABELS: Record<RollingRange, string> = {
+  "7d": "7d", "14d": "14d", "30d": "30d", "60d": "60d",
+  "90d": "90d", "180d": "180d", "1y": "1y", "all": "All",
+};
+const PTD_RANGES: PtdRange[] = ["wtd", "mtd", "qtd", "ytd"];
+const PTD_LABELS: Record<PtdRange, string>  = { wtd: "Week to Date", mtd: "Month to Date", qtd: "Quarter to Date", ytd: "Year to Date" };
+const PTD_SHORT:  Record<PtdRange, string>  = { wtd: "WTD", mtd: "MTD", qtd: "QTD", ytd: "YTD" };
+
+// Returns date-range boundaries in UTC ms + granularity for charts
+function getDateRange(rangeMode: RangeMode, rollingRange: RollingRange, ptdRange: PtdRange): {
+  fromMs: number; toMs: number; prevFromMs: number; prevToMs: number;
+  isAllTime: boolean; granularity: "day" | "week" | "month";
+} {
+  const today = new Date();
+  const MS = 86400000;
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+
+  if (rangeMode === "rolling") {
+    const DAYS: Record<RollingRange, number | null> = {
+      "7d": 7, "14d": 14, "30d": 30, "60d": 60, "90d": 90, "180d": 180, "1y": 365, "all": null,
+    };
+    const days = DAYS[rollingRange];
+    if (days === null)
+      return { fromMs: 0, toMs: todayMs, prevFromMs: 0, prevToMs: -1, isAllTime: true, granularity: "month" };
+    const fromMs = todayMs - (days - 1) * MS;
+    const prevToMs = fromMs - MS;
+    const prevFromMs = prevToMs - (days - 1) * MS;
+    const granularity: "day" | "week" | "month" = days <= 14 ? "day" : days <= 90 ? "week" : "month";
+    return { fromMs, toMs: todayMs, prevFromMs, prevToMs, isAllTime: false, granularity };
+  }
+
+  // Period to Date
+  switch (ptdRange) {
+    case "wtd": {
+      const dow = today.getDay();
+      const daysSinceMon = dow === 0 ? 6 : dow - 1;
+      const fromMs = todayMs - daysSinceMon * MS;
+      return { fromMs, toMs: todayMs, prevFromMs: fromMs - 7 * MS, prevToMs: todayMs - 7 * MS, isAllTime: false, granularity: "day" };
+    }
+    case "mtd": {
+      const fromMs = Date.UTC(today.getFullYear(), today.getMonth(), 1);
+      const elapsed = Math.round((todayMs - fromMs) / MS);
+      const pYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+      const pMonth = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
+      const prevFromMs = Date.UTC(pYear, pMonth, 1);
+      return { fromMs, toMs: todayMs, prevFromMs, prevToMs: prevFromMs + elapsed * MS, isAllTime: false, granularity: elapsed <= 13 ? "day" : "week" };
+    }
+    case "qtd": {
+      const qStart = Math.floor(today.getMonth() / 3) * 3;
+      const fromMs = Date.UTC(today.getFullYear(), qStart, 1);
+      const elapsed = Math.round((todayMs - fromMs) / MS);
+      const pqStart = qStart - 3;
+      const prevFromMs = pqStart >= 0
+        ? Date.UTC(today.getFullYear(), pqStart, 1)
+        : Date.UTC(today.getFullYear() - 1, pqStart + 12, 1);
+      return { fromMs, toMs: todayMs, prevFromMs, prevToMs: prevFromMs + elapsed * MS, isAllTime: false, granularity: "week" };
+    }
+    case "ytd": {
+      const fromMs = Date.UTC(today.getFullYear(), 0, 1);
+      const elapsed = Math.round((todayMs - fromMs) / MS);
+      const prevFromMs = Date.UTC(today.getFullYear() - 1, 0, 1);
+      return { fromMs, toMs: todayMs, prevFromMs, prevToMs: prevFromMs + elapsed * MS, isAllTime: false, granularity: "month" };
+    }
+  }
+}
+
+function RangePicker({ rangeMode, rollingRange, ptdRange, onModeChange, onRollingChange, onPtdChange }: {
+  rangeMode: RangeMode; rollingRange: RollingRange; ptdRange: PtdRange;
+  onModeChange: (m: RangeMode) => void;
+  onRollingChange: (r: RollingRange) => void;
+  onPtdChange: (r: PtdRange) => void;
+}) {
+  const idx = ROLLING_RANGES.indexOf(rollingRange);
+  const pct = (idx / (ROLLING_RANGES.length - 1)) * 100;
+  const nudge = (50 - pct) * 0.28;
+  return (
+    <div className="range-picker">
+      <div className="range-mode-row">
+        <span
+          className={`range-mode-label${rangeMode === "rolling" ? " is-active" : ""}`}
+          onClick={() => onModeChange("rolling")}
+        >Rolling</span>
+        <div
+          className={`range-mode-switch${rangeMode === "ptd" ? " is-ptd" : ""}`}
+          role="switch" aria-checked={rangeMode === "ptd"}
+          onClick={() => onModeChange(rangeMode === "rolling" ? "ptd" : "rolling")}
+        >
+          <div className="range-mode-knob" />
+        </div>
+        <span
+          className={`range-mode-label${rangeMode === "ptd" ? " is-active" : ""}`}
+          onClick={() => onModeChange("ptd")}
+        >Period to Date</span>
+      </div>
+      <div className="range-picker-body">
+        {rangeMode === "rolling" ? (
+          <div className="timeline-slider-wrap">
+            <div className="timeline-label-row">
+              <span className="timeline-label-bubble" style={{ left: `calc(${pct}% + ${nudge}px)` }}>
+                {ROLLING_LABELS[rollingRange]}
+              </span>
+            </div>
+            <input type="range" min={0} max={ROLLING_RANGES.length - 1} step={1} value={idx}
+              onChange={e => onRollingChange(ROLLING_RANGES[+e.target.value])}
+              className="timeline-slider-input" />
+            <div className="timeline-ticks">
+              {ROLLING_RANGES.map((r, i) => (
+                <span key={r} className={`timeline-tick-lbl${i === idx ? " is-active" : ""}`}>
+                  {ROLLING_TICK_LABELS[r]}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="ptd-pills">
+            {PTD_RANGES.map(r => (
+              <button key={r} type="button"
+                className={`ptd-pill${r === ptdRange ? " is-active" : ""}`}
+                onClick={() => onPtdChange(r)}>
+                <span className="ptd-pill-short">{PTD_SHORT[r]}</span>
+                <span className="ptd-pill-long">{PTD_LABELS[r]}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Insights Page ─────────────────────────────────────────────────────────────
 function InsightsPage({
   savedWorkouts,
-  onOpenReport,
-  onRedoWorkout,
-  onSaveToMyWorkouts,
-  onDeleteWorkout,
+  psychProfile,
+  library,
   resolvedTheme,
   onToggleTheme,
+  onNavigate,
+  onLeave,
   initialTab,
+  initialDrillSection,
+  initialDrillOrigin,
+  repiqPlan,
 }: {
   savedWorkouts: SavedWorkoutData[];
-  onOpenReport: (workout: SavedWorkoutData) => void;
-  onRedoWorkout?: (workout: SavedWorkoutData) => void;
-  onSaveToMyWorkouts?: (workout: SavedWorkoutData) => void;
-  onDeleteWorkout?: (savedAt: string) => void;
+  psychProfile: UserPsychProfile;
+  library: ExerciseWithTaxonomy[];
   resolvedTheme?: string;
   onToggleTheme?: () => void;
-  initialTab?: "analyzer" | "reports";
+  onNavigate?: (view: AppView) => void;
+  onLeave?: (state: { tab: "summary" | "stats" | "progress"; drillSection: string | null; drillOrigin: "summary" | "stats" | null }) => void;
+  initialTab?: "summary" | "stats" | "progress";
+  initialDrillSection?: "volume" | "muscles" | "exercises" | "movement" | "frequency" | null;
+  initialDrillOrigin?: "summary" | "stats" | null;
+  repiqPlan?: RepIQPlan | null;
 }) {
-  const [tab, setTab] = useState<"analyzer" | "reports">(initialTab ?? "reports");
-  const [savedToast, setSavedToast] = useState<string | null>(null);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"summary" | "stats" | "progress">(initialTab ?? "summary");
+  const [rangeMode, setRangeMode]       = useState<RangeMode>("rolling");
+  const [rollingRange, setRollingRange] = useState<RollingRange>("30d");
+  const [ptdRange, setPtdRange]         = useState<PtdRange>("mtd");
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareA, setCompareA] = useState<{ url: string; date: string; name: string } | null>(null);
+  const [compareB, setCompareB] = useState<{ url: string; date: string; name: string } | null>(null);
+  const [photoFilter, setPhotoFilter] = useState<"all" | "progress">("all");
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [expandedInsight, setExpandedInsight] = useState<string | null>(null);
+  const [expandedRing, setExpandedRing] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const [drillSection, setDrillSection] = useState<"volume" | "muscles" | "exercises" | "movement" | "frequency" | null>(initialDrillSection ?? null);
+  const [drillOrigin, setDrillOrigin] = useState<"summary" | "stats" | null>(initialDrillOrigin ?? null);
 
-  function handleSave(w: SavedWorkoutData) {
-    onSaveToMyWorkouts?.(w);
-    setSavedToast(w.savedAt);
-    setTimeout(() => setSavedToast(null), 2200);
-  }
+  // Navigate to another view, saving current state first for back navigation
+  const navigateSaving = (view: AppView) => {
+    onLeave?.({ tab, drillSection, drillOrigin });
+    onNavigate?.(view);
+  };
+
+  // ── Analytics (all memoized) ──────────────────────────────────────────────
+  const targetPerWeek = psychProfile.scheduleCommitment ?? psychProfile.daysPerWeekPref ?? 3;
+  const cycleDays = psychProfile.cycleDays ?? 7;
+
+  // ── Range filter derived values ───────────────────────────────────────────
+  const dateRange = useMemo(
+    () => getDateRange(rangeMode, rollingRange, ptdRange),
+    [rangeMode, rollingRange, ptdRange]
+  );
+  const { fromMs, toMs, prevFromMs, prevToMs, isAllTime, granularity } = dateRange;
+
+  // Clamp range start to first workout so YTD/long periods never penalise pre-app time
+  const appStartMs = useMemo(() => {
+    if (savedWorkouts.length === 0) return 0;
+    return Math.min(...savedWorkouts.map(wkToMs));
+  }, [savedWorkouts]);
+  const effectiveFromMs = isAllTime ? fromMs : Math.max(fromMs, appStartMs);
+
+  const filteredWorkouts = useMemo(() => {
+    if (isAllTime) return savedWorkouts;
+    return savedWorkouts.filter(w => { const ms = wkToMs(w); return ms >= effectiveFromMs && ms <= toMs; });
+  }, [savedWorkouts, effectiveFromMs, toMs, isAllTime]);
+
+  const prevPeriodWorkouts = useMemo(() => {
+    if (isAllTime || prevToMs < 0) return [];
+    return savedWorkouts.filter(w => { const ms = wkToMs(w); return ms >= prevFromMs && ms <= prevToMs; });
+  }, [savedWorkouts, prevFromMs, prevToMs, isAllTime]);
+
+  // Period length in days for range-aware analytics (null = "all time")
+  const periodDays = isAllTime ? null : Math.max(1, Math.round((toMs - effectiveFromMs) / 86400000) + 1);
+
+  const consistency   = useMemo(() => computeConsistencyStats(filteredWorkouts, psychProfile, periodDays), [filteredWorkouts, psychProfile, periodDays]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sessionSummary = useMemo(() => computeSessionSummary(savedWorkouts), [savedWorkouts]);
+  const laggingMuscles = useMemo(() => computeLaggingMuscles(filteredWorkouts, psychProfile, library), [filteredWorkouts, psychProfile, library]);
+  const exerciseProgress = useMemo(() => computeExerciseProgress(filteredWorkouts), [filteredWorkouts]);
+  const plateaus = useMemo(() => computePlateauExercises(filteredWorkouts), [filteredWorkouts]);
+  const rotations = useMemo(() => computeExerciseRotation(filteredWorkouts), [filteredWorkouts]);
+  const goalAlignment = useMemo(() => computeGoalAlignment(filteredWorkouts, psychProfile, periodDays), [filteredWorkouts, psychProfile, periodDays]); // eslint-disable-line react-hooks/exhaustive-deps
+  const movementBalance = useMemo(() => computeMovementBalance(filteredWorkouts, library), [filteredWorkouts, library]);
+  const movementPatternSets = useMemo(() => {
+    const patternById = new Map<string, string>();
+    const patternByName = new Map<string, string>();
+    for (const ex of library) {
+      if (ex.movementPattern) {
+        patternById.set(ex.id, ex.movementPattern as string);
+        patternByName.set(ex.name.toLowerCase(), ex.movementPattern as string);
+      }
+    }
+    const result: Record<string, number> = {};
+    for (const w of filteredWorkouts) {
+      for (const ex of w.exercises) {
+        const exAny = ex as unknown as { movementPattern?: string; name?: string };
+        const pat = patternById.get(ex.id)
+          ?? exAny.movementPattern
+          ?? (exAny.name ? patternByName.get(exAny.name.toLowerCase()) : undefined);
+        if (!pat) continue;
+        result[pat] = (result[pat] ?? 0) + (ex.loggedSets ?? 0);
+      }
+    }
+    return result;
+  }, [filteredWorkouts, library]);
+  const muscleCoverage = useMemo(() => computeMuscleCoverage(filteredWorkouts, cycleDays), [filteredWorkouts, cycleDays]);
+
+  const muscleAcc = (wks: SavedWorkoutData[]) => {
+    const counts: Record<string, number> = { Chest: 0, Back: 0, Shoulders: 0, Arms: 0, Core: 0, Quads: 0, "Hamstrings/Glutes": 0, Calves: 0 };
+    for (const w of wks) {
+      for (const ex of w.exercises) {
+        const grp = getMuscleMacroGroup(getCanonicalMuscle(ex.primaryMuscle));
+        if (grp) counts[grp] += ex.loggedSets ?? 0;
+      }
+    }
+    return counts;
+  };
+
+  const thisPeriodMuscle = useMemo(() => muscleAcc(filteredWorkouts), [filteredWorkouts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const prevPeriodMuscle = useMemo(() => muscleAcc(prevPeriodWorkouts), [prevPeriodWorkouts]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Raw total sets in the period (across ALL exercises, regardless of pattern/muscle mapping).
+  // Used to show "X of Y sets" in charts that only cover a subset of exercises.
+  const totalFilteredSets = useMemo(
+    () => filteredWorkouts.reduce((sum, w) => sum + (w.totalSets ?? 0), 0),
+    [filteredWorkouts],
+  );
+
+  const prsHistory = useMemo(() => computePRsHistory(savedWorkouts), [savedWorkouts]);
+  const periodicVolume = useMemo(() => {
+    const today = new Date();
+    const ML = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const DL = ["S","M","T","W","T","F","S"];
+    const MS = 86400000;
+    const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const startMs = isAllTime
+      ? (filteredWorkouts.length === 0 ? todayMs : Math.min(...filteredWorkouts.map(wkToMs)))
+      : effectiveFromMs;
+
+    const dateStr = (ms: number) => {
+      const d = new Date(ms);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
+    };
+
+    if (granularity === "day") {
+      const numDays = Math.round((todayMs - startMs) / MS) + 1;
+      return Array.from({ length: numDays }, (_, i) => {
+        const dayMs = startMs + i * MS;
+        const ds = dateStr(dayMs);
+        const ws = filteredWorkouts.filter(w => w.date === ds);
+        return { label: DL[new Date(dayMs).getUTCDay()], volume: ws.reduce((s, w) => s + w.totalVolume, 0), sessions: ws.length };
+      });
+    }
+
+    if (granularity === "week") {
+      const dow = new Date(startMs).getUTCDay();
+      const firstMonMs = startMs - (dow === 0 ? 6 : dow - 1) * MS;
+      const bars: { label: string; volume: number; sessions: number }[] = [];
+      let wkMs = firstMonMs;
+      while (wkMs <= todayMs) {
+        const wkEnd = wkMs + 6 * MS;
+        const ws = filteredWorkouts.filter(w => { const ms = wkToMs(w); return ms >= wkMs && ms <= Math.min(wkEnd, todayMs); });
+        const wd = new Date(wkMs);
+        bars.push({ label: `${wd.getUTCMonth()+1}/${wd.getUTCDate()}`, volume: ws.reduce((s, w) => s + w.totalVolume, 0), sessions: ws.length });
+        wkMs += 7 * MS;
+      }
+      return bars;
+    }
+
+    // Monthly
+    const sd = new Date(startMs);
+    let yr = sd.getUTCFullYear(), mo = sd.getUTCMonth();
+    const bars: { label: string; volume: number; sessions: number }[] = [];
+    while (yr < today.getFullYear() || (yr === today.getFullYear() && mo <= today.getMonth())) {
+      const mStartMs = Date.UTC(yr, mo, 1);
+      const mEndMs   = Date.UTC(yr, mo + 1, 0, 23, 59, 59, 999);
+      const ws = filteredWorkouts.filter(w => { const ms = wkToMs(w); return ms >= mStartMs && ms <= mEndMs; });
+      const showYear = yr !== today.getFullYear();
+      bars.push({ label: showYear ? `${ML[mo]} '${String(yr).slice(2)}` : ML[mo], volume: ws.reduce((s, w) => s + w.totalVolume, 0), sessions: ws.length });
+      if (++mo > 11) { mo = 0; yr++; }
+    }
+    return bars;
+  }, [filteredWorkouts, effectiveFromMs, isAllTime, granularity]);
+  const actionPlan = useMemo(() => computeActionPlan(laggingMuscles, plateaus, rotations, goalAlignment, consistency, targetPerWeek), [laggingMuscles, plateaus, rotations, goalAlignment, consistency, targetPerWeek]);
+
+  const comparisonLabel: string | null = isAllTime ? null
+    : rangeMode === "rolling"
+      ? `Last ${ROLLING_TICK_LABELS[rollingRange]} vs prior ${ROLLING_TICK_LABELS[rollingRange]}`
+      : `${PTD_LABELS[ptdRange]} vs prior ${ptdRange === "wtd" ? "week" : ptdRange === "mtd" ? "month" : ptdRange === "qtd" ? "quarter" : "year"} (same days)`;
+
+  const periodShort: string | null = rangeMode === "ptd"
+    ? (ptdRange === "wtd" ? "week" : ptdRange === "mtd" ? "month" : ptdRange === "qtd" ? "quarter" : "year")
+    : (rollingRange === "7d" ? "7 days" : rollingRange === "14d" ? "14 days"
+      : rollingRange === "30d" ? "30 days" : rollingRange === "60d" ? "60 days"
+      : rollingRange === "90d" ? "90 days" : rollingRange === "180d" ? "180 days"
+      : rollingRange === "1y" ? "year" : null);
+
+  const daysSinceLastWorkout = useMemo(() => {
+    if (savedWorkouts.length === 0) return null;
+    const latest = savedWorkouts.reduce((a, b) => a.date > b.date ? a : b);
+    const todayMs = Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+    const lastMs = new Date(latest.date + "T12:00:00").getTime();
+    return Math.round((todayMs - lastMs) / 86400000);
+  }, [savedWorkouts]);
+
+  const hasEnoughData = savedWorkouts.length >= 3;
+
+  // ── Health ring scores (0–100) ────────────────────────────────────────────
+  const ringConsistency = consistency.consistencyPct;
+  const ringMuscle = (() => {
+    const statuses = Object.values(muscleCoverage);
+    if (statuses.length === 0) return 0;
+    const freshCount = statuses.filter(s => s === "fresh" || s === "fading").length;
+    return Math.round((freshCount / statuses.length) * 100);
+  })();
+  const ringGoal = goalAlignment.score;
+
+  // ── Synthesize insight feed cards ──────────────────────────────────────────
+  type FeedCard = { id: string; severity: "green" | "amber" | "red" | "info"; headline: string; metrics: [string, string, string]; detail: string; why: string; action: string; cta: { label: string; view: AppView } | null };
+
+  const insightFeed = useMemo((): FeedCard[] => {
+    const cards: FeedCard[] = [];
+
+    // Consistency insights
+    if (consistency.lastGapDays > 7) {
+      cards.push({ id: "gap", severity: "red", headline: `${consistency.lastGapDays} days since your last workout`, metrics: [`${consistency.lastGapDays}d gap`, `streak: ${consistency.streak}d`, `target: ${targetPerWeek}×/wk`], detail: "Consistency is the strongest predictor of progress. Even a light session counts.", why: "Long breaks cause detraining — strength drops ~1% per day after 2 weeks of inactivity.", action: "Do any session today, even 20 minutes.", cta: { label: "Start a session", view: "planner" } });
+    } else if (consistency.consistencyPct < 50) {
+      cards.push({ id: "low-freq", severity: "amber", headline: `Hitting ${consistency.consistencyPct}% of your weekly target`, metrics: [`${consistency.avgPerWeek} avg/wk`, `target: ${targetPerWeek}/wk`, `${consistency.consistencyPct}% hit rate`], detail: `You're averaging ${consistency.avgPerWeek} sessions/week — target is ${targetPerWeek}.`, why: "Undershoot your frequency target too long and all your gains slow down.", action: `Add ${Math.max(1, Math.ceil(targetPerWeek - consistency.avgPerWeek))} more session${targetPerWeek - consistency.avgPerWeek > 1.5 ? "s" : ""} per week.`, cta: { label: "Plan this week", view: "planner" } });
+    } else if (consistency.streak >= 5) {
+      cards.push({ id: "streak", severity: "green", headline: `${consistency.streak}-day streak — keep it going`, metrics: [`${consistency.streak}-day run`, `${consistency.consistencyPct}% vs target`, `best: ${consistency.longestStreak}d`], detail: `${consistency.consistencyPct}% of your target hit this period. Your longest streak is ${consistency.longestStreak} days.`, why: "Streaks build habit. Consistency beats intensity for long-term results.", action: "Keep showing up. You're doing great.", cta: null });
+    }
+
+    // Lagging muscles
+    for (const m of laggingMuscles.slice(0, 3)) {
+      const sug = m.suggestedExercises.slice(0, 2).join(", ");
+      cards.push({
+        id: `lag-${m.muscle}`, severity: m.reason === "absent" ? "red" : "amber",
+        headline: `${m.muscle} is lagging`,
+        metrics: [`last: ${m.lastTrainedDaysAgo ?? "14+"}d ago`, `${m.directSets30d} sets/mo`, `need ${m.minEffectiveVolume}+ sets`],
+        detail: m.reason === "absent"
+          ? `Not directly trained in ${m.lastTrainedDaysAgo ?? "14+"} days.`
+          : `Only ${m.directSets30d} sets this month — your goal needs ~${m.minEffectiveVolume}.`,
+        why: m.reason === "absent"
+          ? "Muscles you skip consistently will fall behind and create imbalances."
+          : "Below minimum effective volume — not enough stimulus to maintain, let alone grow.",
+        action: sug ? `Add ${m.muscle} work this week. Try: ${sug}.` : `Add direct ${m.muscle} work in your next 2 sessions.`,
+        cta: { label: "Find exercises", view: "planner" },
+      });
+    }
+
+    // Plateaus
+    for (const p of plateaus.slice(0, 2)) {
+      cards.push({ id: `plat-${p.exerciseId}`, severity: "amber", headline: `${p.name} has plateaued`, metrics: [`${p.sessionsAnalyzed} sessions flat`, p.cause === "volume_stuck" ? "volume dropped" : "no progression", p.name], detail: `Performance flat across ${p.sessionsAnalyzed} recent sessions.`, why: p.cause === "volume_stuck" ? "Volume dropped while load stayed the same — not enough total work to force adaptation." : "Same weight and reps repeated without progression. Your body has adapted to this stimulus.", action: p.action, cta: { label: "Update my plan", view: "planner" } });
+    }
+
+    // Rotation warnings
+    for (const r of rotations.filter(x => x.rotationLevel === "high").slice(0, 2)) {
+      cards.push({ id: `rot-${r.muscle}`, severity: "amber", headline: `Too many ${r.muscle} variations`, metrics: [`${r.variantsUsed} variations`, "8-week window", r.anchorExercise ? `anchor: ${r.anchorExercise}` : "no anchor set"], detail: `${r.variantsUsed} different exercises in 8 weeks. Hard to track real progress.`, why: "Switching exercises too often means no single lift gets enough repeated exposure to show clear progression.", action: r.recommendation ?? `Keep ${r.anchorExercise} as your anchor lift for 4–6 weeks.`, cta: null });
+    }
+
+    // Goal alignment
+    if (goalAlignment.label === "misaligned" && goalAlignment.mismatches.length > 0) {
+      cards.push({ id: "goal-mismatch", severity: "red", headline: "Training doesn't match your goal", metrics: [`score: ${goalAlignment.score}/100`, `${goalAlignment.mismatches.length} mismatch${goalAlignment.mismatches.length !== 1 ? "es" : ""}`, "needs attention"], detail: goalAlignment.mismatches[0], why: "Your actual training pattern diverges from what your stated goal requires.", action: goalAlignment.suggestions[0] ?? "Review your training split against your goal.", cta: { label: "Rebuild my plan", view: "planner" } });
+    } else if (goalAlignment.label === "partially_aligned" && goalAlignment.mismatches.length > 0) {
+      cards.push({ id: "goal-partial", severity: "amber", headline: "Partially aligned with your goal", metrics: [`score: ${goalAlignment.score}/100`, `${goalAlignment.mismatches.length} gap${goalAlignment.mismatches.length !== 1 ? "s" : ""}`, "almost there"], detail: goalAlignment.mismatches[0], why: "Close, but there's a gap between what you're doing and optimal training for your goal.", action: goalAlignment.suggestions[0] ?? "Small adjustments will get you aligned.", cta: { label: "Adjust my plan", view: "planner" } });
+    }
+
+    // Movement balance
+    for (const im of movementBalance.imbalances.slice(0, 1)) {
+      cards.push({ id: "balance", severity: "amber", headline: "Movement imbalance detected", metrics: [`push: ${movementBalance.pushSets}`, `pull: ${movementBalance.pullSets}`, `upper/lower: ${movementBalance.upperSets}/${movementBalance.lowerSets}`], detail: im, why: "Unbalanced patterns increase injury risk and limit overall development.", action: "Adjust your next session to include the missing movement type.", cta: { label: "Plan a session", view: "planner" } });
+    }
+
+    // Improving exercises (positive feedback)
+    const improving = exerciseProgress.filter(e => e.status === "improving").slice(0, 2);
+    for (const ex of improving) {
+      cards.push({ id: `prog-${ex.exerciseId}`, severity: "green", headline: `${ex.name} is progressing`, metrics: [ex.recentBestSet ? `${ex.recentBestSet.weight}kg × ${ex.recentBestSet.reps}` : "trending up", `${ex.sessionsCount} sessions`, ex.primaryMuscle], detail: ex.recentBestSet ? `Recent best: ${ex.recentBestSet.weight}kg x ${ex.recentBestSet.reps}` : `Trending up over ${ex.sessionsCount} sessions.`, why: "Consistent progressive overload — this exercise is responding to your training.", action: "Keep this movement in your rotation. Don't fix what isn't broken.", cta: null });
+    }
+
+    // PRs
+    if (prsHistory.length > 0) {
+      const recentPRs = prsHistory.slice(0, 3);
+      cards.push({ id: "prs", severity: "green", headline: `${prsHistory.length} personal record${prsHistory.length > 1 ? "s" : ""}`, metrics: [`${prsHistory.length} PR${prsHistory.length !== 1 ? "s" : ""}`, prsHistory[0].exerciseName, prsHistory[0].prType === "estimated_1rm" ? "1RM est." : prsHistory[0].prType], detail: recentPRs.map(p => p.detail).join(" · "), why: "PRs confirm your training is working — real measurable progress.", action: "Celebrate it. Then keep pushing.", cta: null });
+    }
+
+    return cards;
+  }, [consistency, laggingMuscles, plateaus, rotations, goalAlignment, movementBalance, exerciseProgress, prsHistory, targetPerWeek]);
+
+  const toggleInsight = (id: string) => setExpandedInsight(prev => prev === id ? null : id);
+  const formatVol = (kg: number) => kg >= 1000 ? `${(kg / 1000).toFixed(1)}t` : `${Math.round(kg)}kg`;
 
   return (
     <main className="shell selector-shell" data-theme={resolvedTheme}>
@@ -11953,93 +13962,744 @@ function InsightsPage({
 
         <div className="planner-tabs" role="tablist" aria-label="Insights sections">
           <div className="planner-tabs-track">
-            <button type="button" className={tab === "reports" ? "is-active" : ""} aria-selected={tab === "reports"} onClick={() => setTab("reports")}>Reports</button>
-            <button type="button" className={tab === "analyzer" ? "is-active" : ""} aria-selected={tab === "analyzer"} onClick={() => setTab("analyzer")}>Analyzer</button>
+            <button type="button" className={tab === "summary" ? "is-active" : ""} aria-selected={tab === "summary"} onClick={() => setTab("summary")}>Summary</button>
+            <button type="button" className={tab === "stats" ? "is-active" : ""} aria-selected={tab === "stats"} onClick={() => setTab("stats")}>Stats</button>
+            <button type="button" className={tab === "progress" ? "is-active" : ""} aria-selected={tab === "progress"} onClick={() => setTab("progress")}>Progress</button>
           </div>
         </div>
 
-        {tab === "reports" ? (
-          <section className="planner-section">
-            {savedWorkouts.length === 0 ? (
-              <div className="planner-builder-stub">
-                <p className="planner-empty-title">No workouts logged yet</p>
-                <p className="planner-empty-sub">Complete a workout to see your reports here.</p>
+        {tab !== "progress" && (
+          <RangePicker
+            rangeMode={rangeMode} rollingRange={rollingRange} ptdRange={ptdRange}
+            onModeChange={setRangeMode} onRollingChange={setRollingRange} onPtdChange={setPtdRange}
+          />
+        )}
+
+        {tab === "stats" ? (
+          <section className="planner-section az-section">
+            {!hasEnoughData ? (
+              <div className="az-learning-banner">
+                <span className="az-learning-icon">&#x1f4ca;</span>
+                <div>
+                  <p className="az-learning-title">Still learning your patterns</p>
+                  <p className="az-learning-sub">Complete {Math.max(0, 3 - savedWorkouts.length)} more workout{savedWorkouts.length < 2 ? "s" : ""} to unlock full stats.</p>
+                </div>
               </div>
-            ) : (
-              <div className="plan-list">
-                {savedWorkouts.map((w) => {
-                  const isRepIQ = !!w.repiqSourceKey || w.workoutSource === "repiq";
-                  const alreadySaved = savedToast === w.savedAt;
-                  // Determine source label + style
-                  const src = w.workoutSource ?? (isRepIQ ? "repiq" : undefined);
-                  const sourceTag: { label: string; cls: string } | null =
-                    src === "repiq"      ? { label: "✦ RepIQ Plan",   cls: "src-repiq" }
-                    : src === "saved"    ? { label: "My Workout",     cls: "src-saved" }
-                    : src === "library"  ? { label: "Library",        cls: "src-library" }
-                    : src === "generated"? { label: "Generated",      cls: "src-generated" }
-                    : src === "history"  ? { label: "Redo",           cls: "src-history" }
-                    : null;
-                  return (
-                    <article key={w.savedAt} className="report-card">
-                      <div className="report-card-header" onClick={() => onOpenReport(w)}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
-                            <p className="report-card-meta">{new Date(w.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</p>
-                            {sourceTag && (
-                              <span className={`report-card-source-badge ${sourceTag.cls}`}>{sourceTag.label}</span>
+            ) : drillSection !== null ? (
+              /* ── DRILL-DOWN VIEW ─────────────────────────────────────── */
+              <>
+                <button type="button" className="az-drill-back" onClick={() => {
+                  if (drillOrigin === "summary") { setTab("summary"); }
+                  setDrillSection(null);
+                  setDrillOrigin(null);
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                  Back
+                </button>
+
+                {drillSection === "volume" && (
+                  <>
+                    {/* Volume chart first */}
+                    <div className="az-card">
+                      <p className="az-card-title">{granularity === "day" ? "Daily Volume" : granularity === "week" ? "Weekly Volume" : "Monthly Volume"}</p>
+                      {(() => {
+                        const maxVol = Math.max(...periodicVolume.map(w => w.volume), 1);
+                        const W = 280, H = 100;
+                        const n = periodicVolume.length;
+                        const barW = n <= 6 ? 32 : n <= 10 ? 24 : n <= 14 ? 16 : 11;
+                        const gap = Math.max(2, (W - n * barW) / (n + 1));
+                        const skipLabel = n > 12;
+                        return (
+                          <svg viewBox={`0 0 ${W} ${H}`} width="100%" aria-hidden="true">
+                            {periodicVolume.map((w, i) => {
+                              const x = gap + i * (barW + gap);
+                              const pct = w.volume / maxVol;
+                              const barH = w.volume === 0 ? 3 : Math.max(6, pct * 78);
+                              const y = 82 - barH;
+                              const fill = w.volume === 0 ? "var(--line)" : pct >= 0.75 ? "#5a9e7a" : pct >= 0.4 ? "#c9973f" : "#8b9ab0";
+                              const showLabel = !skipLabel || i % 2 === 0;
+                              return (
+                                <g key={i}>
+                                  <rect x={x} y={y} width={barW} height={barH} rx={3} fill={fill} opacity={0.9} />
+                                  {showLabel && <text x={x + barW / 2} y={H - 2} textAnchor="middle" fontSize={7} fill="var(--muted)">{w.label}</text>}
+                                </g>
+                              );
+                            })}
+                          </svg>
+                        );
+                      })()}
+                    </div>
+                    <div className="az-card">
+                      <p className="az-card-title">Consistency</p>
+                      <div className="az-stat-grid">
+                        <div className="az-stat"><p className="az-stat-val">{consistency.streak}</p><p className="az-stat-lbl">Day streak</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{consistency.sessions7d}</p><p className="az-stat-lbl">This week</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{filteredWorkouts.length}</p><p className="az-stat-lbl">{isAllTime ? "All time" : periodShort ? `This ${periodShort}` : "This period"}</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{consistency.consistencyPct}%</p><p className="az-stat-lbl">vs target</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{consistency.longestStreak}</p><p className="az-stat-lbl">Best streak</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{consistency.avgPerWeek}</p><p className="az-stat-lbl">Avg/week</p></div>
+                      </div>
+                    </div>
+                    <div className="az-card">
+                      <p className="az-card-title">Session output</p>
+                      <div className="az-stat-grid">
+                        <div className="az-stat"><p className="az-stat-val">{sessionSummary.totalWorkouts}</p><p className="az-stat-lbl">Total workouts</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{sessionSummary.totalSets}</p><p className="az-stat-lbl">Total sets</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{formatVol(sessionSummary.totalVolumeKg)}</p><p className="az-stat-lbl">Total volume</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{sessionSummary.avgDurationMin}m</p><p className="az-stat-lbl">Avg duration</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{sessionSummary.avgSets}</p><p className="az-stat-lbl">Avg sets</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{sessionSummary.avgExercises}</p><p className="az-stat-lbl">Avg exercises</p></div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {drillSection === "muscles" && (
+                  <div className="az-card">
+                    <p className="az-card-title">Muscle coverage</p>
+                    {/* ── Charts first, then detail grid ── */}
+                    {(() => {
+                      const dGroups = RADAR_MUSCLE_GROUPS as unknown as string[];
+                      const dN = dGroups.length;
+                      const dThisNorm = normalizeMuscleShare(thisPeriodMuscle);
+                      const dPrevNorm = normalizeMuscleShare(prevPeriodMuscle);
+                      const dHasPrev = Object.values(prevPeriodMuscle).some(v => v > 0);
+                      const dTotalThis = Object.values(thisPeriodMuscle).reduce((a, b) => a + b, 0);
+                      const dTotalPrev = Object.values(prevPeriodMuscle).reduce((a, b) => a + b, 0);
+
+                      // Spider geometry (slightly bigger than card version)
+                      const DCX = 95, DCY = 95, DR = 72, DPCT_MAX = 50;
+                      const dAngle = (i: number) => (i / dN) * 2 * Math.PI - Math.PI / 2;
+                      const dPt = (pct: number, i: number): [number, number] => {
+                        const r = (Math.min(Math.max(pct, 0), DPCT_MAX) / DPCT_MAX) * DR;
+                        const a = dAngle(i);
+                        return [DCX + r * Math.cos(a), DCY + r * Math.sin(a)];
+                      };
+                      const dRawPct = (counts: Record<string, number>, g: string, tot: number) =>
+                        tot === 0 ? 0 : (counts[g] ?? 0) / tot * 100;
+                      const dPoly = (fn: (g: string) => number) =>
+                        dGroups.map((g, i) => dPt(fn(g), i).join(",")).join(" ");
+                      const dGridRings = [0.25, 0.5, 0.75, 1].map(f => DR * f);
+                      const dLabelPos = (i: number): [number, number] => {
+                        const a = dAngle(i);
+                        return [DCX + (DR + 18) * Math.cos(a), DCY + (DR + 18) * Math.sin(a)];
+                      };
+
+                      // Vbar geometry (bigger than card version)
+                      const DVCL = 36, DVCR = 272, DVCT = 18, DVCB = 116, DVCH = DVCB - DVCT;
+                      const DY_MAX = 150;
+                      const DslotW = (DVCR - DVCL) / dN;
+                      const DBAR_W = 12, DBAR_GAP = 3, DPAIR_W = DBAR_W * 2 + DBAR_GAP;
+                      const DSHORT: Record<string, string> = {
+                        Chest: "Chest", Back: "Back", Shoulders: "Shldr", Arms: "Arms",
+                        Core: "Core", Quads: "Quads", "Hamstrings/Glutes": "H/Glutes", Calves: "Calves",
+                      };
+                      const dScoreColor = (s: number) =>
+                        s >= 90 ? "#5a9e7a" : s >= 65 ? "#c9973f" : s > 0 ? "#b55b4a" : "var(--layer)";
+
+                      if (dTotalThis === 0) return <p className="az-balance-empty">No sets logged in this period</p>;
+
+                      return (
+                        <>
+                          {/* Distribution spider */}
+                          <p className="az-drill-chart-label">Distribution</p>
+                          <svg viewBox="0 0 190 192" className="az-drill-spider-svg">
+                            {dGridRings.map((r, ri) => (
+                              <circle key={ri} cx={DCX} cy={DCY} r={r} fill="none"
+                                stroke="var(--line)" strokeWidth="0.7" opacity="0.7" />
+                            ))}
+                            {dGroups.map((_, i) => {
+                              const [x, y] = dPt(DPCT_MAX, i);
+                              return <line key={i} x1={DCX} y1={DCY} x2={x} y2={y}
+                                stroke="var(--line)" strokeWidth="0.7" opacity="0.7" />;
+                            })}
+                            <polygon points={dPoly(g => STANDARD_MUSCLE_SHARE[g] ?? 0)}
+                              fill="var(--accent)" fillOpacity="0.07"
+                              stroke="var(--accent)" strokeWidth="1.2" strokeDasharray="3 2" strokeOpacity="0.5" />
+                            {dHasPrev && dTotalPrev > 0 && (
+                              <polygon points={dPoly(g => dRawPct(prevPeriodMuscle, g, dTotalPrev))}
+                                fill="#8b9ab0" fillOpacity="0.14" stroke="#8b9ab0" strokeWidth="1.2" strokeOpacity="0.6" />
+                            )}
+                            <polygon points={dPoly(g => dRawPct(thisPeriodMuscle, g, dTotalThis))}
+                              fill="var(--accent)" fillOpacity="0.25" stroke="var(--accent)" strokeWidth="1.8" />
+                            {dGroups.map((g, i) => {
+                              const [lx, ly] = dLabelPos(i);
+                              const pct = Math.round(dRawPct(thisPeriodMuscle, g, dTotalThis));
+                              const shortLabel = g === "Hamstrings/Glutes" ? "H/Glutes" : g;
+                              return (
+                                <g key={g}>
+                                  <text x={lx} y={ly - 5} textAnchor="middle" dominantBaseline="middle"
+                                    fontSize="7" fill="var(--muted)" fontWeight="700" fontFamily="inherit">{shortLabel}</text>
+                                  <text x={lx} y={ly + 5} textAnchor="middle" dominantBaseline="middle"
+                                    fontSize="7" fill="var(--ink)" fontWeight="600" fontFamily="inherit">{pct}%</text>
+                                </g>
+                              );
+                            })}
+                          </svg>
+
+                          {/* Goal achieved vertical bars */}
+                          <p className="az-drill-chart-label" style={{ marginTop: 14 }}>Goal achieved</p>
+                          <svg viewBox="0 0 280 162" className="az-drill-vbar-svg">
+                            {([50, 100, 150] as const).map(pct => {
+                              const y = DVCB - (pct / DY_MAX) * DVCH;
+                              const is100 = pct === 100;
+                              return (
+                                <g key={pct}>
+                                  <line x1={DVCL} y1={y} x2={DVCR} y2={y}
+                                    stroke={is100 ? "var(--accent)" : "var(--line)"}
+                                    strokeWidth={is100 ? 1.4 : 0.6}
+                                    strokeDasharray={is100 ? "none" : "3 3"}
+                                    opacity={is100 ? 0.7 : 0.5} />
+                                  <text x={DVCL - 3} y={y} textAnchor="end" dominantBaseline="middle"
+                                    fontSize="7" fill={is100 ? "var(--accent)" : "var(--muted)"}
+                                    fontWeight={is100 ? "700" : "400"} fontFamily="inherit">{pct}%</text>
+                                </g>
+                              );
+                            })}
+                            {dGroups.map((g, i) => {
+                              const thisScore = dThisNorm[g] ?? 0;
+                              const prevScore = dPrevNorm[g] ?? 0;
+                              const slotX = DVCL + i * DslotW;
+                              const pairX = slotX + (DslotW - DPAIR_W) / 2;
+                              const thisH = (Math.min(thisScore, DY_MAX) / DY_MAX) * DVCH;
+                              const prevH = (Math.min(prevScore, DY_MAX) / DY_MAX) * DVCH;
+                              const color = dScoreColor(thisScore);
+                              const centerX = slotX + DslotW / 2;
+                              const labelInside = thisH >= 22;
+                              const labelY = labelInside ? DVCB - thisH + 10 : Math.max(DVCT + 9, DVCB - thisH - 5);
+                              return (
+                                <g key={g}>
+                                  {dHasPrev && prevScore > 0 && (
+                                    <rect x={pairX + DBAR_W + DBAR_GAP} y={DVCB - prevH} width={DBAR_W}
+                                      height={Math.max(prevH, 1)} rx="2" fill="#8b9ab0" opacity="0.35" />
+                                  )}
+                                  {thisScore > 0 && (
+                                    <rect x={pairX} y={DVCB - thisH} width={DBAR_W}
+                                      height={Math.max(thisH, 1)} rx="2" fill={color} />
+                                  )}
+                                  {thisScore > 0 && (
+                                    <text x={pairX + DBAR_W / 2} y={labelY}
+                                      textAnchor="middle" dominantBaseline="middle"
+                                      fontSize="6" fontWeight="700"
+                                      fill={labelInside ? "#fff" : color} fontFamily="inherit">
+                                      {thisScore > 150 ? "150+" : `${thisScore}%`}
+                                    </text>
+                                  )}
+                                  <text
+                                    transform={`rotate(-38, ${centerX}, ${DVCB + 6})`}
+                                    x={centerX} y={DVCB + 6}
+                                    textAnchor="end" dominantBaseline="middle"
+                                    fontSize="8" fontWeight="600" fill="var(--muted)" fontFamily="inherit">
+                                    {DSHORT[g] ?? g}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </svg>
+                          <div className="az-spider-legend" style={{ marginBottom: 14 }}>
+                            <div className="az-spider-legend-item">
+                              <div className="az-spider-legend-swatch" style={{ background: "#5a9e7a" }} />
+                              <span>{periodShort ? `This ${periodShort}` : "This period"}</span>
+                            </div>
+                            {dHasPrev && (
+                              <div className="az-spider-legend-item">
+                                <div className="az-spider-legend-swatch" style={{ background: "#8b9ab0", opacity: 0.6 }} />
+                                <span>{periodShort ? `Prior ${periodShort}` : "Prior period"}</span>
+                              </div>
                             )}
                           </div>
-                          <p className="report-card-name">{w.sessionName}</p>
-                          <p className="report-card-stats">{w.duration} · {w.totalSets} sets · {w.exerciseCount} exercises</p>
-                        </div>
-                        <span className="report-card-chevron">›</span>
-                      </div>
-                      <div className="report-card-actions">
-                        {onRedoWorkout && (
-                          <button
-                            type="button"
-                            className="report-card-action-btn"
-                            onClick={() => onRedoWorkout(w)}
-                          >
-                            Redo
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="report-card-action-btn"
-                          onClick={() => handleSave(w)}
-                          disabled={alreadySaved}
-                        >
-                          {alreadySaved ? "Saved ✓" : "Save to My Workouts"}
+                        </>
+                      );
+                    })()}
+                    <div className="az-muscle-grid">
+                      {HEATMAP_MUSCLES.map(m => {
+                        const status = muscleCoverage[m] ?? "none";
+                        const color = status === "fresh" ? "#5a9e7a" : status === "fading" ? "#c9973f" : status === "due" ? "#b55b4a" : "var(--muted)";
+                        return (
+                          <div key={m} className="az-muscle-chip" style={{ borderColor: color }}>
+                            <span className="az-muscle-dot" style={{ background: color }} />
+                            <span className="az-muscle-name">{m}</span>
+                            <span className="az-muscle-status">{status === "none" ? "—" : status}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="az-drill-ctas">
+                      <button type="button" className="az-drill-cta-btn az-drill-cta-btn--outline" onClick={() => navigateSaving("planner")}>
+                        Find exercises
+                      </button>
+                      <button type="button" className="az-drill-cta-btn az-drill-cta-btn--primary" onClick={() => navigateSaving("planner")}>
+                        Update my plan
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {drillSection === "exercises" && (
+                  <div className="az-card">
+                    <p className="az-card-title">Exercise progress</p>
+                    {(() => {
+                      const tracked = exerciseProgress.filter(e => e.status !== "insufficient_data");
+                      const counts = {
+                        improving: tracked.filter(e => e.status === "improving").length,
+                        building:  tracked.filter(e => e.status === "building").length,
+                        stable:    tracked.filter(e => e.status === "stable").length,
+                        stalled:   tracked.filter(e => e.status === "stalled").length,
+                        regressing:tracked.filter(e => e.status === "regressing").length,
+                      };
+                      const total = tracked.length;
+                      const STATUS_COLORS: Record<string, string> = {
+                        improving: "#5a9e7a", building: "#7bbfa0", stable: "#8b9ab0",
+                        stalled: "#c9973f", regressing: "#b55b4a",
+                      };
+                      const STATUS_LABELS: Record<string, string> = {
+                        improving: "Improving", building: "Building", stable: "Stable",
+                        stalled: "Stalled", regressing: "Regressing",
+                      };
+                      return total === 0 ? (
+                        <p className="az-balance-empty">Log more sessions to track exercise progress</p>
+                      ) : (
+                        <>
+                          {/* Status bar chart */}
+                          <div style={{ display: "flex", gap: 3, height: 36, marginBottom: 8, borderRadius: 6, overflow: "hidden" }}>
+                            {(["improving","building","stable","stalled","regressing"] as const).map(s => {
+                              const c = counts[s]; if (c === 0) return null;
+                              return (
+                                <div key={s} title={STATUS_LABELS[s]}
+                                  style={{ flex: c, background: STATUS_COLORS[s], display: "flex", alignItems: "center",
+                                    justifyContent: "center", color: "#fff", fontSize: "0.65rem", fontWeight: 700 }}>
+                                  {c}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                            {(["improving","building","stable","stalled","regressing"] as const).map(s => counts[s] > 0 && (
+                              <span key={s} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: "0.65rem", color: "var(--muted)" }}>
+                                <span style={{ width: 8, height: 8, borderRadius: "50%", background: STATUS_COLORS[s], display: "inline-block" }} />
+                                {STATUS_LABELS[s]}
+                              </span>
+                            ))}
+                          </div>
+                          <div className="az-ex-progress-list">
+                            {tracked.slice(0, 20).map(ex => (
+                              <div key={ex.exerciseId} className="az-ex-progress-item">
+                                <div className="az-ex-progress-left">
+                                  <p className="az-ex-progress-name">{ex.name}</p>
+                                  <p className="az-ex-progress-muscle">{ex.primaryMuscle} · {ex.sessionsCount} sessions</p>
+                                </div>
+                                <div className="az-ex-progress-right">
+                                  <span className="az-ex-status-pill" style={{ color: STATUS_COLORS[ex.status] ?? "var(--muted)" }}>
+                                    {STATUS_LABELS[ex.status] ?? "Stable"}
+                                  </span>
+                                  {ex.recentBestSet && <p className="az-ex-best">{ex.recentBestSet.weight}kg x {ex.recentBestSet.reps}</p>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {drillSection === "movement" && (() => {
+                  const mvAxValues = MOVE_RADAR_AXES.map(axis =>
+                    axis.keys.reduce((sum, k) => sum + (movementPatternSets[k] ?? 0), 0)
+                  );
+                  const mvMax = Math.max(...mvAxValues, 1);
+                  const mvTotal = mvAxValues.reduce((a, b) => a + b, 0);
+                  const mvcx2 = 75, mvcy2 = 75, mvr2 = 54;
+                  const mvStep = (2 * Math.PI) / MOVE_RADAR_AXES.length;
+                  const mvPt = (i: number, n: number): [number, number] => {
+                    const a = -Math.PI / 2 + i * mvStep;
+                    return [mvcx2 + Math.cos(a) * mvr2 * n, mvcy2 + Math.sin(a) * mvr2 * n];
+                  };
+                  const mvPts = MOVE_RADAR_AXES.map((_, i) => mvPt(i, Math.min(mvAxValues[i] / mvMax, 1)).join(",")).join(" ");
+                  const missingMv = MOVE_RADAR_AXES.filter((_, i) => mvAxValues[i] === 0).map(a => a.shortLabel);
+                  return (
+                    <div className="az-card">
+                      <p className="az-card-title">Movement balance</p>
+                      {mvTotal === 0 ? (
+                        <p className="az-balance-empty">No movement data logged yet</p>
+                      ) : (
+                        <>
+                          <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+                            <svg viewBox="0 0 150 150" width="170" height="170" overflow="visible" aria-hidden="true">
+                              {[0.25, 0.5, 0.75, 1.0].map(lv => (
+                                <polygon key={lv} points={MOVE_RADAR_AXES.map((_, i) => mvPt(i, lv).join(",")).join(" ")}
+                                  fill="none" stroke="var(--line)" strokeWidth="0.6" />
+                              ))}
+                              {MOVE_RADAR_AXES.map((_, i) => {
+                                const [x, y] = mvPt(i, 1);
+                                return <line key={i} x1={mvcx2} y1={mvcy2} x2={x} y2={y} stroke="var(--line)" strokeWidth="0.6" />;
+                              })}
+                              <polygon points={mvPts} fill="#5b8db5" fillOpacity="0.35" stroke="#5b8db5" strokeWidth="2" strokeLinejoin="round" />
+                              {MOVE_RADAR_AXES.map((a, i) => {
+                                const [x, y] = mvPt(i, 1.38);
+                                return <text key={i} x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize="8.5" fontWeight="600" fill="var(--muted)">{a.label}</text>;
+                              })}
+                            </svg>
+                          </div>
+                          <div className="az-mvt-drill-list">
+                            {MOVE_RADAR_AXES.map((axis, i) => {
+                              const sets = mvAxValues[i];
+                              const pct = mvTotal > 0 ? Math.round((sets / mvTotal) * 100) : 0;
+                              const isMissing = sets === 0;
+                              return (
+                                <div key={axis.label} className="az-mvt-drill-row">
+                                  <span className="az-mvt-drill-label">{axis.shortLabel}</span>
+                                  <div className="az-mvt-drill-track">
+                                    <div className="az-mvt-drill-fill" style={{
+                                      width: `${(sets / mvMax) * 100}%`,
+                                      background: isMissing ? "var(--line)" : "#5b8db5",
+                                    }} />
+                                  </div>
+                                  <span className="az-mvt-drill-val" style={{ color: isMissing ? "var(--muted)" : "var(--ink)" }}>
+                                    {isMissing ? "—" : `${sets} sets · ${pct}%`}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {missingMv.length > 0 && (
+                            <p className="az-balance-target-note" style={{ marginTop: 8 }}>
+                              Missing: {missingMv.join(", ")}
+                            </p>
+                          )}
+                        </>
+                      )}
+                      <div className="az-drill-ctas">
+                        <button type="button" className="az-drill-cta-btn az-drill-cta-btn--primary" onClick={() => navigateSaving("planner")}>
+                          Plan a session
                         </button>
                       </div>
-                    </article>
+                    </div>
                   );
-                })}
+                })()}
+
+                {drillSection === "frequency" && (
+                  <>
+                    {/* Both frequency charts in drill-down — no slider, stacked */}
+                    <TrainingHeatmapChart
+                      savedWorkouts={filteredWorkouts}
+                      periodDays={periodDays}
+                      drillMode
+                      onDrill={() => {}}
+                    />
+                    {/* Frequency stats */}
+                    <div className="az-card">
+                      <p className="az-card-title">Frequency stats</p>
+                      <div className="az-stat-grid">
+                        <div className="az-stat"><p className="az-stat-val">{consistency.avgPerWeek}</p><p className="az-stat-lbl">Avg/week</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{consistency.sessions7d}</p><p className="az-stat-lbl">This week</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{targetPerWeek}</p><p className="az-stat-lbl">Target/week</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{consistency.streak}d</p><p className="az-stat-lbl">Current streak</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{consistency.longestStreak}d</p><p className="az-stat-lbl">Best streak</p></div>
+                        <div className="az-stat"><p className="az-stat-val">{consistency.consistencyPct}%</p><p className="az-stat-lbl">vs target</p></div>
+                      </div>
+                    </div>
+                    {/* PRs */}
+                    {prsHistory.length > 0 && (
+                      <div className="az-card">
+                        <p className="az-card-title">Recent PRs</p>
+                        <div className="az-pr-list">
+                          {prsHistory.slice(0, 6).map((pr, i) => (
+                            <div key={i} className="az-pr-item">
+                              <div className="az-pr-body">
+                                <p className="az-pr-detail">{pr.detail}</p>
+                                <p className="az-pr-date">{new Date(pr.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            ) : (
+              /* ── CHART OVERVIEW ──────────────────────────────────────── */
+              <div className="az-viz-grid">
+                {daysSinceLastWorkout !== null && daysSinceLastWorkout > 7 && (
+                  <div className="az-stale-banner">
+                    <span>⏱</span>
+                    <span>Stats from your last session, {daysSinceLastWorkout} day{daysSinceLastWorkout !== 1 ? "s" : ""} ago.</span>
+                  </div>
+                )}
+                <VolumeChart
+                  periods={periodicVolume}
+                  title={granularity === "day" ? "DAILY VOLUME" : granularity === "week" ? "WEEKLY VOLUME" : "MONTHLY VOLUME"}
+                  granularity={granularity}
+                  onDrill={() => { setDrillSection("volume"); setDrillOrigin("stats"); }}
+                />
+                <MusclesMovementSliderCard
+                  muscleCoverage={muscleCoverage}
+                  onDrill={() => { setDrillSection("muscles"); setDrillOrigin("stats"); }}
+                />
+                <ExerciseProgressChart exerciseProgress={exerciseProgress} onDrill={() => { setDrillSection("exercises"); setDrillOrigin("stats"); }} />
+                <MovementBarsCard movementPatternSets={movementPatternSets} onDrill={() => { setDrillSection("movement"); setDrillOrigin("stats"); }} />
+                <MusclesMovementRadarCard thisMonth={thisPeriodMuscle} prevMonth={prevPeriodMuscle} totalFilteredSets={totalFilteredSets} comparisonLabel={comparisonLabel ?? undefined} onDrill={() => { setDrillSection("muscles"); setDrillOrigin("stats"); }} />
+                <TrainingHeatmapChart savedWorkouts={filteredWorkouts} periodDays={periodDays} onDrill={() => { setDrillSection("frequency"); setDrillOrigin("stats"); }} />
               </div>
             )}
           </section>
-        ) : (
-          <section className="planner-section">
-            <div className="planner-builder-stub">
-              <p className="planner-empty-title">Analyzer coming soon</p>
-              <p className="planner-empty-sub">Trends, plateaus, and volume tracking will appear here.</p>
-            </div>
-          </section>
-        )}
-        {deleteConfirmId && (() => {
-          const w = savedWorkouts.find(x => x.savedAt === deleteConfirmId);
-          return (
-            <div className="plan-delete-confirm-overlay" onClick={() => setDeleteConfirmId(null)}>
-              <div className="plan-delete-confirm-sheet" onClick={e => e.stopPropagation()}>
-                <p className="plan-delete-confirm-title">Delete "{w?.sessionName}"?</p>
-                <p className="plan-delete-confirm-body">This will be permanently removed from your history. You can&apos;t undo this.</p>
-                <div className="plan-delete-confirm-actions">
-                  <button type="button" className="secondary-button" onClick={() => setDeleteConfirmId(null)}>Cancel</button>
-                  <button type="button" className="danger-button" onClick={() => { const id = deleteConfirmId; setDeleteConfirmId(null); onDeleteWorkout?.(id); }}>Delete</button>
+        ) : tab === "summary" ? (
+          /* ── ANALYZER — Feed-based design ──────────────────────────────────── */
+          <section className="planner-section az-section">
+            {!hasEnoughData && (
+              <div className="az-learning-banner">
+                <span className="az-learning-icon">&#x1f4ca;</span>
+                <div>
+                  <p className="az-learning-title">Still learning your patterns</p>
+                  <p className="az-learning-sub">Complete {Math.max(0, 3 - savedWorkouts.length)} more workout{savedWorkouts.length < 2 ? "s" : ""} to unlock full insights.</p>
                 </div>
               </div>
+            )}
+
+            {/* ── Health Rings ──────────────────────────────────────────────── */}
+            <div className="az-rings-row">
+              {[
+                { label: "Consistency", value: ringConsistency, color: ringConsistency >= 70 ? "#22c55e" : ringConsistency >= 40 ? "#f59e0b" : "#ef4444" },
+                { label: "Muscle Balance", value: ringMuscle, color: ringMuscle >= 70 ? "#22c55e" : ringMuscle >= 40 ? "#f59e0b" : "#ef4444" },
+                { label: "Goal Alignment", value: ringGoal, color: ringGoal >= 70 ? "#22c55e" : ringGoal >= 40 ? "#f59e0b" : "#ef4444" },
+              ].map(ring => {
+                const r = 32, c = 2 * Math.PI * r;
+                const offset = c - (ring.value / 100) * c;
+                return (
+                  <button key={ring.label} type="button" className={`az-ring-item${expandedRing === ring.label ? " is-active" : ""}`} onClick={() => setExpandedRing(prev => prev === ring.label ? null : ring.label)}>
+                    <svg viewBox="0 0 80 80" className="az-ring-svg">
+                      <circle cx="40" cy="40" r={r} fill="none" stroke="var(--line)" strokeWidth="6" />
+                      <circle cx="40" cy="40" r={r} fill="none" stroke={ring.color} strokeWidth="6"
+                        strokeDasharray={c} strokeDashoffset={offset}
+                        strokeLinecap="round" transform="rotate(-90 40 40)"
+                        style={{ transition: "stroke-dashoffset 0.6s ease" }} />
+                    </svg>
+                    <span className="az-ring-val">{ring.value}%</span>
+                    <span className="az-ring-label">{ring.label}</span>
+                  </button>
+                );
+              })}
             </div>
+            {expandedRing && (() => {
+              const explanations: Record<string, { title: string; desc: string; drivers: string[]; statsSection: "volume" | "muscles" | "exercises"; statsLabel: string }> = {
+                "Consistency": {
+                  title: "Consistency Score",
+                  desc: "How regularly you train relative to your target frequency.",
+                  drivers: ["Sessions per week vs your target", "Streak length", "Gap between sessions"],
+                  statsSection: "volume",
+                  statsLabel: "See training frequency →",
+                },
+                "Muscle Balance": {
+                  title: "Muscle Balance Score",
+                  desc: "How evenly you distribute training across all major muscle groups.",
+                  drivers: ["Push vs pull ratio", "Upper vs lower balance", "Muscles not trained this period"],
+                  statsSection: "muscles",
+                  statsLabel: "See muscle coverage →",
+                },
+                "Goal Alignment": {
+                  title: "Goal Alignment Score",
+                  desc: "How well your training matches your stated goal.",
+                  drivers: ["Volume trend (up = good for hypertrophy)", "Consistency vs target", "Muscle coverage breadth"],
+                  statsSection: "exercises",
+                  statsLabel: "See exercise progress →",
+                },
+              };
+              const exp = explanations[expandedRing];
+              if (!exp) return null;
+              return (
+                <div className="az-ring-explain">
+                  <p className="az-ring-explain-title">{exp.title}</p>
+                  <p className="az-ring-explain-desc">{exp.desc}</p>
+                  <ul className="az-ring-explain-drivers">
+                    {exp.drivers.map(d => <li key={d}>{d}</li>)}
+                  </ul>
+                  <button
+                    type="button"
+                    className="az-ring-stats-link"
+                    onClick={() => { setTab("stats"); setDrillSection(exp.statsSection); setDrillOrigin("summary"); setExpandedRing(null); }}
+                  >
+                    {exp.statsLabel}
+                  </button>
+                </div>
+              );
+            })()}
+
+            <ExerciseStatusGroups
+              exerciseProgress={exerciseProgress}
+              hasRepIQPlan={!!repiqPlan}
+              onNavigate={navigateSaving}
+            />
+
+            {/* ── Action Plan ──────────────────────────────────────────────── */}
+            {actionPlan.length > 0 && (
+              <div className="az-card">
+                <p className="az-card-title">Your next moves</p>
+                <div className="az-action-list">
+                  {actionPlan.map((a, i) => (
+                    <div key={a.id} className="az-action-item">
+                      <span className="az-action-num">{i + 1}</span>
+                      <div className="az-action-body">
+                        <p className="az-action-title">{a.title}</p>
+                        <p className="az-action-detail">{a.detail}</p>
+                        <span className="az-insight-stats-link" onClick={(e) => { e.stopPropagation(); setTab("stats"); }}>View in Stats →</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </section>
+        ) : null}
+
+        {tab === "progress" && (() => {
+          // Collect all photos from saved workouts, preserving role
+          const allPhotos: { url: string; date: string; name: string; role: string }[] = [];
+          for (const w of [...savedWorkouts].sort((a, b) => b.date.localeCompare(a.date))) {
+            if (w.images && w.images.length > 0) {
+              for (const img of w.images) {
+                if (img.public_url) {
+                  allPhotos.push({
+                    url: img.public_url,
+                    date: w.date,
+                    name: w.sessionName,
+                    role: (img as WorkoutPhotoAsset).photoRole ?? "workout",
+                  });
+                }
+              }
+            }
+          }
+
+          const visiblePhotos = photoFilter === "progress"
+            ? allPhotos.filter(p => p.role === "progress")
+            : allPhotos;
+
+          // Group by month
+          const byMonth: Record<string, typeof visiblePhotos> = {};
+          for (const p of visiblePhotos) {
+            const d = new Date(p.date + "T12:00:00");
+            const key = d.toLocaleString("default", { month: "long", year: "numeric" });
+            if (!byMonth[key]) byMonth[key] = [];
+            byMonth[key].push(p);
+          }
+
+          function handlePhotoTap(photo: { url: string; date: string; name: string; role: string }) {
+            if (!compareMode) { setLightboxUrl(photo.url); return; }
+            if (!compareA) { setCompareA(photo); return; }
+            if (!compareB && photo.url !== compareA.url) { setCompareB(photo); return; }
+            // Reset compare selection
+            setCompareA(photo);
+            setCompareB(null);
+          }
+
+          const isSelectedCompare = (url: string) => compareA?.url === url || compareB?.url === url;
+          const slotLabel = (url: string) => compareA?.url === url ? "A" : compareB?.url === url ? "B" : null;
+
+          return (
+            <section className="planner-section az-section">
+              {/* Filter pills */}
+              <div className="prog-filter-row">
+                {(["all", "progress"] as const).map(f => (
+                  <button
+                    key={f}
+                    type="button"
+                    className={`prog-filter-pill${photoFilter === f ? " is-active" : ""}`}
+                    onClick={() => { setPhotoFilter(f); setCompareMode(false); setCompareA(null); setCompareB(null); }}
+                  >
+                    {f === "all" ? "All" : "Progress pics"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Compare header */}
+              <div className="prog-header">
+                <p className="prog-count">{visiblePhotos.length} photo{visiblePhotos.length !== 1 ? "s" : ""}</p>
+                {visiblePhotos.length >= 2 && (
+                  <button
+                    type="button"
+                    className={`prog-compare-btn${compareMode ? " is-active" : ""}`}
+                    onClick={() => { setCompareMode(v => !v); setCompareA(null); setCompareB(null); }}
+                  >
+                    {compareMode ? "Done" : "Compare"}
+                  </button>
+                )}
+              </div>
+
+              {/* Compare mode: two slots or split view */}
+              {compareMode && (
+                <div className="prog-compare-panel">
+                  {compareA && compareB ? (
+                    <div className="prog-split">
+                      <div className="prog-split-slot">
+                        <img src={compareA.url} alt={compareA.name} className="prog-split-img" />
+                        <p className="prog-split-label">{new Date(compareA.date + "T12:00:00").toLocaleDateString("default", { month: "short", day: "numeric" })}</p>
+                      </div>
+                      <div className="prog-split-divider" />
+                      <div className="prog-split-slot">
+                        <img src={compareB.url} alt={compareB.name} className="prog-split-img" />
+                        <p className="prog-split-label">{new Date(compareB.date + "T12:00:00").toLocaleDateString("default", { month: "short", day: "numeric" })}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="prog-compare-slots">
+                      <div className={`prog-slot${compareA ? " has-photo" : ""}`}>
+                        {compareA ? <img src={compareA.url} alt="A" className="prog-slot-img" /> : <span className="prog-slot-empty">Tap a photo for A</span>}
+                      </div>
+                      <div className={`prog-slot${compareB ? " has-photo" : ""}`}>
+                        {compareB ? <img src={compareB.url} alt="B" className="prog-slot-img" /> : <span className="prog-slot-empty">Tap a photo for B</span>}
+                      </div>
+                    </div>
+                  )}
+                  <button type="button" className="prog-reset-btn" onClick={() => { setCompareA(null); setCompareB(null); }}>Reset</button>
+                </div>
+              )}
+
+              {/* Empty state */}
+              {visiblePhotos.length === 0 && (
+                <div className="az-card" style={{ textAlign: "center", padding: "32px 16px" }}>
+                  <p style={{ fontSize: "2rem", margin: "0 0 8px" }}>📸</p>
+                  <p className="az-card-title">{photoFilter === "progress" ? "No progress photos yet" : "No photos yet"}</p>
+                  <p className="az-card-sub">{photoFilter === "progress" ? `Tag a photo as "Progress" when finishing a workout to track your body over time.` : "Add photos when finishing a workout to track your progress over time."}</p>
+                </div>
+              )}
+
+              {/* Timeline grouped by month */}
+              {Object.entries(byMonth).map(([month, photos]) => (
+                <div key={month} className="prog-month-group">
+                  <p className="prog-month-label">{month}</p>
+                  <div className="prog-photo-grid">
+                    {photos.map((p, idx) => {
+                      const sel = isSelectedCompare(p.url);
+                      const label = slotLabel(p.url);
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          className={`prog-photo-tile${sel ? " is-selected" : ""}`}
+                          onClick={() => handlePhotoTap(p)}
+                          aria-label={`${p.name} — ${p.date}`}
+                        >
+                          <img src={p.url} alt={p.name} className="prog-photo-img" />
+                          {label && <span className="prog-photo-slot-badge">{label}</span>}
+                          <div className="prog-photo-meta">
+                            <span className="prog-photo-name">{p.name}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              {/* Lightbox */}
+              {lightboxUrl && (
+                <div className="prog-lightbox" onClick={() => setLightboxUrl(null)}>
+                  <img src={lightboxUrl} alt="Progress photo" className="prog-lightbox-img" />
+                  <button type="button" className="prog-lightbox-close" onClick={() => setLightboxUrl(null)} aria-label="Close">×</button>
+                </div>
+              )}
+            </section>
           );
         })()}
       </section>
@@ -12670,6 +15330,659 @@ function getThisWeekStats(workouts: SavedWorkoutData[]): {
   };
 }
 
+// ── computeInsightsWell ───────────────────────────────────────────────────────
+function computeInsightsWell(workouts: SavedWorkoutData[], profile: UserPsychProfile): InsightsWell {
+  const cycleDays = profile.cycleDays ?? 7;
+  const targetPerWeek = profile.scheduleCommitment ?? profile.daysPerWeekPref ?? 3;
+
+  const streak = computeStreak(workouts);
+  const weekStreak = computeWeekStreak(workouts, targetPerWeek, cycleDays);
+  const trend = computeTrainingTrend(workouts, cycleDays);
+  const goalResult = computeGoalProgress(workouts, profile);
+  const thisWeek = getThisWeekStats(workouts);
+  const muscleFreshness = computeMuscleCoverage(workouts, cycleDays);
+
+  // Macro groups that have ≥1 canonical muscle marked "due"
+  const dueMuscleGroups = Array.from(new Set(
+    Object.entries(muscleFreshness)
+      .filter(([, status]) => status === "due")
+      .map(([muscle]) => getMuscleMacroGroup(muscle))
+      .filter((g): g is string => g !== null)
+  ));
+
+  // Movement patterns with 0 sets in the last 28 days
+  const cutoffMs = Date.now() - 28 * 86400000;
+  const recentWorkouts = workouts.filter(w => new Date((w.date ?? w.savedAt) + "T12:00:00").getTime() >= cutoffMs);
+  const movementSets: Record<string, number> = {};
+  for (const w of recentWorkouts) {
+    for (const ex of (w.exercises ?? [])) {
+      const mp = (ex as { movementPattern?: string }).movementPattern;
+      if (mp) movementSets[mp] = (movementSets[mp] ?? 0) + (ex.sets?.length ?? 0);
+    }
+  }
+  const missingMovements = MOVE_RADAR_AXES
+    .filter(axis => axis.keys.every(k => !movementSets[k]))
+    .map(a => a.shortLabel);
+
+  return {
+    computedAt: new Date().toISOString(),
+    streak,
+    weekStreak,
+    currentZone: trend.currentZone,
+    zoneLabel: trend.zoneLabel,
+    goalScore: goalResult.score,
+    thisWeek,
+    muscleFreshness,
+    dueMuscleGroups,
+    missingMovements,
+  };
+}
+
+// ── Insights V1 Engine ────────────────────────────────────────────────────────
+
+type InsightConfidence = "low" | "medium" | "high";
+
+type ConsistencyStats = {
+  sessions7d: number;
+  sessions30d: number;
+  streak: number;
+  longestStreak: number;
+  avgPerWeek: number;
+  consistencyPct: number;
+  lastGapDays: number;
+  isReturningAfterGap: boolean;
+};
+
+type SessionSummaryStats = {
+  totalWorkouts: number;
+  totalSets: number;
+  totalVolumeKg: number;
+  totalDurationMin: number;
+  avgDurationMin: number;
+  avgSets: number;
+  avgVolumeKg: number;
+  avgExercises: number;
+  volumeTrend: "up" | "down" | "stable" | "insufficient";
+  sessionsTrend: "up" | "down" | "stable" | "insufficient";
+};
+
+type LaggingMuscleItem = {
+  muscle: string;
+  directSets30d: number;
+  minEffectiveVolume: number;
+  lastTrainedDaysAgo: number | null;
+  reason: "absent" | "low_volume" | "low_frequency";
+  suggestedExercises: string[];
+};
+
+type ExerciseProgressItem = {
+  exerciseId: string;
+  name: string;
+  primaryMuscle: string;
+  status: "improving" | "stable" | "building" | "stalled" | "regressing" | "insufficient_data";
+  sessionsCount: number;
+  bestSetEver: { weight: number; reps: number } | null;
+  recentBestSet: { weight: number; reps: number } | null;
+  volumeTrend: "up" | "down" | "stable";
+  confidence: InsightConfidence;
+};
+
+type PlateauItem = {
+  exerciseId: string;
+  name: string;
+  sessionsAnalyzed: number;
+  confidence: InsightConfidence;
+  cause: "weight_stuck" | "reps_stuck" | "volume_stuck";
+  action: string;
+};
+
+type RotationItem = {
+  muscle: string;
+  variantsUsed: number;
+  variantNames: string[];
+  anchorExercise: string | null;
+  rotationLevel: "high" | "acceptable" | "well_standardized";
+  warning?: string;
+  recommendation?: string;
+};
+
+type GoalAlignmentResult = {
+  score: number;
+  label: "aligned" | "partially_aligned" | "misaligned";
+  mismatches: string[];
+  suggestions: string[];
+};
+
+type MovementBalanceResult = {
+  byPattern: Record<string, { sets: number; volume: number }>;
+  pushSets: number;
+  pullSets: number;
+  squatSets: number;
+  hingeSets: number;
+  upperSets: number;
+  lowerSets: number;
+  imbalances: string[];
+};
+
+type PREntry = {
+  exerciseName: string;
+  prType: "weight" | "reps" | "estimated_1rm";
+  detail: string;
+  date: string;
+};
+
+type ActionItem = {
+  id: string;
+  priority: number;
+  title: string;
+  detail: string;
+  linkedType: "consistency" | "lagging_muscle" | "plateau" | "rotation" | "goal_alignment" | "balance";
+};
+
+function wkToMs(w: SavedWorkoutData): number {
+  const ds = (w.date ?? w.savedAt).slice(0, 10);
+  const [y, mo, d] = ds.split("-").map(Number);
+  return Date.UTC(y, mo - 1, d);
+}
+
+function computeConsistencyStats(
+  workouts: SavedWorkoutData[],
+  profile: UserPsychProfile,
+  periodDays: number | null = null  // null = "all time" → falls back to 56-day rolling window
+): ConsistencyStats {
+  const msPerDay = 86400000;
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+
+  // Always compute 7d / 30d counts from the full saved history for streak/gap display
+  const sessions7d  = workouts.filter(w => todayMs - wkToMs(w) <= 6  * msPerDay).length;
+  const sessions30d = workouts.filter(w => todayMs - wkToMs(w) <= 29 * msPerDay).length;
+
+  const streak = computeStreak(workouts);
+
+  const sortedMs = [...new Set(workouts.map(wkToMs))].sort((a, b) => a - b);
+  let longest = 0, cur = 0;
+  for (let i = 0; i < sortedMs.length; i++) {
+    if (i === 0 || sortedMs[i] - sortedMs[i - 1] === msPerDay) { cur++; }
+    else { cur = 1; }
+    longest = Math.max(longest, cur);
+  }
+
+  const targetPerWeek = profile.scheduleCommitment ?? profile.daysPerWeekPref ?? 3;
+
+  // consistencyPct: use the actual selected period length so the % reflects
+  // how well the user hit their target OVER THAT RANGE, not always the last 30d.
+  // "all time" falls back to a rolling 8-week window to reflect recent habit.
+  let consistencyPct: number;
+  let avgPerWeek: number;
+  if (periodDays === null) {
+    // All-time: use rolling 56-day (8-week) window
+    const recent8w = workouts.filter(w => todayMs - wkToMs(w) <= 55 * msPerDay);
+    avgPerWeek = Math.round((recent8w.length / 8) * 10) / 10;
+    consistencyPct = Math.min(Math.round((recent8w.length / Math.max(targetPerWeek * 8, 1)) * 100), 100);
+  } else {
+    const weeks = periodDays / 7;
+    avgPerWeek = Math.round((workouts.length / weeks) * 10) / 10;
+    const expectedSessions = targetPerWeek * weeks;
+    consistencyPct = Math.min(Math.round((workouts.length / Math.max(expectedSessions, 1)) * 100), 100);
+  }
+
+  // 0 when no sessions in period — avoids spurious "999 days" action items when filter has no data
+  const lastMs = workouts.length > 0 ? Math.max(...workouts.map(wkToMs)) : null;
+  const lastGapDays = lastMs != null ? Math.round((todayMs - lastMs) / msPerDay) : 0;
+
+  const recentForGap = workouts.filter(w => todayMs - wkToMs(w) <= 30 * msPerDay);
+  let isReturningAfterGap = false;
+  if (recentForGap.length >= 2) {
+    const rMs = recentForGap.map(wkToMs).sort((a, b) => b - a);
+    for (let i = 0; i < rMs.length - 1; i++) {
+      if ((rMs[i] - rMs[i + 1]) / msPerDay >= 14) { isReturningAfterGap = true; break; }
+    }
+  }
+
+  return { sessions7d, sessions30d, streak, longestStreak: longest, avgPerWeek, consistencyPct, lastGapDays, isReturningAfterGap };
+}
+
+function computeSessionSummary(workouts: SavedWorkoutData[]): SessionSummaryStats {
+  const msPerDay = 86400000;
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const recent = workouts.filter(w => todayMs - wkToMs(w) <= 27 * msPerDay);
+  const prior = workouts.filter(w => { const d = todayMs - wkToMs(w); return d > 27 * msPerDay && d <= 55 * msPerDay; });
+
+  const n = workouts.length || 1;
+  const totalDurationSec = workouts.reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
+  const totalSets = workouts.reduce((s, w) => s + (w.totalSets ?? 0), 0);
+  const totalVolumeKg = workouts.reduce((s, w) => s + (w.totalVolume ?? 0), 0);
+
+  const recentVol = recent.reduce((s, w) => s + (w.totalVolume ?? 0), 0);
+  const priorVol = prior.reduce((s, w) => s + (w.totalVolume ?? 0), 0);
+  let volumeTrend: SessionSummaryStats["volumeTrend"] = "insufficient";
+  if (prior.length >= 2 && recent.length >= 2) {
+    const delta = priorVol > 0 ? (recentVol - priorVol) / priorVol : 0;
+    volumeTrend = delta > 0.08 ? "up" : delta < -0.08 ? "down" : "stable";
+  }
+  let sessionsTrend: SessionSummaryStats["sessionsTrend"] = "insufficient";
+  if (prior.length >= 2) {
+    sessionsTrend = recent.length > prior.length + 1 ? "up" : recent.length < prior.length - 1 ? "down" : "stable";
+  }
+
+  return {
+    totalWorkouts: workouts.length,
+    totalSets,
+    totalVolumeKg: Math.round(totalVolumeKg),
+    totalDurationMin: Math.round(totalDurationSec / 60),
+    avgDurationMin: Math.round(totalDurationSec / n / 60),
+    avgSets: Math.round((totalSets / n) * 10) / 10,
+    avgVolumeKg: Math.round(totalVolumeKg / n),
+    avgExercises: Math.round((workouts.reduce((s, w) => s + (w.exerciseCount ?? 0), 0) / n) * 10) / 10,
+    volumeTrend,
+    sessionsTrend,
+  };
+}
+
+function computeLaggingMuscles(workouts: SavedWorkoutData[], profile: UserPsychProfile, library: ExerciseWithTaxonomy[]): LaggingMuscleItem[] {
+  if (workouts.length < 3) return [];
+  const msPerDay = 86400000;
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const recent = workouts.filter(w => todayMs - wkToMs(w) <= 29 * msPerDay);
+
+  const goalBucket = getGoalBucket(profile.primaryGoal);
+  const MEV: Record<string, number> = goalBucket === "strength"
+    ? { Chest: 6, Back: 8, Shoulders: 6, Biceps: 4, Triceps: 4, Quads: 6, Hamstrings: 4, Glutes: 4, Calves: 4, Core: 4 }
+    : goalBucket === "endurance" || goalBucket === "fat"
+    ? { Chest: 4, Back: 6, Shoulders: 4, Biceps: 2, Triceps: 2, Quads: 6, Hamstrings: 4, Glutes: 4, Calves: 6, Core: 6 }
+    : { Chest: 8, Back: 10, Shoulders: 8, Biceps: 6, Triceps: 6, Quads: 8, Hamstrings: 6, Glutes: 6, Calves: 6, Core: 8 };
+
+  const directSets: Record<string, number> = {};
+  const lastTrained: Record<string, number> = {};
+  const sessionsByMuscle: Record<string, number> = {};
+
+  for (const w of recent) {
+    const wMs = wkToMs(w);
+    for (const ex of w.exercises) {
+      const canonical = getCanonicalMuscle(ex.primaryMuscle);
+      if (!canonical || canonical === "Other") continue;
+      directSets[canonical] = (directSets[canonical] ?? 0) + (ex.loggedSets ?? 0);
+      sessionsByMuscle[canonical] = (sessionsByMuscle[canonical] ?? 0) + 1;
+      if (!lastTrained[canonical] || wMs > lastTrained[canonical]) lastTrained[canonical] = wMs;
+    }
+  }
+
+  const lagging: LaggingMuscleItem[] = [];
+  for (const muscle of HEATMAP_MUSCLES) {
+    const mevPerWeek = MEV[muscle] ?? 6;
+    const target30d = mevPerWeek * 4;
+    const actual = directSets[muscle] ?? 0;
+    const lastMs = lastTrained[muscle];
+    const lastDays = lastMs != null ? Math.round((todayMs - lastMs) / msPerDay) : null;
+
+    let reason: LaggingMuscleItem["reason"] | null = null;
+    if (!lastMs || (lastDays !== null && lastDays > 14)) reason = "absent";
+    else if (actual < target30d * 0.5) reason = "low_volume";
+    else if (actual < target30d * 0.7 && (sessionsByMuscle[muscle] ?? 0) <= 2) reason = "low_frequency";
+    if (!reason) continue;
+
+    const suggested = library
+      .filter(ex => getCanonicalMuscle(ex.primaryMuscle) === muscle && ex.exerciseType !== "freestyle_cardio")
+      .slice(0, 3).map(ex => ex.name);
+
+    lagging.push({ muscle, directSets30d: actual, minEffectiveVolume: target30d, lastTrainedDaysAgo: lastDays, reason, suggestedExercises: suggested });
+  }
+
+  const order = { absent: 0, low_volume: 1, low_frequency: 2 } as const;
+  return lagging.sort((a, b) => order[a.reason] - order[b.reason]);
+}
+
+function computeExerciseProgress(workouts: SavedWorkoutData[]): ExerciseProgressItem[] {
+  if (workouts.length < 2) return [];
+  const byEx = new Map<string, { name: string; muscle: string; sessions: { wt: number; reps: number; vol: number }[][] }>();
+
+  for (const w of [...workouts].reverse()) {
+    for (const ex of w.exercises) {
+      if (!ex.sets || ex.sets.length === 0) continue;
+      const valid = ex.sets.filter(s => s.weight > 0 && s.reps > 0);
+      if (valid.length === 0) continue;
+      if (!byEx.has(ex.id)) byEx.set(ex.id, { name: ex.name, muscle: ex.primaryMuscle, sessions: [] });
+      byEx.get(ex.id)!.sessions.push(valid.map(s => ({ wt: s.weight, reps: s.reps, vol: s.weight * s.reps })));
+    }
+  }
+
+  const e1rm = (wt: number, reps: number) => wt * (1 + reps / 30);
+  const bestE1rm = (sets: { wt: number; reps: number }[]) => Math.max(...sets.map(s => e1rm(s.wt, s.reps)));
+
+  const results: ExerciseProgressItem[] = [];
+  for (const [id, data] of byEx) {
+    if (data.sessions.length < 2) continue;
+    const allSets = data.sessions.flat();
+    const bestAll = allSets.reduce((b, s) => e1rm(s.wt, s.reps) > e1rm(b.wt, b.reps) ? s : b, allSets[0]);
+    const recentSess = data.sessions.slice(-3);
+    const recentSets = recentSess.flat();
+    const recentBest = recentSets.reduce((b, s) => e1rm(s.wt, s.reps) > e1rm(b.wt, b.reps) ? s : b, recentSets[0]);
+
+    const oldVol = data.sessions.slice(-6, -3).flat().reduce((s, x) => s + x.vol, 0);
+    const newVol = recentSess.flat().reduce((s, x) => s + x.vol, 0);
+    let volumeTrend: ExerciseProgressItem["volumeTrend"] = "stable";
+    if (data.sessions.length >= 6) {
+      const delta = oldVol > 0 ? (newVol - oldVol) / oldVol : 0;
+      volumeTrend = delta > 0.08 ? "up" : delta < -0.08 ? "down" : "stable";
+    }
+
+    const recentE1 = bestE1rm(recentBest ? [recentBest] : []);
+    const allE1 = bestE1rm(bestAll ? [bestAll] : []);
+    let status: ExerciseProgressItem["status"] = "insufficient_data";
+    if (data.sessions.length >= 3) {
+      if (recentE1 >= allE1 * 0.98 && volumeTrend !== "down") status = "improving";
+      else if (recentE1 >= allE1 * 0.93 && volumeTrend !== "down") status = "stable";
+      else if (data.sessions.length <= 5 && volumeTrend !== "down") status = "building";
+      else if (volumeTrend === "down" && recentE1 < allE1 * 0.9) status = "regressing";
+      else status = "stalled";
+    }
+
+    const confidence: InsightConfidence = data.sessions.length >= 8 ? "high" : data.sessions.length >= 4 ? "medium" : "low";
+    results.push({
+      exerciseId: id, name: data.name, primaryMuscle: data.muscle, status,
+      sessionsCount: data.sessions.length,
+      bestSetEver: bestAll ? { weight: bestAll.wt, reps: bestAll.reps } : null,
+      recentBestSet: recentBest ? { weight: recentBest.wt, reps: recentBest.reps } : null,
+      volumeTrend, confidence,
+    });
+  }
+
+  const ord = { improving: 0, stable: 1, building: 2, stalled: 3, regressing: 4, insufficient_data: 5 };
+  return results.sort((a, b) => ord[a.status] - ord[b.status]).slice(0, 25);
+}
+
+function computePlateauExercises(workouts: SavedWorkoutData[]): PlateauItem[] {
+  if (workouts.length < 4) return [];
+  const byEx = new Map<string, { name: string; sessions: { e1rm: number; vol: number }[] }>();
+
+  for (const w of [...workouts].reverse()) {
+    for (const ex of w.exercises) {
+      if (!ex.sets) continue;
+      const valid = ex.sets.filter(s => s.weight > 0 && s.reps > 0);
+      if (!valid.length) continue;
+      const bestE1rm = Math.max(...valid.map(s => s.weight * (1 + s.reps / 30)));
+      const vol = valid.reduce((s, x) => s + x.weight * x.reps, 0);
+      if (!byEx.has(ex.id)) byEx.set(ex.id, { name: ex.name, sessions: [] });
+      byEx.get(ex.id)!.sessions.push({ e1rm: bestE1rm, vol });
+    }
+  }
+
+  const plateaus: PlateauItem[] = [];
+  for (const [id, data] of byEx) {
+    if (data.sessions.length < 5) continue;
+    const recent4 = data.sessions.slice(-4);
+    const older = data.sessions.slice(-8, -4);
+    if (older.length < 2) continue;
+
+    const maxRecent = Math.max(...recent4.map(s => s.e1rm));
+    const minRecent = Math.min(...recent4.map(s => s.e1rm));
+    if (maxRecent === 0 || (maxRecent - minRecent) / maxRecent > 0.15) continue;
+
+    const maxOlder = Math.max(...older.map(s => s.e1rm));
+    if (maxOlder === 0) continue;
+    if ((maxRecent - maxOlder) / maxOlder > 0.03) continue;
+
+    const recentVol = recent4.reduce((s, x) => s + x.vol, 0) / recent4.length;
+    const olderVol = older.reduce((s, x) => s + x.vol, 0) / older.length;
+    const volDelta = olderVol > 0 ? (recentVol - olderVol) / olderVol : 0;
+
+    let cause: PlateauItem["cause"] = "weight_stuck";
+    let action: string;
+    if (volDelta < -0.1) {
+      cause = "volume_stuck";
+      action = "Add 1 set per session for 2 weeks before increasing load.";
+    } else {
+      cause = "reps_stuck";
+      action = "Build reps at current weight — hit the top of your rep range before adding load.";
+    }
+
+    plateaus.push({
+      exerciseId: id, name: data.name, sessionsAnalyzed: data.sessions.length,
+      confidence: data.sessions.length >= 8 ? "high" : "medium",
+      cause, action,
+    });
+  }
+  return plateaus.slice(0, 5);
+}
+
+function computeExerciseRotation(workouts: SavedWorkoutData[]): RotationItem[] {
+  if (workouts.length < 4) return [];
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const recent = workouts.filter(w => todayMs - wkToMs(w) <= 55 * 86400000);
+  if (recent.length < 4) return [];
+
+  const byMuscle = new Map<string, Map<string, { name: string; count: number }>>();
+  for (const w of recent) {
+    for (const ex of w.exercises) {
+      const canonical = getCanonicalMuscle(ex.primaryMuscle);
+      if (!canonical || canonical === "Other") continue;
+      if (!byMuscle.has(canonical)) byMuscle.set(canonical, new Map());
+      const mm = byMuscle.get(canonical)!;
+      if (!mm.has(ex.id)) mm.set(ex.id, { name: ex.name, count: 0 });
+      mm.get(ex.id)!.count++;
+    }
+  }
+
+  const results: RotationItem[] = [];
+  for (const [muscle, mm] of byMuscle) {
+    if (mm.size < 2) continue;
+    const sorted = [...mm.values()].sort((a, b) => b.count - a.count);
+    const total = sorted.reduce((s, e) => s + e.count, 0);
+    const anchor = sorted[0];
+    const anchorPct = anchor.count / total;
+
+    let rotationLevel: RotationItem["rotationLevel"];
+    let warning: string | undefined, recommendation: string | undefined;
+    if (mm.size >= 4 && anchorPct < 0.4) {
+      rotationLevel = "high";
+      warning = `${mm.size} different ${muscle} exercises in 8 weeks — hard to track progress.`;
+      recommendation = `Keep ${anchor.name} as your anchor lift. Rotate accessories, not your main movement.`;
+    } else if (mm.size >= 3 && anchorPct < 0.55) {
+      rotationLevel = "acceptable";
+      recommendation = `${anchor.name} is appearing most — keep it in every session.`;
+    } else {
+      rotationLevel = "well_standardized";
+    }
+    results.push({ muscle, variantsUsed: mm.size, variantNames: sorted.map(e => e.name), anchorExercise: anchor.name, rotationLevel, warning, recommendation });
+  }
+  return results.filter(r => r.rotationLevel !== "well_standardized").slice(0, 6);
+}
+
+function computeGoalAlignment(
+  workouts: SavedWorkoutData[],
+  profile: UserPsychProfile,
+  periodDays: number | null = null  // null = all-time → use 28-day rolling window
+): GoalAlignmentResult {
+  if (workouts.length < 3) return { score: 0, label: "misaligned", mismatches: ["Not enough data yet"], suggestions: ["Complete at least 3 workouts to see goal alignment"] };
+
+  // Use the workouts passed in (already filtered to the selected range).
+  // For "all time", fall back to a rolling 28-day window so we measure recent behaviour.
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const recent = periodDays === null
+    ? workouts.filter(w => todayMs - wkToMs(w) <= 27 * 86400000)
+    : workouts;
+  if (recent.length < 2) return { score: 50, label: "partially_aligned", mismatches: ["Need more recent sessions"], suggestions: ["Keep training — more sessions give better insights"] };
+
+  const goalBucket = getGoalBucket(profile.primaryGoal);
+  const mismatches: string[] = [], suggestions: string[] = [];
+  let score = 100;
+
+  let totalSets = 0, totalReps = 0;
+  for (const w of recent) {
+    for (const ex of w.exercises) {
+      for (const s of (ex.sets ?? [])) {
+        if (s.reps > 0) { totalReps += s.reps; totalSets++; }
+      }
+    }
+  }
+  const avgReps = totalSets > 0 ? totalReps / totalSets : 0;
+  const targetPerWeek = profile.scheduleCommitment ?? profile.daysPerWeekPref ?? 3;
+  // Use actual period length; "all time" uses 4-week denominator (28-day window above)
+  const weeks = periodDays !== null ? periodDays / 7 : 4;
+  const actualPerWeek = recent.length / weeks;
+
+  if (goalBucket === "muscle") {
+    if (avgReps > 0 && (avgReps < 6 || avgReps > 20)) {
+      score -= 15;
+      mismatches.push(`Avg ${Math.round(avgReps)} reps/set — hypertrophy range is 8–15`);
+      suggestions.push("Aim for 8–12 reps on most sets for muscle growth.");
+    }
+    if (actualPerWeek < targetPerWeek * 0.65) {
+      score -= 20;
+      mismatches.push(`Training ~${Math.round(actualPerWeek * 10) / 10}x/week vs goal of ${targetPerWeek}x`);
+      suggestions.push(`Add ${Math.ceil(targetPerWeek - actualPerWeek)} more sessions per week.`);
+    }
+    const weeklySets = recent.reduce((s, w) => s + (w.totalSets ?? 0), 0) / 4;
+    if (weeklySets > 0 && weeklySets < 15) {
+      score -= 15;
+      mismatches.push(`Only ~${Math.round(weeklySets)} sets/week — muscle growth needs more volume`);
+      suggestions.push("Aim for 15–25 sets per session or train more frequently.");
+    }
+  } else if (goalBucket === "strength") {
+    if (avgReps > 8) {
+      score -= 15;
+      mismatches.push(`Avg ${Math.round(avgReps)} reps/set — strength responds best to 3–6 reps`);
+      suggestions.push("Work heavier at 3–6 reps on your compound lifts.");
+    }
+    if (actualPerWeek < 2) {
+      score -= 20;
+      mismatches.push("Strength needs at least 2–3 sessions/week on main lifts");
+      suggestions.push("Add a second dedicated strength session.");
+    }
+  } else if (goalBucket === "endurance" || goalBucket === "fat") {
+    if (actualPerWeek < targetPerWeek * 0.7) {
+      score -= 25;
+      mismatches.push(`Training ~${Math.round(actualPerWeek * 10) / 10}x/week — your goal needs frequent sessions`);
+      suggestions.push(`Aim for ${targetPerWeek}+ sessions per week.`);
+    }
+    if (avgReps > 0 && avgReps < 12) {
+      score -= 10;
+      mismatches.push(`Low rep ranges (avg ${Math.round(avgReps)}) — higher reps build endurance capacity`);
+      suggestions.push("Use 12–20 rep ranges with shorter rest intervals.");
+    }
+  } else {
+    if (actualPerWeek < 2) {
+      score -= 20;
+      mismatches.push("Very low frequency for general fitness");
+      suggestions.push("Aim for 3 sessions per week.");
+    }
+  }
+
+  score = Math.max(0, Math.min(100, score));
+  const label: GoalAlignmentResult["label"] = score >= 75 ? "aligned" : score >= 45 ? "partially_aligned" : "misaligned";
+  return { score, label, mismatches, suggestions };
+}
+
+function computeMovementBalance(workouts: SavedWorkoutData[], library: ExerciseWithTaxonomy[]): MovementBalanceResult {
+  const today = new Date();
+  const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const recent = workouts.filter(w => todayMs - wkToMs(w) <= 27 * 86400000);
+
+  const patternById = new Map<string, MovementPattern>();
+  const patternByName = new Map<string, MovementPattern>();
+  for (const ex of library) {
+    if (ex.movementPattern) {
+      patternById.set(ex.id, ex.movementPattern);
+      patternByName.set(ex.name.toLowerCase(), ex.movementPattern);
+    }
+  }
+
+  const byPattern: Record<string, { sets: number; volume: number }> = {};
+  for (const w of recent) {
+    for (const ex of w.exercises) {
+      const exAny = ex as unknown as { movementPattern?: MovementPattern; name?: string };
+      const pat = patternById.get(ex.id)
+        ?? exAny.movementPattern
+        ?? (exAny.name ? patternByName.get(exAny.name.toLowerCase()) : undefined);
+      if (!pat || pat === "cardio") continue;
+      if (!byPattern[pat]) byPattern[pat] = { sets: 0, volume: 0 };
+      byPattern[pat].sets += ex.loggedSets ?? 0;
+      byPattern[pat].volume += ex.loggedVolume ?? 0;
+    }
+  }
+
+  const g = (p: string) => byPattern[p]?.sets ?? 0;
+  const pushSets = g("horizontal_push") + g("vertical_push") + g("isolation_push");
+  const pullSets = g("horizontal_pull") + g("vertical_pull") + g("isolation_pull");
+  const squatSets = g("squat") + g("lunge");
+  const hingeSets = g("hip_hinge");
+  const upperSets = pushSets + pullSets;
+  const lowerSets = squatSets + hingeSets + g("isolation_legs");
+
+  const imbalances: string[] = [];
+  if (pushSets > 0 && pullSets === 0) imbalances.push("No pulling movements — add rows or pull-ups");
+  else if (pullSets > 0 && pushSets === 0) imbalances.push("No pushing movements — add press work");
+  else if (pushSets > 0 && pullSets > 0 && pushSets / pullSets > 1.6) imbalances.push("Push-heavy — add more rows/pull-ups to balance");
+  if (squatSets > 0 && hingeSets === 0) imbalances.push("No hip hinge work — add deadlifts or RDLs");
+  if (hingeSets > 0 && squatSets === 0) imbalances.push("No squat pattern — add squats or leg press");
+  if (upperSets > 0 && lowerSets === 0) imbalances.push("No lower body work this month");
+  if (lowerSets > 0 && upperSets === 0) imbalances.push("No upper body work this month");
+
+  return { byPattern, pushSets, pullSets, squatSets, hingeSets, upperSets, lowerSets, imbalances };
+}
+
+function computePRsHistory(workouts: SavedWorkoutData[]): PREntry[] {
+  const prs: PREntry[] = [];
+  for (const w of workouts) {
+    for (const r of (w.rewards ?? [])) {
+      if (r.category === "pr" && r.detail) {
+        prs.push({
+          exerciseName: r.detail.split(":")[0]?.trim() ?? r.detail,
+          prType: r.shortLabel === "Max Wt" ? "weight" : r.shortLabel === "Rep PR" ? "reps" : "estimated_1rm",
+          detail: r.detail,
+          date: w.date ?? w.savedAt,
+        });
+      }
+    }
+  }
+  const seen = new Set<string>();
+  return prs.filter(p => { const k = `${p.exerciseName}:${p.prType}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 20);
+}
+
+function computeActionPlan(
+  lagging: LaggingMuscleItem[],
+  plateaus: PlateauItem[],
+  rotations: RotationItem[],
+  goalAlignment: GoalAlignmentResult,
+  consistency: ConsistencyStats,
+  targetPerWeek: number,
+): ActionItem[] {
+  const actions: ActionItem[] = [];
+  if (consistency.lastGapDays > 7) {
+    actions.push({ id: "gap", priority: 1, title: "Get back on track", detail: `${consistency.lastGapDays} days since your last session. Start lighter today.`, linkedType: "consistency" });
+  } else if (consistency.consistencyPct < 60) {
+    actions.push({ id: "freq", priority: 1, title: "Train more consistently", detail: `You're hitting ${consistency.consistencyPct}% of your ${targetPerWeek}x/week target.`, linkedType: "consistency" });
+  }
+  for (const m of lagging.slice(0, 2)) {
+    const sug = m.suggestedExercises.slice(0, 2).join(", ");
+    actions.push({
+      id: `lag-${m.muscle}`, priority: 2,
+      title: `Bring up ${m.muscle}`,
+      detail: m.reason === "absent"
+        ? `Not trained in ${m.lastTrainedDaysAgo ?? "many"} days.${sug ? ` Try: ${sug}.` : ""}`
+        : `Only ${m.directSets30d} sets this month (target: ${m.minEffectiveVolume}).${sug ? ` Try: ${sug}.` : ""}`,
+      linkedType: "lagging_muscle",
+    });
+  }
+  for (const p of plateaus.slice(0, 1)) {
+    actions.push({ id: `plat-${p.exerciseId}`, priority: 3, title: `Unstick ${p.name}`, detail: p.action, linkedType: "plateau" });
+  }
+  for (const r of rotations.filter(x => x.rotationLevel === "high").slice(0, 1)) {
+    actions.push({ id: `rot-${r.muscle}`, priority: 4, title: `Standardize ${r.muscle}`, detail: r.recommendation ?? `Too many variants — pick one anchor movement.`, linkedType: "rotation" });
+  }
+  if (actions.length < 5 && goalAlignment.suggestions.length > 0) {
+    actions.push({ id: "goal-0", priority: 5, title: "Goal alignment", detail: goalAlignment.suggestions[0], linkedType: "goal_alignment" });
+  }
+  return actions.slice(0, 5);
+}
+
+// ── End Insights V1 Engine ────────────────────────────────────────────────────
+
 function getRelativeDate(dateStr: string): string {
   const today = new Date();
   const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
@@ -12709,6 +16022,9 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
     sets: sets.map(s => ({ ...s, setType: "normal" as const })),
   });
 
+  const img = (url: string, role: "progress" | "workout" = "workout"): WorkoutPhotoAsset =>
+    ({ id: url, kind: "image", storage_key: url, original_name: "photo.jpg", mime_type: "image/jpeg", byte_size: 1, public_url: url, photoRole: role } as WorkoutPhotoAsset);
+
   const mk = (
     date: string,
     sessionName: string,
@@ -12717,9 +16033,13 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
     durationSeconds: number,
     exercises: FinishedExerciseSummary[],
     takeawayTitle: string,
-    workoutSource: SavedWorkoutData["workoutSource"] = "saved"
+    workoutSource: SavedWorkoutData["workoutSource"] = "saved",
+    images: WorkoutPhotoAsset[] = [],
+    shareNote?: string,
+    shareNoteIsQuote = false,
   ): SavedWorkoutData => ({
-    sessionName, note,
+    sessionName, note, shareNote, shareNoteIsQuote,
+    authorName: "Demo User",
     date: date.slice(0, 10),
     duration, durationSeconds,
     totalVolume: exercises.reduce((s, e) => s + e.loggedVolume, 0),
@@ -12730,7 +16050,7 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
     exercises,
     rewards: [],
     rewardSummary: { set: 0, exercise: 0, session: 0, total: 0 },
-    takeawayTitle, takeawayBody: "", images: [],
+    takeawayTitle, takeawayBody: "", images,
     savedAt: date,
     workoutSource,
   });
@@ -12744,7 +16064,7 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
       ex("lateral-raise",          "Lateral Raise",          "Side Delts", [{weight:10,reps:15,rpe:6},{weight:10,reps:15,rpe:6},{weight:10,reps:14,rpe:7}]),
       ex("tricep-pushdown",        "Tricep Pushdown",        "Triceps",    [{weight:45,reps:12,rpe:7},{weight:45,reps:12,rpe:7},{weight:45,reps:11,rpe:7.5}]),
       ex("skull-crushers",         "Skull Crushers",         "Triceps",    [{weight:30,reps:10,rpe:7},{weight:30,reps:10,rpe:7.5},{weight:30,reps:9,rpe:8}]),
-    ], "Solid push to kick off the week."),
+    ], "Solid push to kick off the week.", "saved", [img("https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=600&q=80", "workout")]),
 
     mk(D(2026,3,5), "Pull A", "", "54 min", 3240, [
       ex("lat-pulldown",  "Lat Pulldown",     "Lats",      [{weight:70,reps:10,rpe:7},{weight:70,reps:10,rpe:7},{weight:70,reps:9,rpe:7.5},{weight:70,reps:9,rpe:8}]),
@@ -12752,7 +16072,7 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
       ex("face-pulls",    "Face Pulls",       "Rear Delts",[{weight:20,reps:15,rpe:6},{weight:20,reps:15,rpe:6},{weight:20,reps:15,rpe:6.5}]),
       ex("barbell-curl",  "Barbell Curl",     "Biceps",    [{weight:40,reps:10,rpe:7},{weight:40,reps:10,rpe:7.5},{weight:40,reps:9,rpe:8}]),
       ex("hammer-curl",   "Hammer Curl",      "Biceps",    [{weight:20,reps:12,rpe:6},{weight:20,reps:12,rpe:7},{weight:20,reps:11,rpe:7.5}]),
-    ], "Back feels well-worked."),
+    ], "Back feels well-worked.", "saved", [img("https://images.unsplash.com/photo-1567013127542-490d757e51fc?w=600&q=80", "progress")]),
 
     mk(D(2026,3,8), "Legs A", "Legs day — going heavy.", "65 min", 3900, [
       ex("barbell-squat",     "Barbell Squat",       "Quads",      [{weight:80,reps:8,rpe:7},{weight:80,reps:8,rpe:7.5},{weight:80,reps:7,rpe:8},{weight:77.5,reps:7,rpe:8.5}]),
@@ -12760,7 +16080,7 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
       ex("leg-press",         "Leg Press",           "Quads",      [{weight:120,reps:12,rpe:7},{weight:120,reps:12,rpe:7.5},{weight:120,reps:11,rpe:8}]),
       ex("leg-extension",     "Leg Extension",       "Quads",      [{weight:50,reps:15,rpe:7},{weight:50,reps:15,rpe:7},{weight:50,reps:13,rpe:7.5}]),
       ex("calf-raise",        "Standing Calf Raise", "Calves",     [{weight:40,reps:20,rpe:6},{weight:40,reps:20,rpe:6},{weight:40,reps:18,rpe:7}]),
-    ], "Legs are always humbling."),
+    ], "Legs are always humbling.", "saved", [img("https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=80")]),
 
     // ── Week 2 (Mar 10–16) ────────────────────────────────────────────────
     mk(D(2026,3,10), "Push A", "+2.5 kg on bench today.", "60 min", 3600, [
@@ -12804,7 +16124,7 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
       ex("lateral-raise",          "Lateral Raise",          "Side Delts", [{weight:12,reps:15,rpe:7},{weight:12,reps:15,rpe:7},{weight:12,reps:13,rpe:7.5}]),
       ex("tricep-pushdown",        "Tricep Pushdown",        "Triceps",    [{weight:50,reps:12,rpe:7},{weight:50,reps:12,rpe:7.5},{weight:50,reps:11,rpe:8}]),
       ex("skull-crushers",         "Skull Crushers",         "Triceps",    [{weight:32.5,reps:10,rpe:7},{weight:32.5,reps:10,rpe:7.5},{weight:32.5,reps:9,rpe:8}]),
-    ], "Bench milestone. OHP finally moved up."),
+    ], "Bench milestone. OHP finally moved up.", "saved", [img("https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=600&q=80", "progress"), img("https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=600&q=80", "workout")], "85 kg on the bar. The number I've been chasing since week one.", true),
 
     mk(D(2026,3,19), "Pull A", "", "55 min", 3300, [
       ex("lat-pulldown",  "Lat Pulldown",     "Lats",      [{weight:75,reps:10,rpe:7},{weight:75,reps:10,rpe:7},{weight:75,reps:9,rpe:7.5},{weight:75,reps:9,rpe:8}]),
@@ -12820,7 +16140,7 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
       ex("leg-press",         "Leg Press",           "Quads",      [{weight:125,reps:12,rpe:7},{weight:125,reps:12,rpe:7.5},{weight:125,reps:11,rpe:8}]),
       ex("leg-extension",     "Leg Extension",       "Quads",      [{weight:52.5,reps:15,rpe:7},{weight:52.5,reps:15,rpe:7.5},{weight:52.5,reps:13,rpe:8}]),
       ex("calf-raise",        "Standing Calf Raise", "Calves",     [{weight:42.5,reps:20,rpe:6},{weight:42.5,reps:20,rpe:6.5},{weight:42.5,reps:18,rpe:7}]),
-    ], "Squat 85 kg for reps. Last legs day for a while..."),
+    ], "Squat 85 kg for reps. Last legs day for a while...", "saved", [img("https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80", "workout")]),
 
     mk(D(2026,3,23), "Push B", "Chest volume day.", "56 min", 3360, [
       ex("incline-bench-press","Incline Bench Press","Upper Chest",[{weight:70,reps:10,rpe:7},{weight:70,reps:10,rpe:7.5},{weight:70,reps:9,rpe:8},{weight:67.5,reps:9,rpe:8.5}]),
@@ -12864,15 +16184,18 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
       ex("lateral-raise",          "Lateral Raise",          "Side Delts", [{weight:12,reps:15,rpe:7},{weight:12,reps:15,rpe:7},{weight:12,reps:13,rpe:7.5}]),
       ex("tricep-pushdown",        "Tricep Pushdown",        "Triceps",    [{weight:52.5,reps:12,rpe:7},{weight:52.5,reps:12,rpe:7.5},{weight:52.5,reps:11,rpe:8}]),
       ex("skull-crushers",         "Skull Crushers",         "Triceps",    [{weight:32.5,reps:10,rpe:7},{weight:32.5,reps:10,rpe:7.5},{weight:32.5,reps:9,rpe:8}]),
-    ], "Bench moving nicely. OHP still stuck at 60 kg."),
+    ], "Bench moving nicely. OHP still stuck at 60 kg.", "saved", [img("https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=600&q=80", "progress")]),
 
-    mk(D(2026,4,2), "Pull B", "", "53 min", 3180, [
+    mk(D(2026,4,2), "Pull B", "Back width is starting to show in the mirror.", "53 min", 3180, [
       ex("lat-pulldown",  "Lat Pulldown",  "Lats",      [{weight:80,reps:10,rpe:7},{weight:80,reps:10,rpe:7},{weight:80,reps:9,rpe:7.5},{weight:80,reps:9,rpe:8}]),
       ex("cable-row",     "Cable Row",     "Back",      [{weight:72.5,reps:10,rpe:7},{weight:72.5,reps:10,rpe:7.5},{weight:72.5,reps:9,rpe:8}]),
       ex("rear-delt-fly", "Rear Delt Fly", "Rear Delts",[{weight:17.5,reps:15,rpe:7},{weight:17.5,reps:15,rpe:7},{weight:17.5,reps:14,rpe:7.5}]),
       ex("barbell-curl",  "Barbell Curl",  "Biceps",    [{weight:47.5,reps:10,rpe:7},{weight:47.5,reps:10,rpe:7.5},{weight:47.5,reps:9,rpe:8}]),
       ex("preacher-curl", "Preacher Curl", "Biceps",    [{weight:32.5,reps:10,rpe:7},{weight:32.5,reps:10,rpe:7.5},{weight:32.5,reps:9,rpe:8}]),
-    ], "Biceps feeling bigger every session."),
+    ], "Biceps feeling bigger every session.", "saved", [
+      img("https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?w=600&q=80", "workout"),
+      img("https://images.unsplash.com/photo-1581009137042-c552e485697a?w=600&q=80", "progress"),
+    ]),
 
     mk(D(2026,4,4), "Legs (accessories)", "No squats today — just accessories.", "55 min", 3300, [
       ex("romanian-deadlift","Romanian Deadlift",   "Hamstrings",[{weight:80,reps:10,rpe:7},{weight:80,reps:10,rpe:7.5},{weight:80,reps:9,rpe:8}]),
@@ -12880,41 +16203,57 @@ function buildSeedWorkouts(): SavedWorkoutData[] {
       ex("leg-extension",    "Leg Extension",       "Quads",     [{weight:55,reps:15,rpe:7},{weight:55,reps:15,rpe:7.5},{weight:55,reps:13,rpe:8}]),
       ex("leg-curl",         "Leg Curl",            "Hamstrings",[{weight:47.5,reps:12,rpe:7},{weight:47.5,reps:12,rpe:7.5},{weight:47.5,reps:11,rpe:8}]),
       ex("calf-raise",       "Standing Calf Raise", "Calves",    [{weight:45,reps:20,rpe:6},{weight:45,reps:20,rpe:6.5},{weight:45,reps:18,rpe:7}]),
-    ], "Skipped squats again. Legs need a proper day."),
+    ], "Legs need a proper day — but these accessories hit right.", "saved", [
+      img("https://images.unsplash.com/photo-1434682881908-b43d0467b798?w=600&q=80", "workout"),
+      img("https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80", "progress"),
+    ]),
 
-    mk(D(2026,4,6), "Upper", "", "52 min", 3120, [
+    mk(D(2026,4,6), "Upper", "Steady upper work. The compound numbers keep climbing.", "52 min", 3120, [
       ex("bench-press",    "Bench Press",    "Chest",     [{weight:87.5,reps:8,rpe:7},{weight:87.5,reps:8,rpe:7.5},{weight:87.5,reps:7,rpe:8},{weight:85,reps:7,rpe:8.5}]),
       ex("lat-pulldown",   "Lat Pulldown",   "Lats",      [{weight:80,reps:10,rpe:7},{weight:80,reps:10,rpe:7.5},{weight:80,reps:9,rpe:8}]),
       ex("overhead-press", "Overhead Press", "Shoulders", [{weight:60,reps:8,rpe:7},{weight:60,reps:7,rpe:8},{weight:60,reps:7,rpe:8.5}]),
       ex("barbell-curl",   "Barbell Curl",   "Biceps",    [{weight:47.5,reps:10,rpe:7},{weight:47.5,reps:10,rpe:7.5},{weight:47.5,reps:9,rpe:8}]),
       ex("tricep-pushdown","Tricep Pushdown","Triceps",   [{weight:55,reps:12,rpe:7},{weight:55,reps:12,rpe:7.5},{weight:55,reps:11,rpe:8}]),
-    ], "Getting stronger. OHP frustrating — zero movement in 3 weeks."),
+    ], "Getting stronger. OHP frustrating — zero movement in 3 weeks.", "saved", [
+      img("https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=600&q=80", "workout"),
+      img("https://images.unsplash.com/photo-1540497077202-7c8a3999166f?w=600&q=80", "progress"),
+    ]),
 
     // ── Week 6 (Apr 7–11) ─────────────────────────────────────────────────
-    mk(D(2026,4,7), "Push A", "Bench 90 kg — new all-time PR!", "63 min", 3780, [
+    mk(D(2026,4,7), "Push A", "90 kg on the bar. That's a number I've been chasing for months.", "63 min", 3780, [
       ex("bench-press",            "Bench Press",            "Chest",      [{weight:90,reps:8,rpe:7},{weight:90,reps:8,rpe:7.5},{weight:90,reps:7,rpe:8},{weight:87.5,reps:7,rpe:8.5}]),
       ex("incline-dumbbell-press", "Incline Dumbbell Press", "Upper Chest",[{weight:34,reps:10,rpe:7},{weight:34,reps:10,rpe:7.5},{weight:34,reps:9,rpe:8}]),
       ex("overhead-press",         "Overhead Press",         "Shoulders",  [{weight:60,reps:8,rpe:7},{weight:60,reps:7,rpe:8},{weight:60,reps:7,rpe:8.5}]),
       ex("lateral-raise",          "Lateral Raise",          "Side Delts", [{weight:12,reps:15,rpe:7},{weight:12,reps:15,rpe:7},{weight:12,reps:13,rpe:7.5}]),
       ex("tricep-pushdown",        "Tricep Pushdown",        "Triceps",    [{weight:55,reps:12,rpe:7},{weight:55,reps:12,rpe:7.5},{weight:55,reps:11,rpe:8}]),
       ex("skull-crushers",         "Skull Crushers",         "Triceps",    [{weight:35,reps:10,rpe:7},{weight:35,reps:10,rpe:7.5},{weight:35,reps:9,rpe:8}]),
-    ], "90 kg bench PR! OHP still 60 — needs a reset strategy."),
+    ], "90 kg bench PR! OHP still 60 — needs a reset strategy.", "saved", [
+      img("https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=600&q=80", "workout"),
+      img("https://images.unsplash.com/photo-1567013127542-490d757e51fc?w=600&q=80", "progress"),
+      img("https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=600&q=80", "workout"),
+    ], "90 kg on the bar. That's a number I've been chasing for months.", true),
 
-    mk(D(2026,4,9), "Pull A", "", "57 min", 3420, [
+    mk(D(2026,4,9), "Pull A", "Morning session — outdoor warm-up then straight to the gym.", "57 min", 3420, [
       ex("lat-pulldown",  "Lat Pulldown",     "Lats",      [{weight:82.5,reps:10,rpe:7},{weight:82.5,reps:10,rpe:7},{weight:82.5,reps:9,rpe:7.5},{weight:82.5,reps:9,rpe:8}]),
       ex("seated-row",    "Seated Cable Row", "Back",      [{weight:72.5,reps:10,rpe:7},{weight:72.5,reps:10,rpe:7.5},{weight:72.5,reps:9,rpe:8}]),
       ex("face-pulls",    "Face Pulls",       "Rear Delts",[{weight:22,reps:15,rpe:6},{weight:22,reps:15,rpe:6.5},{weight:22,reps:15,rpe:7}]),
       ex("barbell-curl",  "Barbell Curl",     "Biceps",    [{weight:47.5,reps:10,rpe:7},{weight:47.5,reps:10,rpe:7.5},{weight:47.5,reps:9,rpe:8}]),
       ex("hammer-curl",   "Hammer Curl",      "Biceps",    [{weight:24,reps:12,rpe:7},{weight:24,reps:12,rpe:7.5},{weight:24,reps:11,rpe:8}]),
-    ], "Pull numbers at all-time highs."),
+    ], "Pull numbers at all-time highs.", "saved", [
+      img("https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?w=600&q=80", "workout"),
+      img("https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=80", "workout"),
+    ]),
 
-    mk(D(2026,4,11), "Push B", "Volume chest day.", "58 min", 3480, [
+    mk(D(2026,4,11), "Push B", "Volume chest day — finished with an outdoor cooldown run.", "58 min", 3480, [
       ex("incline-bench-press","Incline Bench Press","Upper Chest",[{weight:75,reps:10,rpe:7},{weight:75,reps:10,rpe:7.5},{weight:75,reps:9,rpe:8},{weight:72.5,reps:9,rpe:8.5}]),
       ex("cable-fly",          "Cable Fly",          "Chest",      [{weight:22,reps:12,rpe:7},{weight:22,reps:12,rpe:7.5},{weight:22,reps:11,rpe:8}]),
       ex("overhead-press",     "Overhead Press",     "Shoulders",  [{weight:60,reps:8,rpe:7},{weight:60,reps:7,rpe:8},{weight:60,reps:7,rpe:8.5}]),
       ex("lateral-raise",      "Lateral Raise",      "Side Delts", [{weight:12,reps:15,rpe:7},{weight:12,reps:15,rpe:7},{weight:12,reps:13,rpe:7.5}]),
       ex("tricep-pushdown",    "Tricep Pushdown",    "Triceps",    [{weight:55,reps:12,rpe:7},{weight:55,reps:12,rpe:7.5},{weight:55,reps:11,rpe:8}]),
-    ], "Good volume. Chest and tris well pumped."),
+    ], "Good volume. Chest and tris well pumped.", "saved", [
+      img("https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=600&q=80", "workout"),
+      img("https://images.unsplash.com/photo-1552674605-db6ffd4facb5?w=600&q=80", "workout"),
+    ]),
   ];
 }
 
@@ -12933,9 +16272,13 @@ function buildMuscleGapSeed(): SavedWorkoutData[] {
     loggedVolume: sets.reduce((s, r) => s + r.weight * r.reps, 0),
     sets: sets.map(s => ({ ...s, setType: "normal" as const })),
   });
+  const img = (url: string, role: "progress" | "workout" = "workout"): WorkoutPhotoAsset =>
+    ({ id: url, kind: "image", storage_key: url, original_name: "photo.jpg", mime_type: "image/jpeg", byte_size: 1, public_url: url, photoRole: role } as WorkoutPhotoAsset);
+
   const mk = (
     date: string, sessionName: string, duration: string, durationSeconds: number,
-    exercises: FinishedExerciseSummary[]
+    exercises: FinishedExerciseSummary[],
+    images: WorkoutPhotoAsset[] = []
   ): SavedWorkoutData => ({
     sessionName, note: "", date: date.slice(0, 10), duration, durationSeconds,
     totalVolume: exercises.reduce((s, e) => s + e.loggedVolume, 0),
@@ -12943,7 +16286,7 @@ function buildMuscleGapSeed(): SavedWorkoutData[] {
     exerciseCount: exercises.length, loggedExerciseCount: exercises.length,
     ignoredIncompleteSets: 0, exercises,
     rewards: [], rewardSummary: { set: 0, exercise: 0, session: 0, total: 0 },
-    takeawayTitle: "", takeawayBody: "", images: [], savedAt: date,
+    takeawayTitle: "", takeawayBody: "", images, savedAt: date,
   });
 
   return [
@@ -12955,7 +16298,7 @@ function buildMuscleGapSeed(): SavedWorkoutData[] {
       ex("legcurl",  "Lying Leg Curl",         "Hamstrings", [{weight:45,reps:12,rpe:8},{weight:45,reps:10,rpe:9}]),
       ex("calf",     "Standing Calf Raise",    "Calves",     [{weight:60,reps:15,rpe:8},{weight:60,reps:12,rpe:9}]),
       ex("plank",    "Cable Crunch",           "Core",       [{weight:30,reps:15,rpe:7},{weight:30,reps:15,rpe:8}]),
-    ]),
+    ], [img("https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=600&q=80", "workout")]),
     // 5 days ago — Push (will be "fading")
     mk(D(2026,4,7), "Push Day", "52 min", 3120, [
       ex("bench",    "Barbell Bench Press",    "Chest",      [{weight:85,reps:8,rpe:8},{weight:85,reps:7,rpe:8.5},{weight:85,reps:6,rpe:9}]),
@@ -12963,14 +16306,14 @@ function buildMuscleGapSeed(): SavedWorkoutData[] {
       ex("incline",  "Incline DB Press",       "Chest",      [{weight:32,reps:10,rpe:8},{weight:32,reps:8,rpe:9}]),
       ex("lateral",  "Lateral Raise",          "Shoulders",  [{weight:12,reps:15,rpe:8},{weight:12,reps:12,rpe:8.5}]),
       ex("tricep",   "Tricep Pushdown",        "Triceps",    [{weight:25,reps:12,rpe:7},{weight:25,reps:10,rpe:8}]),
-    ]),
+    ], [img("https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=600&q=80", "progress")]),
     // 3 days ago — Pull (will be "fading")
     mk(D(2026,4,9), "Pull Day", "50 min", 3000, [
       ex("row",      "Barbell Row",            "Back",       [{weight:75,reps:8,rpe:8},{weight:75,reps:7,rpe:8.5}]),
       ex("pullup",   "Pull-Up",                "Back",       [{weight:0,reps:8,rpe:8},{weight:0,reps:7,rpe:8.5}]),
       ex("cablerow", "Cable Row",              "Back",       [{weight:65,reps:10,rpe:7},{weight:65,reps:9,rpe:8}]),
       ex("curl",     "Barbell Curl",           "Biceps",     [{weight:40,reps:10,rpe:8},{weight:40,reps:8,rpe:9}]),
-    ]),
+    ], [img("https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80", "workout")]),
     // 1 day ago — Push again (will be "fresh")
     mk(D(2026,4,11), "Push Day", "48 min", 2880, [
       ex("bench2",   "Barbell Bench Press",    "Chest",      [{weight:87.5,reps:7,rpe:8},{weight:87.5,reps:6,rpe:9}]),
@@ -13325,6 +16668,56 @@ const GLOSSARY_DATA: { section: string; terms: { name: string; def: string }[] }
       { name: "Custom Split", def: "You assign muscles to each day yourself from the Planner. Choose exactly which muscles go together. RepIQ generates exercises based on your arrangement. Best for experienced lifters with specific needs." },
     ],
   },
+  {
+    section: "Muscle Groups",
+    terms: [
+      {
+        name: "Quads (Quadriceps)",
+        def: "Four muscles on the front of the thigh (rectus femoris, vastus lateralis, vastus medialis, vastus intermedius). Primary function: knee extension.\n\nKey exercises: squat, leg press, leg extension, lunge, hack squat.\n\nTarget share: ~14% of total weekly sets in a balanced programme. Quads are among the largest muscles in the body and can handle significant volume.",
+      },
+      {
+        name: "Hamstrings / Glutes",
+        def: "The hamstrings (biceps femoris, semitendinosus, semimembranosus) run along the back of the thigh and perform knee flexion and hip extension. The glutes (gluteus maximus, medius, minimus) are the largest muscle group in the body, responsible for hip extension, abduction, and rotation.\n\nThey are grouped together because most hip-dominant movements train them simultaneously.\n\nKey exercises: Romanian deadlift, hip thrust, leg curl, sumo deadlift, good morning, glute bridge.\n\nTarget share: ~14% of total weekly sets.",
+      },
+      {
+        name: "Calves",
+        def: "Two muscles: gastrocnemius (the visible 'diamond' shape, crosses the knee and ankle) and soleus (deeper, only crosses the ankle). Function: plantarflexion (pointing the foot down).\n\nKey exercises: standing calf raise, seated calf raise, donkey calf raise.\n\nCalves are highly fatigue-resistant and often need higher rep ranges (12–20+) and more frequent training than other muscle groups. Target share: ~4% of total weekly sets.",
+      },
+    ],
+  },
+  {
+    section: "RepIQ Analyzer",
+    terms: [
+      {
+        name: "Muscle Distribution (Spider Chart)",
+        def: "Shows how your training volume is distributed across all muscle groups as a percentage of total sets.\n\nEach axis of the spider chart represents one muscle group. The outer ring = 50% of all sets going to that single muscle (extreme imbalance). The dashed polygon shows your ideal target split.\n\nA healthy distribution has roughly equal coverage of all groups relative to their targets — no single axis dominating and no axis near zero.",
+      },
+      {
+        name: "Muscle Goal Achieved",
+        def: "A normalized score showing how close each muscle group is to its target share of total volume.\n\nScore = (actual share ÷ target share) × 100\n\n100% = exactly on target. 120% = 20% over target. 75% = 25% undertrained.\n\nEach group has a different target (e.g. Back = 22%, Calves = 4%), so this chart accounts for the fact that you naturally do fewer calf sets than back sets.",
+      },
+      {
+        name: "Consistency Score",
+        def: "How regularly you train relative to your stated frequency target.\n\nScore = (sessions logged ÷ target sessions for period) × 100, capped at 100%.\n\nThe period starts from your first RepIQ session, so a new user won't be penalised for time before they started. Aim for 80%+ consistently.",
+      },
+      {
+        name: "Goal Alignment Score",
+        def: "How well your training matches your stated goal (e.g. hypertrophy, strength, endurance).\n\nFactors: volume trend (growing = good for hypertrophy), training consistency, muscle coverage breadth, and average intensity.\n\n100 = perfectly aligned. Below 50 = your training pattern diverges significantly from what your goal requires.",
+      },
+      {
+        name: "Muscle Balance Score",
+        def: "A 0–100 score measuring how evenly you train all major muscle groups.\n\nIt penalises both neglecting a group and over-focusing on one. Balanced training reduces injury risk and ensures no muscle group limits your overall strength.\n\n70+ = good balance. Below 50 = significant gaps (usually legs or posterior chain being under-trained).",
+      },
+      {
+        name: "Movement Patterns",
+        def: "RepIQ classifies exercises by their fundamental movement, not just the muscle:\n\n• Vertical Push — overhead pressing (shoulder press, pike push-up)\n• Vertical Pull — pulling from above (pull-up, lat pulldown)\n• Horizontal Push — chest-level pushing (bench press, push-up)\n• Horizontal Pull — rowing movements (barbell row, cable row)\n• Squat / Knee Dominant — knee-flexion under load (squat, lunge)\n• Hinge / Hip Dominant — hip-hinge pattern (deadlift, RDL, hip thrust)\n• Cardio — conditioning work\n\nA complete programme hits all 7 patterns each week. The movement balance spider chart in Analyzer shows your coverage.",
+      },
+      {
+        name: "Rolling Range vs Period to Date",
+        def: "Two ways to define the analysis window in Analyzer:\n\nRolling: a fixed lookback from today — e.g. Last 30 days = the most recent 30 calendar days regardless of where you are in the month.\n\nPeriod to Date (PTD): from the start of the current calendar period to today — WTD (week to date), MTD (month to date), QTD (quarter to date), YTD (year to date). PTD compares you against yourself at the same point in the prior period.",
+      },
+    ],
+  },
 ];
 
 function GlossaryPage({ onBack, resolvedTheme, initialTerm = "" }: { onBack: () => void; resolvedTheme: string; initialTerm?: string }) {
@@ -13407,6 +16800,235 @@ function GlossaryPage({ onBack, resolvedTheme, initialTerm = "" }: { onBack: () 
   );
 }
 
+// ── History Page ──────────────────────────────────────────────────────────────
+function HistoryCard({
+  w,
+  savedToast,
+  onOpenReport,
+  onRedoWorkout,
+  onSaveToMyWorkouts,
+}: {
+  w: SavedWorkoutData;
+  savedToast: string | null;
+  onOpenReport: (w: SavedWorkoutData) => void;
+  onRedoWorkout?: (w: SavedWorkoutData) => void;
+  onSaveToMyWorkouts?: (w: SavedWorkoutData) => void;
+}) {
+  const [activeSlide, setActiveSlide] = useState(0);
+  const slidesRef = useRef<HTMLDivElement>(null);
+  const scrollingRef = useRef(false);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isRepIQ = !!w.repiqSourceKey || w.workoutSource === "repiq";
+  const src = w.workoutSource ?? (isRepIQ ? "repiq" : undefined);
+  const sourceTag: { label: string; cls: string } | null =
+    src === "repiq"       ? { label: "✦ RepIQ Plan",  cls: "src-repiq" }
+    : src === "saved"     ? { label: "My Workout",    cls: "src-saved" }
+    : src === "library"   ? { label: "Library",       cls: "src-library" }
+    : src === "generated" ? { label: "Generated",     cls: "src-generated" }
+    : src === "history"   ? { label: "Redo",          cls: "src-history" }
+    : null;
+
+  const hasPhoto = !!(w.images && w.images.length > 0);
+  const photoCount = hasPhoto ? w.images!.length : 0;
+  const hasNote = !!(w.note && w.note.trim().length > 0);
+  const slideCount = photoCount + (hasNote ? 1 : 0) + 2; // + exercises + muscles
+
+  function handleScroll() {
+    const el = slidesRef.current;
+    if (!el) return;
+    setActiveSlide(Math.round(el.scrollLeft / el.offsetWidth));
+    scrollingRef.current = true;
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => { scrollingRef.current = false; }, 200);
+  }
+
+  const alreadySaved = savedToast === w.savedAt;
+
+  return (
+    <article className="hist-card" onClick={() => { if (!scrollingRef.current) onOpenReport(w); }}>
+      {/* Header — info left, action icons right */}
+      <div className="hist-card-header">
+        <div className="hist-card-header-tap">
+          <div className="hist-card-meta-row">
+            <span className="hist-card-date">{new Date(w.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</span>
+            {sourceTag && <span className={`report-card-source-badge ${sourceTag.cls}`}>{sourceTag.label}</span>}
+          </div>
+          <p className="hist-card-name">{w.sessionName}</p>
+          <p className="hist-card-stats">{w.duration} · {w.totalSets} sets · {w.exerciseCount} exercises</p>
+        </div>
+        <div className="hist-card-actions">
+          {onRedoWorkout && (
+            <button type="button" className="hist-action-btn" onClick={(e) => { e.stopPropagation(); onRedoWorkout(w); }} title="Redo workout">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.44"/>
+              </svg>
+            </button>
+          )}
+          <button type="button" className={`hist-action-btn${alreadySaved ? " is-saved" : ""}`} onClick={(e) => { e.stopPropagation(); onSaveToMyWorkouts?.(w); }} disabled={alreadySaved} title={alreadySaved ? "Saved" : "Save to My Workouts"}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill={alreadySaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Share card slider */}
+      <div className="hist-slides" ref={slidesRef} onScroll={handleScroll}>
+        {hasPhoto && w.images!.map((img: any, i: number) => (
+          <div key={i} className="hist-slide hist-slide--photo">
+            <img src={img.public_url ?? img.url ?? img.dataUrl} alt="Workout" className="hist-photo" />
+          </div>
+        ))}
+        {hasNote && (
+          <div className="hist-slide hist-slide--note">
+            <div className="hist-note-inner">
+              <p className="hist-note-label">SESSION NOTE</p>
+              <p className="hist-note-text">{w.note}</p>
+              <p className="hist-note-watermark">REPIQ</p>
+            </div>
+          </div>
+        )}
+        <div className="hist-slide hist-slide--exercises"><ExercisesShareCard draft={w} /></div>
+        <div className="hist-slide hist-slide--muscles"><MusclesShareCard draft={w} /></div>
+      </div>
+
+      {/* Dots */}
+      <div className="hist-dots">
+        {Array.from({ length: slideCount }).map((_, i) => (
+          <span key={i} className={`hist-dot${activeSlide === i ? " is-active" : ""}`} />
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function HistoryPage({
+  savedWorkouts,
+  onBack,
+  onOpenReport,
+  onRedoWorkout,
+  onSaveToMyWorkouts,
+  onDeleteWorkout,
+  resolvedTheme,
+}: {
+  savedWorkouts: SavedWorkoutData[];
+  onBack: () => void;
+  onOpenReport: (workout: SavedWorkoutData) => void;
+  onRedoWorkout?: (workout: SavedWorkoutData) => void;
+  onSaveToMyWorkouts?: (workout: SavedWorkoutData) => void;
+  onDeleteWorkout?: (savedAt: string) => void;
+  resolvedTheme?: string;
+}) {
+  const [savedToast, setSavedToast] = useState<string | null>(null);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+
+  function handleSave(w: SavedWorkoutData) {
+    onSaveToMyWorkouts?.(w);
+    setSavedToast(w.savedAt);
+    setTimeout(() => setSavedToast(null), 2200);
+  }
+
+  const rangeActive = fromDate !== "" || toDate !== "";
+  const filteredWorkouts = (rangeActive
+    ? savedWorkouts.filter((w) => {
+        const d = w.date.slice(0, 10);
+        if (fromDate && d < fromDate) return false;
+        if (toDate && d > toDate) return false;
+        return true;
+      })
+    : savedWorkouts
+  ).slice().sort((a, b) => b.date.localeCompare(a.date) || b.savedAt.localeCompare(a.savedAt));
+
+  const total = savedWorkouts.length;
+  const shown = filteredWorkouts.length;
+
+  return (
+    <main className="shell selector-shell" data-theme={resolvedTheme}>
+      <section className="app-shell selector-page">
+        <header className="selector-header">
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button className="back-nav-button detail-back-button" type="button" onClick={onBack} aria-label="Back">←</button>
+            <div>
+              <p className="label">REPIQ</p>
+              <h1>History</h1>
+            </div>
+          </div>
+          <p className="hist-session-count">
+            {rangeActive ? (
+              <><span className="hist-count-shown">{shown}</span>{" of "}<span className="hist-count-total">{total}</span>{` session${total !== 1 ? "s" : ""}`}</>
+            ) : (
+              <><span className="hist-count-total">{total}</span>{` session${total !== 1 ? "s" : ""}`}</>
+            )}
+          </p>
+        </header>
+
+        {/* Date range picker */}
+        <div className="hist-date-range">
+          <div className="hist-date-field">
+            <label className="hist-date-label">From</label>
+            <input
+              type="date"
+              className="hist-date-input"
+              value={fromDate}
+              max={toDate || undefined}
+              onChange={(e) => setFromDate(e.target.value)}
+            />
+          </div>
+          <div className="hist-date-sep">—</div>
+          <div className="hist-date-field">
+            <label className="hist-date-label">To</label>
+            <input
+              type="date"
+              className="hist-date-input"
+              value={toDate}
+              min={fromDate || undefined}
+              onChange={(e) => setToDate(e.target.value)}
+            />
+          </div>
+          {rangeActive && (
+            <button
+              type="button"
+              className="hist-date-clear"
+              onClick={() => { setFromDate(""); setToDate(""); }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        <section className="planner-section">
+          {savedWorkouts.length === 0 ? (
+            <div className="planner-builder-stub">
+              <p className="planner-empty-title">No workouts logged yet</p>
+              <p className="planner-empty-sub">Complete a workout to see your history here.</p>
+            </div>
+          ) : filteredWorkouts.length === 0 ? (
+            <div className="planner-builder-stub">
+              <p className="planner-empty-title">No sessions in this range</p>
+              <p className="planner-empty-sub">Try adjusting the date range to see more workouts.</p>
+            </div>
+          ) : (
+            <div className="hist-list">
+              {filteredWorkouts.map((w) => (
+                <HistoryCard
+                  key={w.savedAt}
+                  w={w}
+                  savedToast={savedToast}
+                  onOpenReport={onOpenReport}
+                  onRedoWorkout={onRedoWorkout}
+                  onSaveToMyWorkouts={handleSave}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      </section>
+    </main>
+  );
+}
+
 // ── More Sheet ────────────────────────────────────────────────────────────────
 function MoreSheet({ open, onClose, onGoTo, resolvedTheme }: { open: boolean; onClose: () => void; onGoTo: (view: AppView) => void; resolvedTheme: string }) {
   if (!open) return null;
@@ -13415,6 +17037,13 @@ function MoreSheet({ open, onClose, onGoTo, resolvedTheme }: { open: boolean; on
       <div className="more-sheet-card" onClick={(e) => e.stopPropagation()}>
         <div className="more-sheet-handle" />
         <p className="more-sheet-title">More</p>
+        <button className="more-sheet-item" type="button" onClick={() => onGoTo("history")}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 20h9"/>
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          </svg>
+          History
+        </button>
         <button className="more-sheet-item" type="button" onClick={() => onGoTo("profile")}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -13438,6 +17067,12 @@ export function App() {
   const storedPlanBuilderState = getStoredPlanBuilderDraft();
   const [appView, setAppView] = useState<AppView>("home");
   const [showMoreSheet, setShowMoreSheet] = useState(false);
+  const [plannerOrigin, setPlannerOrigin] = useState<"home" | "insights">("home");
+  const [insightsReturnState, setInsightsReturnState] = useState<{
+    tab: "summary" | "stats" | "progress";
+    drillSection: "volume" | "muscles" | "exercises" | "movement" | "frequency" | null;
+    drillOrigin: "summary" | "stats" | null;
+  } | null>(null);
   const [insightsInitialTab, setInsightsInitialTab] = useState<"analyzer" | "reports">("reports");
   const [glossaryTerm, setGlossaryTerm] = useState("");
   const [hasActiveWorkout, setHasActiveWorkout] = useState(false);
@@ -13460,6 +17095,7 @@ export function App() {
   const [workoutMenuOpen, setWorkoutMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [addExerciseOpen, setAddExerciseOpen] = useState(false);
+  const pendingTemplateRef = useRef<ExerciseDraft | null>(null);
   const [reorderOpen, setReorderOpen] = useState(false);
   const [reorderDragId, setReorderDragId] = useState<string | null>(null);
   const [collapsedExerciseIds, setCollapsedExerciseIds] = useState<string[]>([]);
@@ -13467,7 +17103,6 @@ export function App() {
   const [guidanceCollapsed, setGuidanceCollapsed] = useState(false);
   const [warmupExpanded, setWarmupExpanded] = useState(false);
   const [warmupDismissed, setWarmupDismissed] = useState(false);
-  const [cooldownDismissed, setCooldownDismissed] = useState(false);
   const [timingOpen, setTimingOpen] = useState(false);
   const [leavePromptOpen, setLeavePromptOpen] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
@@ -13483,14 +17118,23 @@ export function App() {
     storedPlanBuilderState?.mode ?? "create"
   );
   const [lastGenConfig, setLastGenConfig] = useState<GenConfig | null>(null);
-  const [plannerView, setPlannerView] = useState<"mine" | "library" | "generate">("mine");
+  const [genGoal, setGenGoal] = useState("Hypertrophy");
+  const [genMuscles, setGenMuscles] = useState<string[]>([]);
+  const [genDuration, setGenDuration] = useState("45 min");
+  const [genEquipment, setGenEquipment] = useState<string>(() => getStoredPsychProfile().equipmentAccess ?? "any");
+  const [plannerView, setPlannerView] = useState<"mine" | "library" | "generate" | "exercises">("mine");
+  const [libraryDetailExerciseId, setLibraryDetailExerciseId] = useState<string | null>(null);
   const [activePlanSession, setActivePlanSession] = useState<ActivePlanSession>(null);
   const [discardReturnView, setDiscardReturnView] = useState<"home" | "planner">("home");
   const [reportWorkout, setReportWorkout] = useState<SavedWorkoutData | null>(null);
+  const [reportReturnView, setReportReturnView] = useState<AppView>("home");
   const [historyDetailWorkout, setHistoryDetailWorkout] = useState<SavedWorkoutData | null>(null);
   const [historyDetailReturnView, setHistoryDetailReturnView] = useState<AppView>("planner");
   const [historyDetailPlanContext, setHistoryDetailPlanContext] = useState<{ weekIdx: number; dayIdx: number; label: string; sessionNum: number } | null>(null);
   const [savedWorkoutsList, setSavedWorkoutsList] = useState<SavedWorkoutData[]>(getStoredSavedWorkouts);
+  const [insightsWell, setInsightsWell] = useState<InsightsWell | null>(() => {
+    try { const raw = localStorage.getItem("repiq-insights-well"); return raw ? JSON.parse(raw) as InsightsWell : null; } catch { return null; }
+  });
   const [templateApplyPromptImages, setTemplateApplyPromptImages] = useState<WorkoutMediaAsset[] | null>(null);
   const [tagPlanId, setTagPlanId] = useState<string | null>(null);
   const [tagPlanDraft, setTagPlanDraft] = useState<string[]>([]);
@@ -13597,6 +17241,9 @@ export function App() {
     customExercises.find((exercise) => exercise.id === detailsExerciseId) ??
     availableExerciseTemplates.find((exercise) => exercise.id === detailsExerciseId) ??
     null;
+  const libraryDetailExercise = libraryDetailExerciseId
+    ? (availableExerciseTemplates.find((e) => e.id === libraryDetailExerciseId) ?? null)
+    : null;
   const musclesExercise =
     exercises.find((exercise) => exercise.id === musclesExerciseId) ?? null;
   const supersetSheetExercise =
@@ -13688,6 +17335,29 @@ export function App() {
     () => formatElapsedDuration(workoutMeta.date, workoutMeta.startTime, workoutMeta.startInstant),
     [clockTick, workoutMeta.date, workoutMeta.startTime, workoutMeta.startedMinutesAgo, workoutMeta.startInstant]
   );
+
+  // ── Master Insights Well: recompute + persist on every workout change ─────────
+  useEffect(() => {
+    if (savedWorkoutsList.length === 0) return;
+    const well = computeInsightsWell(savedWorkoutsList, psychProfile);
+    setInsightsWell(well);
+    try { localStorage.setItem("repiq-insights-well", JSON.stringify(well)); } catch {}
+  }, [savedWorkoutsList, psychProfile]);
+
+  // ── Demo seed: auto-populate rich workout data when too few sessions exist ──
+  useEffect(() => {
+    // Clear stale version flags so bumping the version always triggers a fresh seed
+    ["repiq-demo-seeded-v3", "repiq-demo-seeded-v4"].forEach(f => localStorage.removeItem(f));
+    const FLAG = "repiq-demo-seeded-v5";
+    if (localStorage.getItem(FLAG)) return;              // already seeded this version
+    const merged = seedDemoWorkouts(savedWorkoutsList);
+    setSavedWorkoutsList(merged);
+    try {
+      persistSavedWorkoutsList(merged);
+      localStorage.setItem(FLAG, "1");
+    } catch { /* quota guard */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (planBuilderDraft && planBuilderMode !== "edit") {
@@ -13802,6 +17472,7 @@ export function App() {
       ...finishWorkoutDraft,
       images,
       savedAt: new Date().toISOString(),
+      authorName: getStoredPsychProfile().name ?? undefined,
       ...(activeRepIQSessionKey ? { repiqSourceKey: activeRepIQSessionKey } : {}),
       workoutSource: activeRepIQSessionKey ? "repiq"
         : activePlanSession ? (activePlanSession.source as "saved" | "library" | "generated" | "quick")
@@ -15095,7 +18766,9 @@ export function App() {
 
     const nextExercises = templateIds
       .map((templateId, index) => {
-        const template = availableExerciseTemplates.find((entry) => entry.id === templateId);
+        const template =
+          availableExerciseTemplates.find((entry) => entry.id === templateId) ??
+          (pendingTemplateRef.current?.id === templateId ? pendingTemplateRef.current : null);
         if (!template) {
           return null;
         }
@@ -15120,6 +18793,7 @@ export function App() {
       return;
     }
 
+    pendingTemplateRef.current = null;
     setExercises((current) => [...current, ...nextExercises]);
     setUserActiveExerciseId(nextExercises[0].id);
     setActiveExerciseId(nextExercises[0].id);
@@ -15228,6 +18902,7 @@ export function App() {
       ]
     };
 
+    pendingTemplateRef.current = normalizedTemplate;
     setCustomExercises((current) => [...current, normalizedTemplate]);
     setExerciseRestDefaults((current) => ({
       ...current,
@@ -15484,7 +19159,6 @@ export function App() {
     setGuidanceCollapsed(false);
     setWarmupExpanded(false);
     setWarmupDismissed(false);
-    setCooldownDismissed(false);
     setFocusedExpandedExerciseId(null);
     setTimingOpen(false);
     setLeavePromptOpen(false);
@@ -16399,6 +20073,58 @@ export function App() {
           setRepiqPlan(null);
           setSavedWorkoutsList([]);
         }}
+        onReseedDemoWorkouts={() => {
+          // Clear all seed-version flags so the seed is forced to run fresh
+          ["repiq-demo-seeded-v3", "repiq-demo-seeded-v4", "repiq-demo-seeded-v5"].forEach(f =>
+            localStorage.removeItem(f)
+          );
+          const merged = seedDemoWorkouts(savedWorkoutsList);
+          persistSavedWorkoutsList(merged);
+          setSavedWorkoutsList(merged);
+          localStorage.setItem("repiq-demo-seeded-v5", "1");
+          setAppView("insights");
+          setShowDevPage(false);
+          setDevBypassGate(true);
+        }}
+        onGoToFinishDraft={() => {
+          const mkSet = (w: number, r: number): { weight: number; reps: number; rpe: number | null; setType: string } =>
+            ({ weight: w, reps: r, rpe: 8, setType: "normal" });
+          const mkEx = (id: string, name: string, muscle: string, sets: ReturnType<typeof mkSet>[]): FinishedExerciseSummary => ({
+            id, name, primaryMuscle: muscle,
+            loggedSets: sets.length,
+            loggedVolume: sets.reduce((s, r) => s + r.weight * r.reps, 0),
+            sets,
+          });
+          const draft: FinishWorkoutDraft = {
+            sessionName: "Upper Push",
+            note: "",
+            date: new Date().toISOString().slice(0, 10),
+            duration: "52:14",
+            durationSeconds: 3134,
+            totalSets: 18,
+            totalVolume: 8640,
+            exerciseCount: 6,
+            loggedExerciseCount: 6,
+            ignoredIncompleteSets: 0,
+            exercises: [
+              mkEx("bench-press",            "Barbell Bench Press",      "Chest",     [mkSet(80,8), mkSet(80,7), mkSet(82.5,6), mkSet(82.5,6)]),
+              mkEx("incline-dumbbell-press", "Incline Dumbbell Press",   "Chest",     [mkSet(30,10), mkSet(30,9), mkSet(30,8)]),
+              mkEx("overhead-press",         "Overhead Press",           "Shoulders", [mkSet(55,8), mkSet(55,7), mkSet(55,6)]),
+              mkEx("lateral-raise",          "Lateral Raise",            "Shoulders", [mkSet(12,15), mkSet(12,14), mkSet(12,12)]),
+              mkEx("tricep-pushdown",        "Tricep Pushdown",          "Triceps",   [mkSet(40,12), mkSet(40,11), mkSet(40,10)]),
+              mkEx("overhead-tricep-ext",    "Overhead Tricep Extension","Triceps",   [mkSet(25,12), mkSet(25,10)]),
+            ],
+            rewards: [],
+            rewardSummary: { set: 0, exercise: 0, session: 0, total: 0 },
+            takeawayTitle: "Solid upper push session",
+            takeawayBody: "",
+            images: [],
+          };
+          setFinishWorkoutDraft(draft);
+          setAppView("finish");
+          setShowDevPage(false);
+          setDevBypassGate(true);
+        }}
       />
     );
   }
@@ -16531,7 +20257,8 @@ export function App() {
           "best_match",
           smartReplaceAvailableEquipment,
           availableExerciseTemplates as ExerciseWithTaxonomy[],
-          psychProfile.experienceLevel
+          psychProfile.experienceLevel,
+          psychProfile.primaryGoal,
         )
       : [];
     const smartReplacementMeta = smartReplacementResults.reduce<Record<string, { rank: number; score: number; matchReason: string }>>(
@@ -16570,6 +20297,7 @@ export function App() {
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
           replaceMode={Boolean(replaceTarget)}
           smartReplacementMeta={replaceTarget ? smartReplacementMeta : undefined}
+          muscleFreshness={insightsWell?.muscleFreshness}
         />
         <BottomNav activeView={appView} onNavigate={(view) => { setAddExerciseOpen(false); setSmartReplaceExerciseId(null); setAppView(view); }} onMore={() => setShowMoreSheet(true)} />
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
@@ -16582,7 +20310,7 @@ export function App() {
       <div data-theme={resolvedTheme}>
         <WorkoutReportPage
           data={reportWorkout}
-          onBack={() => setAppView("home")}
+          onBack={() => setAppView(reportReturnView)}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
           psychCapture={{
@@ -16686,15 +20414,21 @@ export function App() {
       <div data-theme={resolvedTheme}>
         <InsightsPage
           savedWorkouts={savedWorkoutsList}
-          onOpenReport={(workout) => { setReportWorkout(workout); setAppView("report"); }}
-          onRedoWorkout={redoWorkout}
-          onSaveToMyWorkouts={saveHistoryWorkoutToMyWorkouts}
-          onDeleteWorkout={deleteHistoryWorkout}
+          psychProfile={psychProfile}
+          library={availableExerciseTemplates as ExerciseWithTaxonomy[]}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
-          initialTab={insightsInitialTab}
+          onNavigate={(view) => setAppView(view)}
+          onLeave={(state) => {
+            setInsightsReturnState({ ...state, drillSection: state.drillSection as any, drillOrigin: state.drillOrigin });
+            setPlannerOrigin("insights");
+          }}
+          initialTab={insightsReturnState?.tab ?? "summary"}
+          initialDrillSection={insightsReturnState?.drillSection ?? undefined}
+          initialDrillOrigin={insightsReturnState?.drillOrigin ?? undefined}
+          repiqPlan={repiqPlan}
         />
-        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <BottomNav activeView={appView} onNavigate={(view) => { if (view === "insights") setInsightsReturnState(null); setAppView(view); }} onMore={() => setShowMoreSheet(true)} />
         <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
@@ -16724,14 +20458,59 @@ export function App() {
     );
   }
 
+  if (appView === "history") {
+    return (
+      <div data-theme={resolvedTheme}>
+        <HistoryPage
+          savedWorkouts={savedWorkoutsList}
+          onBack={() => setAppView("home")}
+          onOpenReport={(workout) => { setReportReturnView("history"); setReportWorkout(workout); setAppView("report"); }}
+          onRedoWorkout={redoWorkout}
+          onSaveToMyWorkouts={saveHistoryWorkoutToMyWorkouts}
+          onDeleteWorkout={deleteHistoryWorkout}
+          resolvedTheme={resolvedTheme}
+        />
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
+      </div>
+    );
+  }
+
+  if (appView === "community") {
+    return (
+      <div data-theme={resolvedTheme}>
+        <main className="shell selector-shell">
+          <section className="app-shell selector-page">
+            <header className="selector-header">
+              <div><p className="label">REPIQ</p><h1>Community</h1></div>
+            </header>
+            <section className="planner-section" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: 10, textAlign: "center", padding: "60px 24px" }}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+              <p style={{ margin: 0, fontWeight: 700, fontSize: "1.05rem", color: "var(--ink)" }}>Community — coming soon</p>
+              <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--muted)", maxWidth: 280, lineHeight: 1.5 }}>Groups, friends, leaderboards and shared workouts are on the way. Stay consistent — your streak will mean something here.</p>
+            </section>
+          </section>
+        </main>
+        <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
+      </div>
+    );
+  }
+
   if (appView === "glossary") {
     return (
-      <div data-theme={resolvedTheme} style={{ height: "100dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        <GlossaryPage
-          resolvedTheme={resolvedTheme}
-          initialTerm={glossaryTerm}
-          onBack={() => { setGlossaryTerm(""); setAppView("home"); }}
-        />
+      <div data-theme={resolvedTheme} style={{ height: "100dvh", display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          <GlossaryPage
+            resolvedTheme={resolvedTheme}
+            initialTerm={glossaryTerm}
+            onBack={() => { setGlossaryTerm(""); setAppView("home"); }}
+          />
+        </div>
+        <BottomNav activeView={appView} onNavigate={(view) => { setGlossaryTerm(""); setAppView(view); }} onMore={() => setShowMoreSheet(true)} />
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
       </div>
     );
   }
@@ -16769,18 +20548,26 @@ export function App() {
           }
           onNoteChange={(value) =>
             setFinishWorkoutDraft((current) =>
-              current
-                ? {
-                    ...current,
-                    note: value
-                  }
-                : current
+              current ? { ...current, note: value } : current
             )
           }
+          onShareNoteChange={(value) =>
+            setFinishWorkoutDraft((current) =>
+              current ? { ...current, shareNote: value } : current
+            )
+          }
+          onShareNoteQuoteToggle={(value) =>
+            setFinishWorkoutDraft((current) =>
+              current ? { ...current, shareNoteIsQuote: value } : current
+            )
+          }
+          authorName={psychProfile.name ?? "You"}
           onBack={() => setAppView("logger")}
           onSave={saveFinishedWorkout}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+          showCooldown={settings.showCooldown}
+          onDisableCooldown={() => setSettings(s => ({ ...s, showCooldown: false }))}
         />
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
         {templateApplyPromptImages && (
@@ -16820,6 +20607,25 @@ export function App() {
     );
   }
 
+  if (appView === "planner" && libraryDetailExercise) {
+    return (
+      <div data-theme={resolvedTheme}>
+        <ExerciseDetailPage
+          exercise={libraryDetailExercise}
+          activeTab={detailsTab}
+          initialScrollTarget="top"
+          onTabChange={setDetailsTab}
+          onBack={() => setLibraryDetailExerciseId(null)}
+          customActions={null}
+          resolvedTheme={resolvedTheme}
+          onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
+        />
+        <BottomNav activeView={appView} onNavigate={(view) => { setLibraryDetailExerciseId(null); setAppView(view); }} onMore={() => setShowMoreSheet(true)} />
+        <MoreSheet open={showMoreSheet} onClose={() => setShowMoreSheet(false)} onGoTo={(v) => { setShowMoreSheet(false); setAppView(v); }} resolvedTheme={resolvedTheme} />
+      </div>
+    );
+  }
+
   if (appView === "planner") {
     return (
       <div data-theme={resolvedTheme}>
@@ -16830,7 +20636,7 @@ export function App() {
           activeView={plannerView}
           onViewChange={setPlannerView}
           hasActiveWorkout={hasActiveWorkout}
-          onBack={() => setAppView("home")}
+          onBack={() => { setAppView(plannerOrigin === "insights" ? "insights" : "home"); setPlannerOrigin("home"); }}
           onStartEmpty={() => openQuickSession("planner")}
           onCreateNew={() => {
             setEditingPlan(null);
@@ -16868,6 +20674,7 @@ export function App() {
           onDeletePlan={deletePlan}
           onUseTemplate={useTemplate}
           onResumeWorkout={openActiveWorkout}
+          onBrowseExercise={(id) => setLibraryDetailExerciseId(id)}
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
           defaultGoal={settings.preferredGoal}
@@ -16976,6 +20783,7 @@ export function App() {
           onCompressSessions={() => {
             setShowCompressDurationSheet(true);
           }}
+          insightsWell={insightsWell}
           savedWorkouts={savedWorkoutsList}
           onOpenHistoryWorkout={(workout, weekIdx, dayIdx, label, sessionNum) => {
             setHistoryDetailWorkout(workout);
@@ -17077,6 +20885,14 @@ export function App() {
             persistRepIQPlan(plan);
             setRepiqPlan(plan);
           }}
+          genGoal={genGoal}
+          setGenGoal={setGenGoal}
+          genMuscles={genMuscles}
+          setGenMuscles={setGenMuscles}
+          genDuration={genDuration}
+          setGenDuration={setGenDuration}
+          genEquipment={genEquipment}
+          setGenEquipment={setGenEquipment}
         />
         <BottomNav activeView={appView} onNavigate={(view) => setAppView(view)} onMore={() => setShowMoreSheet(true)} />
 
@@ -17651,6 +21467,16 @@ export function App() {
               <input type="checkbox" checked={settings.guidanceInline}
                 onChange={(e) => setSettings((c) => ({ ...c, guidanceInline: e.target.checked }))} />
             </label>
+            <label className="toggle-row">
+              <span>Show warm-up reminder at session start</span>
+              <input type="checkbox" checked={settings.showWarmup}
+                onChange={(e) => setSettings((c) => ({ ...c, showWarmup: e.target.checked }))} />
+            </label>
+            <label className="toggle-row">
+              <span>Show cool-down stretches after workout</span>
+              <input type="checkbox" checked={settings.showCooldown}
+                onChange={(e) => setSettings((c) => ({ ...c, showCooldown: e.target.checked }))} />
+            </label>
             <p className="settings-note">These defaults apply when a new session starts. Changes during a session only affect the current session.</p>
           </div>
 
@@ -17882,7 +21708,7 @@ export function App() {
             </div>
           )}
           {/* ── Warm-up / activation guidance ── */}
-          {exercises.length > 0 && !warmupDismissed && (() => {
+          {exercises.length > 0 && settings.showWarmup && !warmupDismissed && (() => {
             const sessionMuscles = [...new Set(exercises.map(e => e.primaryMuscle).filter(Boolean))];
             if (sessionMuscles.length === 0) return null;
             const ACTIVATION_MAP: Record<string, string[]> = {
@@ -17908,35 +21734,46 @@ export function App() {
             }
             if (movements.length === 0) return null;
             return (
-              <div className={`warmup-guidance-block${warmupExpanded ? " is-expanded" : ""}`}>
-                <button
-                  type="button"
-                  className="warmup-guidance-toggle"
-                  onClick={() => setWarmupExpanded(prev => !prev)}
-                >
-                  <span className="warmup-guidance-icon">🔥</span>
-                  <span className="warmup-guidance-title">Warm Up &amp; Activate</span>
-                  <span className="warmup-guidance-hint">{movements.length} movements · ~3 min</span>
-                  <span className="warmup-guidance-chevron">{warmupExpanded ? "▾" : "›"}</span>
-                </button>
+              <>
                 {warmupExpanded && (
-                  <div className="warmup-guidance-content">
-                    <p className="warmup-guidance-sub">Dynamic stretches and activation for {sessionMuscles.slice(0, 3).join(", ")}{sessionMuscles.length > 3 ? "…" : ""}</p>
-                    <ul className="warmup-guidance-list">
-                      {movements.slice(0, 6).map((m) => (
-                        <li key={m} className="warmup-guidance-item">{m}</li>
-                      ))}
-                    </ul>
+                  <div className="guidance-backdrop" onClick={() => setWarmupExpanded(false)} />
+                )}
+                <div className={`warmup-guidance-block${warmupExpanded ? " is-expanded" : ""}`}>
+                  <button
+                    type="button"
+                    className="warmup-guidance-toggle"
+                    onClick={() => setWarmupExpanded(prev => !prev)}
+                  >
+                    <span className="warmup-guidance-icon">🔥</span>
+                    <span className="warmup-guidance-title">Warm Up &amp; Activate</span>
+                    <span className="warmup-guidance-hint">{movements.length} movements · ~3 min</span>
+                    <span className="warmup-guidance-chevron">{warmupExpanded ? "▾" : "›"}</span>
                     <button
                       type="button"
-                      className="warmup-guidance-dismiss"
-                      onClick={() => setWarmupDismissed(true)}
-                    >
-                      Done — start workout
-                    </button>
-                  </div>
-                )}
-              </div>
+                      className="guidance-dismiss-x"
+                      onClick={(e) => { e.stopPropagation(); setWarmupDismissed(true); }}
+                      aria-label="Close warm-up"
+                    >×</button>
+                  </button>
+                  {warmupExpanded && (
+                    <div className="warmup-guidance-content">
+                      <p className="warmup-guidance-sub">Dynamic stretches and activation for {sessionMuscles.slice(0, 3).join(", ")}{sessionMuscles.length > 3 ? "…" : ""}</p>
+                      <ul className="warmup-guidance-list">
+                        {movements.slice(0, 6).map((m) => (
+                          <li key={m} className="warmup-guidance-item">{m}</li>
+                        ))}
+                      </ul>
+                      <button
+                        type="button"
+                        className="warmup-guidance-dismiss"
+                        onClick={() => { setSettings(s => ({ ...s, showWarmup: false })); setWarmupDismissed(true); }}
+                      >
+                        Don't show again
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
             );
           })()}
 
@@ -18539,6 +22376,13 @@ export function App() {
                               onChange={(event) =>
                                 updateDraftSet(exercise.id, index, "rpeInput", event.target.value)
                               }
+                              onBlur={(event) => {
+                                const raw = parseFloat(event.target.value);
+                                if (isNaN(raw) || event.target.value.trim() === "") return;
+                                const clamped = Math.min(10, Math.max(1, raw));
+                                const rounded = Math.round(clamped * 2) / 2;
+                                updateDraftSet(exercise.id, index, "rpeInput", String(rounded));
+                              }}
                             />
                           )}
                           <label className="done-cell" onClick={(event) => event.stopPropagation()}>
@@ -19675,6 +23519,7 @@ export function App() {
                 availableEquipment,
                 availableExerciseTemplates as ExerciseWithTaxonomy[],
                 psychProfile?.experienceLevel ?? null,
+                psychProfile?.primaryGoal ?? null,
               ).slice(0, 5)
             : [];
           const hasEnoughSuggestions = suggestions.filter(s => s.score > 0).length >= 3;

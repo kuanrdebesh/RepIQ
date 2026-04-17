@@ -33,6 +33,9 @@ export type ExerciseDraft = {
   exerciseType?: CustomExerciseType;
   measurementType?: MeasurementType;
   movementSide?: MovementSide;
+  performanceMetric?: PerformanceMetric;
+  supportsExternalLoad?: boolean;
+  implement?: ExerciseImplement;
   isCustom?: boolean;
   libraryStatus?: "active" | "archived";
   howTo: string[];
@@ -44,7 +47,7 @@ export type ExerciseDraft = {
 export type DetailTab = "summary" | "history" | "howto";
 export type ThemePreference = "light" | "dark" | "system";
 export type DraftSetType = "warmup" | "normal" | "drop" | "restpause" | "failure";
-export type AppView = "home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "profile" | "history-detail" | "glossary" | "more";
+export type AppView = "home" | "logger" | "finish" | "share" | "planner" | "plan-builder" | "report" | "insights" | "history" | "profile" | "history-detail" | "glossary" | "more" | "community";
 
 // ── Psychological Data Layer ──────────────────────────────────────────────────
 // V1: types and storage stubs defined now so data is captured from day one.
@@ -219,7 +222,7 @@ export interface RepIQPlanExercise {
 // Movement patterns that benefit from warm-up sets (compound / multi-joint)
 export const COMPOUND_PATTERNS: Set<MovementPattern> = new Set([
   "horizontal_push", "vertical_push", "horizontal_pull", "vertical_pull",
-  "hip_hinge", "squat", "lunge",
+  "hip_hinge", "squat", "lunge", "carry",
 ]);
 
 export interface RepIQPlanDay {
@@ -374,7 +377,7 @@ export type WorkoutPlan = {
   updatedAt: string;
   // Template metadata (populated only on WORKOUT_PLAN_TEMPLATES entries)
   level?: "Beginner" | "Intermediate" | "Advanced";
-  equipment?: "Full Gym" | "Dumbbells" | "Bodyweight";
+  equipment?: "Full Gym" | "Dumbbells" | "Bodyweight" | "Resistance Band" | "TRX";
   goal?: "Hypertrophy" | "Strength" | "Endurance";
   muscleGroups?: string[];
   duration?: number;
@@ -397,6 +400,8 @@ export type WorkoutSettings = {
   showRpe: boolean;
   guidanceTopStrip: boolean;
   guidanceInline: boolean;
+  showWarmup: boolean;
+  showCooldown: boolean;
   preferredGoal: string | null;
   preferredLevel: string | null;
   preferredEquipment: string | null;
@@ -415,14 +420,38 @@ export type RewardLevel = "set" | "exercise" | "session";
 export type AddExerciseMode = "browse" | "create";
 export type CreateExerciseStep = 1 | 2;
 export type CustomExerciseType =
+  // ── New schema values (v2) ─────────────────────────────────────────────────
+  | "bodyweight"           // Pure bodyweight, no load
+  | "bodyweight_weighted"  // Bodyweight with optional external load (weighted vest, dip belt)
+  | "dumbbell"             // Dumbbell / EZ-bar accessories
+  | "cable"                // Cable machine
+  | "barbell"              // Barbell (straight, EZ, landmine)
+  | "machine"              // Plate-loaded or selectorised machine
+  | "resistance_band"      // Resistance band / tube
+  // ── Legacy values — kept for backward compat until full CSV import ─────────
   | "bodyweight_only"
-  | "bodyweight_weighted"
   | "free_weights_accessories"
-  | "barbell"
-  | "machine"
   | "freestyle_cardio";
 export type MeasurementType = "timed" | "reps_volume" | "weight_timed";
 export type MovementSide = "unilateral" | "bilateral";
+
+// How performance is measured — drives logger input rendering and Overload Engine
+export type PerformanceMetric =
+  | "reps"              // Standard rep-counted lifts
+  | "time"              // Holds, planks, isometric work
+  | "distance_or_time"  // Carries, sled pushes (load + distance/duration)
+  | "mixed";            // Cardio / HIIT where either metric applies
+
+// Auxiliary implement — captures tool used when equipment is otherwise bodyweight/band
+export type ExerciseImplement =
+  | "suspension_trainer" // TRX, rings
+  | "sled"               // Push/pull sled
+  | "medicine_ball"      // Med ball slams, throws
+  | "jump_rope"          // Jump rope / speed rope
+  | "plate"              // Weight plate (plate raises, landmine base)
+  | "battle_ropes"       // Battle ropes
+  | "yoke"               // Yoke carry frame
+  | "none";              // No auxiliary implement
 
 // ── Smart Replace — see docs/smart-replace.md ─────────────────────────────────
 export type MovementPattern =
@@ -439,7 +468,8 @@ export type MovementPattern =
   | "isolation_push"     // Tricep pushdown, chest fly, lateral raise
   | "isolation_pull"     // Bicep curl, face pull, rear delt fly
   | "isolation_legs"     // Leg extension, leg curl, calf raise
-  | "cardio";            // Jump rope, sled, rowing machine
+  | "cardio"             // Jump rope, sled, rowing machine
+  | "mobility";          // Stretching, foam rolling, mobility drills
 
 export type ExerciseDifficulty = "beginner" | "intermediate" | "advanced";
 
@@ -448,9 +478,11 @@ export type ExerciseAngle =
   | "flat"        // Standard horizontal (bench press, bent-over row)
   | "incline"     // Angled upward (incline press, incline curl)
   | "decline"     // Angled downward (decline press)
-  | "overhead"    // Vertical pressing plane
-  | "neutral"     // Neutral grip / neutral stance variant
+  | "overhead"    // Vertical pressing plane (OHP, Arnold press)
+  | "upright"     // Vertical torso, no pressing (lat pulldown, cable curl)
+  | "supine"      // Lying face-up (skull crusher, lying leg curl)
   | "prone"       // Face-down (reverse fly, prone leg curl)
+  | "neutral"     // Neutral grip / neutral stance (legacy — kept for compat)
   | "none";       // Not applicable (squat, deadlift, carry)
 
 // Equipment — more granular than exerciseType, used for matching and filtering
@@ -544,9 +576,18 @@ export type FinishedExerciseSummary = {
   sets?: { weight: number; reps: number; rpe: number | null; setType: string }[];
 };
 
+// Extends the shared WorkoutMediaAsset with a local role tag so we can
+// distinguish progress photos (shown in the Progress tab) from general
+// workout photos (memories only shown in history).
+export type WorkoutPhotoAsset = WorkoutMediaAsset & {
+  photoRole?: "progress" | "workout";
+};
+
 export type FinishWorkoutDraft = {
   sessionName: string;
-  note: string;
+  note: string;           // private personal note — never shared
+  shareNote?: string;     // public note — shown in community; optional
+  shareNoteIsQuote?: boolean; // true → rendered as blockquote with author; false → plain styled text
   date: string;
   duration: string;
   durationSeconds: number; // elapsed seconds — used to pre-seed timer on edit-from-history
@@ -560,13 +601,14 @@ export type FinishWorkoutDraft = {
   rewardSummary: RewardSummary;
   takeawayTitle: string;
   takeawayBody: string;
-  images: WorkoutMediaAsset[];
+  images: WorkoutPhotoAsset[];
 };
 
 export type SavedWorkoutData = FinishWorkoutDraft & {
   savedAt: string; // ISO string
   repiqSourceKey?: string; // "weekIdx-dayIdx" if completed as part of a RepIQ plan session
   workoutSource?: "repiq" | "saved" | "library" | "generated" | "quick" | "history";
+  authorName?: string; // display name captured at save time for quote attribution
 };
 
 export type ExerciseRestDefaults = Record<string, string>;

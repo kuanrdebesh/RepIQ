@@ -2,7 +2,8 @@ import benchPressImage from "./assets/bench-press.svg";
 import inclineDumbbellPressImage from "./assets/incline-dumbbell-press.svg";
 import type {
   ExerciseWithTaxonomy, MovementPattern, ExerciseAngle, ExerciseEquipment,
-  ExerciseDifficulty, CustomExerciseType, MeasurementType, DraftSet
+  ExerciseDifficulty, CustomExerciseType, MeasurementType, DraftSet,
+  PerformanceMetric, ExerciseImplement
 } from "./types";
 
 export function makeExercise(
@@ -18,6 +19,9 @@ export function makeExercise(
   restTimer: string,
   howTo: string[],
   measurementType?: MeasurementType,
+  performanceMetric?: PerformanceMetric,
+  supportsExternalLoad?: boolean,
+  implement?: ExerciseImplement,
 ): ExerciseWithTaxonomy {
   const img = (equipment === "dumbbell" || equipment === "cable" || equipment === "none" || equipment === "bodyweight")
     ? inclineDumbbellPressImage
@@ -43,7 +47,10 @@ export function makeExercise(
     equipment,
     difficultyLevel,
     exerciseType,
-    ...(measurementType ? { measurementType } : {}),
+    ...(measurementType       ? { measurementType }       : {}),
+    ...(performanceMetric     ? { performanceMetric }     : {}),
+    ...(supportsExternalLoad !== undefined ? { supportsExternalLoad } : {}),
+    ...(implement             ? { implement }             : {}),
   };
 }
 

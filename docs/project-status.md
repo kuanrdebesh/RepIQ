@@ -192,6 +192,11 @@ Detailed implemented logic now also has a dedicated reference in [algorithms.md]
   - add exercise
 - Unsaved new-builder drafts now persist locally until they are saved or replaced
 - Starting from a generated workout, plan, template, or quick session now routes through clearer source-specific behavior
+- `Generate Session` is now deterministic: same inputs always produce the same session via `hashString()` + `seededShuffle()`; `GenConfig` type: `{ goal, muscles, duration, seedOffset }`; `buildGeneratedPlan()` is a top-level pure function
+- Shuffle button added to Plan Builder above exercise list (mode === "generate") — increments `seedOffset` in `lastGenConfig` to re-run `buildGeneratedPlan()`
+- Plan Builder exercise cards default collapsed; `expandedIds: Set<string>` state resets on shuffle (when `draft.id` changes)
+- Compress/Regenerate buttons hidden when `sessionsRemaining <= daysRemaining`
+- CSS layout fix: `grid-template-columns: minmax(0, 1fr)` on `.exercise-stack`; `.exercise-link` changed from `flex: 0 1 auto` to `flex: 1 1 0`
 
 ## Logger Flow Refinements
 
@@ -365,21 +370,27 @@ These are documented and should not be forgotten:
 
 ## Smart Replace
 
-- Smart exercise replacement designed and stubbed — entry point already exists in logger ⋮ menu
-- Core types added to App.tsx:
+- Smart exercise replacement fully wired — two entry points: ⋮ menu "Replace exercise" and swap button (⇄) in exercise card header
+- Core types:
   - `MovementPattern` — 14 patterns covering all movement types
   - `ExerciseAngle` — flat / incline / decline / overhead / neutral / prone / none
   - `ExerciseEquipment` — barbell / dumbbell / cable / machine / bodyweight / kettlebell / band / landmine / smith_machine
   - `ExerciseDifficulty` — beginner / intermediate / advanced
-  - `ReplacementReason` — machine_taken / no_equipment / too_difficult / pain_discomfort / preference
-  - `ReplacementEvent` — logged per swap for V2 pattern learning
-- Scoring functions implemented:
-  - `scoreReplacement()` — scores candidates 0–100 using pattern + angle + muscle + equipment + session fatigue
-  - `getSmartReplacements()` — returns top 5 ranked alternatives with human-readable match reason chips
-  - `getMovementFamily()` — groups patterns into push/pull/legs/core/carry/cardio families
-  - `groupSetsByMovementPattern()` — aggregates session volume by pattern family for Insights
+  - `ReplacementReason` — machine_taken / no_equipment / too_difficult / pain_discomfort / best_match / just_change / preference (legacy alias)
+  - `ReplacementRankTuple` — 10-position tuple: [movement, muscle, angle, equipment, reason, difficulty, tracking, preference, fatigue, novelty]
+  - `ReplacementEvent` — logged per swap (stores full rank tuple for algorithm tuning)
+- Scoring engine rewritten — 10-tuple lexicographic ranking replaces old additive `scoreReplacement()`:
+  - `computeMovementTier` / `computeMuscleTier` / `computeAngleTier` / `computeEquipmentTier` / `computeReasonTier` / `computeDifficultyTier` / `computeTrackingTier` / `computePreferenceTier` / `computeFatigueTier` / `computeNoveltyTier`
+  - `flattenRankTuple()` — weighted positional scalar (`value × 10^(n-i)`) for tie-breaking
+  - `getSmartReplacements(original, reason, catalog, sessionExercises, userProfile, loggedSets)` — 6 args; returns top 5
+  - Hard exclusions: same base ID, session duplicates, equipment-incompatible by reason
+  - `normalizeReplacementReason()` maps legacy `"preference"` → `"best_match"`
+- UI additions:
+  - `smartReplacementMeta` prop passed to `AddExercisePage` — shows rank hint chips per exercise in replace mode browse view
+  - Query resets to `""` (not preFilterMuscle) when replace mode opens
+  - `exercise-swap-button` (⇄ SVG) in `exercise-title-actions` — swap shortcut, opens replace with `just_change` reason, CSS opacity 0.55 / hover 1.0
 - Storage: `repiq-replacement-events` key with `persistReplacementEvent()` / `getStoredReplacementEvents()`
-- Design spec in `docs/smart-replace.md`
+- Design spec: `docs/smart-replace.md`
 
 ## Exercise Taxonomy
 
@@ -393,6 +404,8 @@ These are documented and should not be forgotten:
   - Progressive overload suggestions: "Ready to try Barbell Bench after 6 weeks of Dumbbell Press?"
 - Full taxonomy and `~100` exercise library coverage documented in `docs/smart-replace.md`
 - `ExerciseWithTaxonomy` type alias wraps `ExerciseDraft` with optional taxonomy fields for backwards compatibility
+- `docs/exercise-taxonomy.csv` — machine-readable reference for all exercises with full taxonomy fields
+- `docs/training-trend-messages.md` — copy spec for training trend UI messages by tier and context
 
 ## Build Order (Agreed)
 
@@ -430,9 +443,9 @@ These are documented and should not be forgotten:
 - Paywall at onboarding end or feature gate
 
 ### Immediate next session
-- Populate `movementPattern`, `angle`, `equipment`, `difficultyLevel` on all exercises in `exerciseLibrary`
-- Build `SmartReplaceSheet` UI component
-- Wire logger ⋮ menu "Replace exercise" to the sheet
+- Populate `movementPattern`, `angle`, `equipment`, `difficultyLevel` on all exercises in `exerciseLibrary` (taxonomy CSV exists at `docs/exercise-taxonomy.csv`)
+- Home redesign: streak always visible, context-aware primary CTA, this-week snapshot, last workout card, PR highlight (Phase 1 completion)
+- Then Phase 2: post-workout psych capture UI (mood/energy chips after Report screen)
 
 ## Planned Logger Enhancement
 

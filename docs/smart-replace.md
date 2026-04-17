@@ -1,14 +1,14 @@
 # Smart Exercise Replace
 
-> **Status: Fully implemented. No dedicated UI.**
+> **Status: Engine fully rewritten (10-tuple lexicographic ranking). UI wired.**
 >
-> **Entry point:** Logger exercise ⋮ menu → "Replace exercise" → opens AddExercisePage pre-filtered to the same primary muscle, in replace mode.
+> **Entry points:**
+> 1. Logger exercise ⋮ menu → "Replace exercise" → opens `AddExercisePage` in replace mode; query cleared, replacement rank hints shown alongside each exercise in "Browse all" view.
+> 2. Swap button (⇄ icon) in exercise card header (`exercise-swap-button`) — opens `AddExercisePage` directly with `just_change` reason pre-selected; no reason picker step.
 >
 > **On selection:** exercise swaps in-place (same position, rest timer preserved, superset group preserved). Sets reset. ReplacementEvent logged.
 >
-> **Scoring engine + smartReplaceCatalog:** implemented and dormant. Reserved for V2 inline suggestion ("Haven't logged this one — try X?").
->
-> **What was deliberately removed:** SmartReplaceSheet (ranked suggestion list). Reason: any single irrelevant suggestion in a ranked list destroys trust in the entire feature. The AddExercisePage pre-filter makes no algorithmic promise — users perceive it as the exercise library filtered to the right muscle, sorted by relevance. No promise = no trust to break.
+> **Scoring:** 10-tuple lexicographic ranking via `ReplacementRankTuple`. Scores are internal; never shown to users.
 
 ---
 
@@ -91,42 +91,84 @@ This field needs to be added to every exercise in `exerciseLibrary` and in the `
 
 ---
 
-## Scoring algorithm
+## Scoring algorithm — 10-tuple lexicographic ranking
 
-For a given exercise being replaced, score every candidate in the library:
+The old additive `scoreReplacement()` function has been replaced with a new pure ranking engine.
 
-```
-baseScore = 0
+### ReplacementRankTuple
 
-// Muscle match (most important)
-if candidate.primaryMuscle === original.primaryMuscle           → +40
-if candidate.primaryMuscles overlaps original.primaryMuscles    → +20 per match (max +40)
-if candidate.secondaryMuscles overlaps original.primaryMuscle   → +15
-if candidate.secondaryMuscles overlaps original.secondaryMuscles → +5 per match (max +20)
-
-// Movement pattern match (preserves session balance)
-if candidate.movementPattern === original.movementPattern       → +30
-if movementFamily(candidate) === movementFamily(original)       → +15
-// movementFamily: push / pull / legs / core / carry / cardio
-
-// Equipment — hard filter first, then soft scoring
-if candidate requires equipment user cannot access              → EXCLUDE
-if candidate.exerciseType === "bodyweight_only"                 → +5 (always accessible)
-if candidate.exerciseType === userPreferredEquipment            → +10
-
-// Session context — penalise if muscle already heavily worked
-if candidate.primaryMuscle already has 3+ logged sets in session → -25
-if candidate is identical to an exercise already in session     → EXCLUDE
-
-// Difficulty / level
-if candidate.experienceLevel matches userPsychProfile.experienceLevel → +10
-// (requires experienceLevel on exercises — see below)
-
-// Avoid same exercise
-if candidate.id === original.id                                 → EXCLUDE
+```typescript
+type ReplacementRankTuple = [
+  movement,    // 0 — movement pattern match (highest priority)
+  muscle,      // 1 — primary muscle match
+  angle,       // 2 — angle match
+  equipment,   // 3 — equipment match
+  reason,      // 4 — reason-tier match (drives equipment/difficulty filter)
+  difficulty,  // 5 — difficulty level match vs user profile
+  tracking,    // 6 — tracking quality (has history = easier to progress)
+  preference,  // 7 — user preference / past selection signals
+  fatigue,     // 8 — session fatigue penalty (inverted)
+  novelty,     // 9 — variety bonus (not recently logged)
+]
 ```
 
-**Final sort:** descending by score. Return top 5.
+Candidates are sorted lexicographically: the first differing position wins. Equal tuples are further resolved by `flattenRankTuple` (weighted positional scalar: `value × 10^(n-i)`).
+
+### Tier functions
+
+| Position | Function | Values |
+|---|---|---|
+| 0 | `computeMovementTier` | 2 = exact match, 1 = same family, 0 = different family |
+| 1 | `computeMuscleTier` | 2 = exact primary, 1 = secondary overlaps primary, 0 = no match |
+| 2 | `computeAngleTier` | 2 = exact angle, 1 = adjacent angle, 0 = opposite |
+| 3 | `computeEquipmentTier` | 2 = same equipment, 1 = similar category, 0 = different |
+| 4 | `computeReasonTier` | Varies by reason — see reason table below |
+| 5 | `computeDifficultyTier` | 2 = matches user level, 1 = one tier off, 0 = two tiers off |
+| 6 | `computeTrackingTier` | 2 = has prior sessions, 1 = new, 0 = none |
+| 7 | `computePreferenceTier` | 2 = past pick, 1 = neutral, 0 = previously avoided |
+| 8 | `computeFatigueTier` | 2 = fresh muscle, 1 = moderate, 0 = heavily worked |
+| 9 | `computeNoveltyTier` | 2 = not in recent sessions, 1 = seen recently, 0 = done today |
+
+### Hard exclusions (before scoring)
+
+- Candidate `id === original.id` (same base exercise)
+- Candidate already exists elsewhere in the session
+- `reason === "machine_taken"` → all `machine` exerciseType candidates excluded
+- `reason === "no_equipment"` → only `bodyweight_only` candidates allowed
+
+### ReplacementReason (updated)
+
+```typescript
+type ReplacementReason =
+  | "machine_taken"
+  | "no_equipment"
+  | "too_difficult"
+  | "pain_discomfort"
+  | "best_match"     // default for ⋮ menu "Replace exercise"
+  | "just_change"    // used by swap button shortcut (⇄)
+  | "preference";    // legacy alias — normalised to best_match via normalizeReplacementReason()
+```
+
+`normalizeReplacementReason("preference")` → `"best_match"` at the storage/logging boundary.
+
+### getSmartReplacements signature (simplified)
+
+```typescript
+getSmartReplacements(
+  original: ExerciseWithTaxonomy,
+  reason: ReplacementReason,
+  catalog: ExerciseWithTaxonomy[],
+  sessionExercises: ExerciseWithTaxonomy[],
+  userProfile: UserPsychProfile | null,
+  loggedSets: Map<string, number>
+): RankedReplacement[]
+```
+
+Removed from previous signature: `preferences`, `hiddenIds`, `recentIds` — all handled internally via `computePreferenceTier`, hard exclusions, and `computeNoveltyTier`.
+
+---
+
+**Final sort:** lexicographic on the 10-tuple, tie-broken by `flattenRankTuple`. Return top 5 (or fewer if hard exclusions reduce the pool).
 
 ---
 
@@ -172,71 +214,33 @@ interface SessionContext {
 
 ## UI flow
 
-### Entry point
-Logger → exercise card ⋮ menu → **"Replace exercise"**
-(Entry point already exists. Currently: no-op or placeholder. To be wired.)
+### Entry point 1 — ⋮ menu "Replace exercise"
+Logger → exercise card ⋮ menu → **"Replace exercise"** → opens `AddExercisePage` in replace mode.
+- `reason` defaults to `best_match`
+- Query resets to `""` (empty, not preFilterMuscle) so users see the full catalog with ranked hints
+- `smartReplacementMeta` prop passed to `AddExercisePage`; each exercise row shows a rank tier hint chip when in replace mode
+- Selection swaps exercise in-place
 
-Also surfaced contextually: if a session has been running for 5+ minutes and an exercise has 0 logged sets while others have progress, a subtle **"Having trouble with this one? →"** hint appears below the exercise header. Tapping it opens the same flow.
+### Entry point 2 — Swap button (⇄)
+Exercise card header now contains an `exercise-swap-button` (⇄ SVG icon, class `exercise-title-actions`).
+- Tapping it opens `AddExercisePage` directly with `reason = "just_change"` pre-selected
+- No reason picker step — the shortcut skips straight to the browse + pick flow
+- CSS: `opacity: 0.55` at rest, `1.0` on hover
 
-### Bottom sheet — Smart Replace
+### Browse view with smartReplacementMeta
+When `AddExercisePage` is in replace mode, each exercise row in "Browse all" shows a replacement rank hint:
+- Derived from the 10-tuple for that candidate vs the original exercise
+- Shows as a small labeled chip (e.g. "Same pattern", "Same muscle", "Bodyweight alt")
+- Chips are informational only — the user still freely selects any exercise
 
-```
-┌──────────────────────────────────────────┐
-│  Replace: Leg Press                       │
-│  ─────────────────────────────────────── │
-│  WHY ARE YOU REPLACING IT?               │
-│  ○ Machine is taken                       │
-│  ○ No equipment available                 │
-│  ○ Too difficult today                    │
-│  ○ Pain / discomfort                      │
-│  ○ Just want a change                     │
-│                                           │
-│  [Show suggestions →]                     │
-└──────────────────────────────────────────┘
-```
+### Contextual hint (planned, not yet built)
+If a session has been running for 5+ minutes and an exercise has 0 logged sets while others have progress, a subtle **"Having trouble with this one? →"** hint may appear below the exercise header. Tapping it opens the same flow.
 
-The "why" question:
-- Drives the equipment filter ("machine is taken" → exclude machines; "no equipment" → bodyweight only)
-- Seeds the psych data layer (pain/difficulty signals are valuable behavioral data)
-- Takes 1 tap, no typing
-
-### Suggestions sheet
-
-```
-┌──────────────────────────────────────────┐
-│  ← Replacing: Leg Press                  │
-│  ─────────────────────────────────────── │
-│                                           │
-│  ✦ BEST MATCH                            │
-│  ┌────────────────────────────────────┐  │
-│  │ Goblet Squat                       │  │
-│  │ Quads · Dumbbell · Same pattern    │  │
-│  │                    [Swap →]        │  │
-│  └────────────────────────────────────┘  │
-│                                           │
-│  Bulgarian Split Squat                   │
-│  Quads · Bodyweight · Unilateral         │
-│                          [Swap →]        │
-│  ─────────────────────────────────────── │
-│  Dumbbell Lunge                          │
-│  Quads · Dumbbells · Similar pattern     │
-│                          [Swap →]        │
-│  ─────────────────────────────────────── │
-│  Bodyweight Squat                        │
-│  Quads · No equipment needed             │
-│                          [Swap →]        │
-│  ─────────────────────────────────────── │
-│                                           │
-│  [Browse all exercises →]                │
-└──────────────────────────────────────────┘
-```
-
-Design rules:
-- Maximum 5 suggestions. If there are fewer than 3 good matches (score < 30), show a "no great matches" state and fall back to "Browse all."
-- The top suggestion gets a ✦ badge and slightly elevated card treatment — the user should feel confident tapping it without reading.
-- Each card shows: name, primary muscle, equipment needed, a 1-line reason ("Same pattern", "Targets same muscle", "Bodyweight alternative")
-- No numeric scores shown to the user. Ever.
-- "Browse all exercises →" opens the full Add Exercise sheet, pre-filtered to the same primary muscle.
+### On swap
+- The original exercise is replaced in-place in the session (same position in the list)
+- Any sets already logged for the original exercise are cleared with a brief confirmation: *"Clear N sets and replace with [Name]?"* — if sets exist, always confirm. If 0 sets logged, swap silently.
+- The replacement reason is logged as a `ReplacementEvent`
+- The rest timer carries over from the original exercise
 
 ### On swap
 
@@ -260,7 +264,7 @@ interface ReplacementEvent {
   replacementExerciseId: string;
   reason: ReplacementReason;
   setsAlreadyLogged: number;      // how far into the exercise before replacing
-  matchScore: number;             // score of chosen replacement (for algorithm tuning)
+  rankTuple: ReplacementRankTuple; // full tuple stored for algorithm tuning
 }
 
 type ReplacementReason =
@@ -268,7 +272,9 @@ type ReplacementReason =
   | "no_equipment"
   | "too_difficult"
   | "pain_discomfort"
-  | "preference";
+  | "best_match"    // default for ⋮ menu replace
+  | "just_change"   // swap button shortcut
+  | "preference";   // legacy alias; normalised to best_match before storage
 ```
 
 Storage key: `"repiq-replacement-events"` — array, keep last 500.
@@ -308,23 +314,30 @@ When reason = `"too_difficult"`:
 - [x] Add `ExerciseDifficulty` type to App.tsx
 - [x] Add `ExerciseWithTaxonomy` alias to App.tsx
 - [x] Add `ReplacementEvent` type and `repiq-replacement-events` storage key + helpers
-- [ ] Populate `movementPattern`, `angle`, `equipment`, `difficultyLevel` on all exercises in `exerciseLibrary` ← **next session**
+- [x] Add `ReplacementRankTuple` type
+- [x] Add `best_match` and `just_change` to `ReplacementReason`; add `normalizeReplacementReason()`
+- [ ] Populate `movementPattern`, `angle`, `equipment`, `difficultyLevel` on all exercises in `exerciseLibrary`
 - [ ] Add `movementPattern` selector to custom exercise creation form
 
 ### Logic
-- [x] `scoreReplacement()` — three-tier scoring: pattern+angle → muscle → family
-- [x] `getSmartReplacements()` — returns top 5 with `matchReason` string
+- [x] ~~`scoreReplacement()`~~ **replaced** by 10-tuple engine
+- [x] `ReplacementRankTuple` — 10-position lexicographic rank type
+- [x] `computeMovementTier` / `computeMuscleTier` / `computeAngleTier` / `computeEquipmentTier` / `computeReasonTier` / `computeDifficultyTier` / `computeTrackingTier` / `computePreferenceTier` / `computeFatigueTier` / `computeNoveltyTier`
+- [x] `flattenRankTuple()` — weighted positional scalar (`value × 10^(n-i)`) for scalar comparison and sorting
+- [x] `getSmartReplacements(original, reason, catalog, sessionExercises, userProfile, loggedSets)` — 6 args; returns top 5
 - [x] `getMovementFamily()` — groups patterns into push/pull/legs/core/carry/cardio
 - [x] `getEquipmentAccessibility()` — maps exerciseType to needed equipment
 - [x] `groupSetsByMovementPattern()` — aggregates session volume for Insights
 - [x] `persistReplacementEvent()` / `getStoredReplacementEvents()`
 
 ### UI
-- [x] Wire "Replace exercise" in ⋮ menu → opens AddExercisePage in replace mode, pre-filtered to primary muscle
-- [x] Replace mode in AddExercisePage (preFilterMuscle prop, replaceMode prop, replaceExerciseWithTemplate function)
-- [~] Swap is silent (sets are reset without confirmation — acceptable for V1)
+- [x] Wire "Replace exercise" in ⋮ menu → opens AddExercisePage in replace mode
+- [x] Replace mode in AddExercisePage (`replaceMode` prop, `replaceExerciseWithTemplate` function)
+- [x] Query resets to `""` in replace mode (not preFilterMuscle)
+- [x] `smartReplacementMeta` prop → rank hint chips shown per exercise in browse view
+- [x] `exercise-swap-button` (⇄ SVG) in `exercise-title-actions` — opens replace with `just_change` reason
+- [~] Swap is silent when 0 sets logged; confirmation shown when sets exist
 - [ ] Contextual hint on zero-progress exercises after 5 min
-- [x] Built-in: AddExercisePage IS the replace UI
 
 ---
 

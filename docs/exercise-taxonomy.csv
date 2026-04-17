@@ -203,6 +203,7 @@ lat-pulldown,Lat Pulldown,Lats,Upper Back | Biceps,vertical_pull,overhead,cable,
 lateral-lunge,Lateral Lunge,Quads,Glutes | Inner Thigh,lunge,none,bodyweight,beginner,bodyweight_only
 leg-extension,Leg Extension,Quads,,isolation_legs,none,machine,beginner,machine
 leg-press,Leg Press,Quads,Glutes | Hamstrings,squat,none,machine,beginner,machine
+horizontal-leg-press,Horizontal Leg Press,Quads,Glutes | Hamstrings,squat,none,machine,beginner,machine
 leg-press-calf-raise,Leg Press Calf Raise,Calves,,isolation_legs,none,machine,beginner,machine
 leg-swings-front-back,Leg Swings (Front-Back),Hip Flexors,Hamstrings | Glutes,hip_hinge,none,bodyweight,beginner,bodyweight_only
 low-to-high-cable-fly,Low-to-High Cable Fly,Upper Chest,Front Delts,isolation_push,incline,cable,beginner,machine

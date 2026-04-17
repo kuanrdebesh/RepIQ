@@ -364,29 +364,30 @@ The logger is the trust-building surface. The post-finish and planning surfaces 
 
 ## Smart Replace Design Decisions
 
-### Entry Point
-- Existing ⋮ menu item "Replace exercise" is the entry point — no new UI anchor needed
-- A secondary contextual hint may appear below exercises with 0 logged sets after 5+ minutes
-- Both paths open the same SmartReplaceSheet
+### Entry Points (Two, Intentionally Different)
+- ⋮ menu "Replace exercise": full flow with reason picker → `best_match` default reason → ranked browse with hint chips
+- ⇄ swap button on exercise card header: shortcut path with `just_change` reason → skips reason picker → ranked browse with hint chips
+- A secondary contextual hint may appear below exercises with 0 logged sets after 5+ minutes (not yet built)
 
-### Reason Picker is Not Optional UX
-- The reason picker (machine taken / no equipment / too difficult / pain / preference) is not a nice-to-have — it drives the equipment filter and therefore the quality of suggestions
+### Reason Picker is Not Optional for Full Replace Flow
+- The reason picker (machine taken / no equipment / too difficult / pain / best match / just change) drives the equipment filter
 - "Machine taken" → exclude machines from results
 - "No equipment" → bodyweight only
-- "Too difficult" → exclude advanced exercises if user is beginner/intermediate
-- The reason is also logged as a ReplacementEvent for V2 learning
+- "Too difficult" → difficulty tier weights down advanced exercises
+- The reason is logged as a `ReplacementEvent` for V2 learning
+- `just_change` applies no filter — the user explicitly wants variety, not a constrained alternative
 
-### Suggestions Sheet Principles
-- Maximum 5 suggestions — if fewer than 3 score above threshold, show "no great matches" + "Browse all" fallback
-- The top suggestion gets a ✦ badge — the user should tap it without reading the others
-- Each card shows a 1-line match reason chip in plain language: "Same movement, different equipment" / "Targets same muscle" / "Bodyweight alternative"
+### Browse-First, Not Ranked List
+- The replace UI opens the full exercise browse, not a forced ranked suggestion sheet
+- `smartReplacementMeta` provides rank hint chips per row — informational, not prescriptive
+- Rationale: ranked suggestion lists create false confidence when taxonomy is incomplete; browse-with-hints preserves user agency and makes no algorithmic promise
+- This decision stands until the full exercise taxonomy is verified and complete
+
+### Scoring Principles
+- 10-tuple lexicographic ranking: movement > muscle > angle > equipment > reason > difficulty > tracking > preference > fatigue > novelty
 - No numeric scores shown to the user. Ever.
-- "Browse all →" opens the Add Exercise sheet pre-filtered to the same primary muscle
-
-### Session Balance Preservation
-- Smart Replace is aware of what's already been done in the session
-- A candidate exercise is penalised if its primary muscle already has 6+ sets in the session
-- The movement pattern match ensures push stays push, hinge stays hinge — the user doesn't need to understand this
+- Session balance: fatigue tier (position 8) penalises muscles already heavily worked in the session
+- Movement family awareness: push stays push, hinge stays hinge — the user doesn't need to understand this
 
 ## Exercise Taxonomy Decisions
 
@@ -599,26 +600,51 @@ System classifies users silently by engagement signals:
 - Thresholds intentionally proportional to cycleDays (cycle-aware)
 - Available at Layer 3 (100 exercises milestone)
 
-## Exercise Replacement — Deferred Until Exercise Repository Is Built
+## Smart Replace Engine — 10-Tuple Lexicographic Ranking
 
-**Decision (2026-04-11):** Smart Replace will not ship as an in-session flow until a curated exercise repository exists with verified, complete taxonomy for every exercise.
+**Decision (2026-04-13):** Replaced the old additive `scoreReplacement()` function with a 10-tuple lexicographic ranking engine.
 
-**What exists today:**
-- `getSmartReplacements()` scoring engine is fully implemented (movement pattern, angle, equipment, difficulty, session fatigue)
-- `smartReplaceCatalog` has ~136 exercises with full taxonomy
-- Movement pattern is shown as an informational pill in the exercise detail Summary tab
-- "Browse all exercises →" link on the detail page lets users manually find a replacement
+**Why lexicographic over additive:**
+- Additive scoring allows low-priority signals (novelty, preference) to outweigh high-priority ones (movement pattern match) with enough combined weight
+- Lexicographic ranking respects priority absolutely: a movement mismatch can never be compensated by a novelty bonus
+- The tuple position defines priority; the first differing position always wins
+- Tie-breaking via `flattenRankTuple` (weighted positional scalar) handles the rare case of fully equal tuples
 
-**Why deferred:**
-- Scoring accuracy depends on complete, correct taxonomy across the full library — partial data produces misleading suggestions
-- Showing ranked suggestions creates false confidence when the ranking can be wrong
-- The user experience of "replace with a single tap" requires trust in the list; that trust can only come from a verified catalog
+**Swap button design decision:**
+- A dedicated ⇄ swap shortcut on the exercise card header was added alongside the ⋮ menu entry
+- Rationale: "I want a different exercise" is a frequent intent that should be one tap, not three (⋮ → Replace → pick reason)
+- The shortcut uses `just_change` reason, which applies no equipment or difficulty filter — it trusts the user knows what they want
+- The ⋮ menu path remains for users who want reason-specific filtering (machine taken, no equipment, etc.)
+- `just_change` is explicitly distinct from `best_match` so analytics can separate deliberate-variety swaps from need-based swaps
 
-**When to build:**
-- Phase: after the exercise repository is built with full taxonomy coverage
-- Entry point: ⋮ menu → Replace exercise → scored suggestion sheet (the scoring engine is already written)
-- The UI should show movement pattern + equipment of each suggestion, not just name
-- Reason picker (machine taken / no equipment / too difficult / pain / preference) can be added at that point to tune scoring
+**ReplacementReason design:**
+- `best_match` is the correct default for the full replace flow (not the legacy name `preference`)
+- `preference` is kept as a legacy alias and normalised to `best_match` via `normalizeReplacementReason()` at the storage boundary
+- This avoids breaking existing stored `ReplacementEvent` records while deprecating the old name in new code
+- `just_change` produces a `reasonTier` that gives no equipment/difficulty bonus — the engine treats all candidates equally on those dimensions, letting movement + muscle be the dominant signals
+
+**Replace mode browse view:**
+- Query deliberately resets to `""` (not preFilterMuscle) when replace mode opens
+- Rationale: filtering by muscle pre-empts the user's judgment; ranked hints within a full browse list preserve user agency while still surfacing the best options
+- `smartReplacementMeta` prop carries the rank context to `AddExercisePage`; hint chips are read-only annotations, not ranked lists
+
+## Plan Generation — Determinism and Shuffle
+
+**Decision (2026-04-13):** `buildGeneratedPlan()` is deterministic — same `GenConfig` inputs always produce the same session. Shuffle increments `seedOffset` rather than using random seeds.
+
+**Why determinism:**
+- Users re-entering the generate flow should see the same plan they saw before (not a random one)
+- Reproducibility is essential for debugging and for feature parity between sessions
+- Determinism does not remove variety — the shuffle button provides explicit user-controlled variety by incrementing `seedOffset`
+
+**Plan Builder collapsed cards:**
+- Exercise cards in the Plan Builder default to collapsed
+- `expandedIds: Set<string>` state resets when `draft.id` changes (i.e., on shuffle or load of a new plan)
+- Rationale: a generated plan with 5–8 exercises would be overwhelming if all expanded on load; collapse-by-default keeps the overview scannable
+
+**Compress/Regenerate hide condition:**
+- Both buttons hidden when `sessionsRemaining <= daysRemaining`
+- Rationale: offering to compress when there's nothing to compress creates confusion; the condition means "there are no sessions to spare"
 
 ## Deferred Topics (Separate Discussion Required)
 
