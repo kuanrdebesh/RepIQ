@@ -261,7 +261,7 @@ flowchart LR
 | `Goal Planner Flow` | `Goal Planner` | planner action | `Workout Builder`, back to `Planner` | hidden |
 | `Create Template` | `Workout Planner` | planner `+` action | `Workout Builder` | hidden |
 | `Workout Builder / Edit` | planner flows | `My Workouts`, `Library`, `Generate`, `Goal Planner`, `Create Template` | `Planner`, `Add Exercise`, `Logger` | hidden |
-| `Add Exercise` | `Workout Builder` | add-exercise action | `Workout Builder`, `Create Custom Exercise`, `Exercise Detail` | hidden |
+| `Add Exercise` | `Workout Builder` / `Active Logger` | add-exercise action (builder); "Replace exercise" from ⋮ menu (logger — replace mode) | `Workout Builder` or back to `Logger` depending on mode; `Create Custom Exercise`; `Exercise Detail` | hidden |
 | `Create / Edit Custom Exercise` | `Add Exercise` or `Exercise Detail` | create/edit action | `Add Exercise`, `Exercise Detail` | hidden |
 | `Exercise Detail` | `Add Exercise`, `Workout Builder` | info tap, name tap | `Add Exercise`, `Create / Edit Custom Exercise`, back to `Workout Builder` | hidden |
 
@@ -269,10 +269,11 @@ flowchart LR
 
 | Page | Parent | Entry points | Exit points | Bottom nav |
 |---|---|---|---|---|
-| `Active Logger` | workout start surfaces | `Home`, `My Workouts`, `Generated Review`, `Workout Builder`, `Quick Session`, `Resume Workout` | `Workout Settings`, `Workout Actions`, `Finish Workout` | hidden |
+| `Active Logger` | workout start surfaces | `Home`, `My Workouts`, `Generated Review`, `Workout Builder`, `Quick Session`, `Resume Workout` | `Workout Settings`, `Workout Actions`, `Finish Workout`, `Add Exercise (replace mode)` | hidden |
 | `Workout Settings` | `Active Logger` | top settings icon | back to `Logger` | hidden |
 | `Workout Actions` | `Active Logger` | alter/actions sheet | back to `Logger`, discard to `Home` or `Planner` depending on source | hidden |
 | `Finish Workout` | `Logger` | finish action | `Workout Report`, back to `Logger` | hidden |
+| `Add Exercise — Replace mode` | `Active Logger` | ⋮ menu → "Replace exercise" on any exercise row | back to `Logger` (exercise swapped in-place) | hidden |
 
 ### Insights subtree
 
@@ -569,6 +570,7 @@ No follower counts. No public profiles by default. RepIQ is a training app, not 
 - `Quick Session` always opens a fresh logger session.
 - `Resume Workout` always returns to the active logger state.
 - `Generate Workout` should always stop at review/builder before workout start.
+- `Smart Replace` opens `AddExercisePage` in replace mode directly from the Logger — it does not go through `Workout Builder`. The replacement is committed in-place; back always returns to the Logger with the exercise already swapped.
 - `Goal Planner` should remain under `Planner`, not become a separate top-level destination.
 - `Finish Workout` should always feed a report/review path.
 - `Shareable Summary Card` should be reachable both after finishing a workout and from saved reports.
