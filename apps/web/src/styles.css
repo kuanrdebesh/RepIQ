@@ -1198,6 +1198,148 @@ ol {
   gap: 8px;
 }
 
+/* ── Photo cards (new layout) ─────────────────────────────────── */
+.finish-media-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.finish-media-card {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid var(--line);
+  transition: border-color 0.18s ease;
+  background: var(--surface);
+}
+
+.finish-media-card.is-progress-pic {
+  border-color: #f59e0b;
+}
+
+.finish-media-img-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  cursor: pointer;
+  overflow: hidden;
+  background: #000;
+}
+
+.finish-media-img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.finish-media-progress-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,0.72));
+  color: #f59e0b;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 20px 10px 8px;
+  letter-spacing: 0.02em;
+}
+
+.finish-media-edit-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.4);
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.finish-media-img-wrap:hover .finish-media-edit-hint {
+  opacity: 1;
+}
+
+.finish-media-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  border: none;
+  color: white;
+  font-size: 1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  z-index: 2;
+}
+
+/* Progress pic toggle pill — sits below the image */
+.finish-media-progress-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--subtle-text);
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.finish-media-progress-toggle:hover {
+  background: var(--surface-alt);
+}
+
+.finish-media-progress-toggle.is-active {
+  color: #d97706;
+  font-weight: 700;
+}
+
+.finish-media-progress-toggle-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.finish-media-progress-toggle.is-active .finish-media-progress-toggle-dot {
+  background: #f59e0b;
+  border-color: #f59e0b;
+}
+
+.finish-media-progress-toggle.is-active .finish-media-progress-toggle-dot::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: white;
+}
+
+/* Keep old thumbnail class for backward compat */
 .finish-media-thumb {
   position: relative;
   width: 80px;
@@ -1215,10 +1357,6 @@ ol {
   object-fit: cover;
 }
 
-.finish-media-thumb {
-  cursor: pointer;
-}
-
 .finish-media-edit-badge {
   position: absolute;
   bottom: 3px;
@@ -1233,25 +1371,6 @@ ol {
   align-items: center;
   justify-content: center;
   pointer-events: none;
-}
-
-.finish-media-remove {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.52);
-  border: none;
-  color: white;
-  font-size: 0.88rem;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
 }
 
 /* ── Photo crop tool ───────────────────────────────────────────── */

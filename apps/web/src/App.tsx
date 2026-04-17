@@ -7837,28 +7837,37 @@ function FinishWorkoutPage({
               {mediaError && <p className="finish-media-error">{mediaError}</p>}
 
               {finishPhotosEnabled && photos.length > 0 && (
-                <div className="finish-media-previews">
-                  {photos.map((photo, index) => (
-                    <div key={index} className={`finish-media-thumb${draft.progressPicIndex === index ? " is-progress-pic" : ""}`}>
-                      <img src={photo.display} alt="" onClick={() => openPhotoEdit(index)} role="button" style={{ cursor: "pointer" }} />
-                      <div className="finish-media-edit-badge" aria-hidden="true" onClick={() => openPhotoEdit(index)} style={{ cursor: "pointer" }}>✎</div>
-                      {draft.progressPicIndex === index && (
-                        <div className="finish-media-progress-badge">⭐ Progress Pic</div>
-                      )}
-                      <div className="finish-media-actions">
+                <div className="finish-media-cards">
+                  {photos.map((photo, index) => {
+                    const isProgress = draft.progressPicIndex === index;
+                    return (
+                      <div key={index} className={`finish-media-card${isProgress ? " is-progress-pic" : ""}`}>
+                        {/* Image with overlays */}
+                        <div className="finish-media-img-wrap" onClick={() => openPhotoEdit(index)}>
+                          <img src={photo.display} alt={`Photo ${index + 1}`} />
+                          {isProgress && (
+                            <div className="finish-media-progress-overlay">⭐ Progress Pic</div>
+                          )}
+                          <button
+                            type="button"
+                            className="finish-media-remove"
+                            onClick={(e) => { e.stopPropagation(); removePhoto(index); }}
+                            aria-label="Remove photo"
+                          >×</button>
+                          <div className="finish-media-edit-hint">Tap to edit</div>
+                        </div>
+                        {/* Progress pic toggle — always visible below the image */}
                         <button
                           type="button"
-                          className={`finish-media-progress-btn${draft.progressPicIndex === index ? " is-active" : ""}`}
-                          onClick={() => onProgressPicChange(draft.progressPicIndex === index ? undefined : index)}
-                          aria-label={draft.progressPicIndex === index ? "Unmark as progress pic" : "Mark as progress pic"}
-                          title="Mark as progress picture"
+                          className={`finish-media-progress-toggle${isProgress ? " is-active" : ""}`}
+                          onClick={() => onProgressPicChange(isProgress ? undefined : index)}
                         >
-                          📸
+                          <span className="finish-media-progress-toggle-dot" />
+                          {isProgress ? "✓ Progress pic" : "Mark as progress pic"}
                         </button>
-                        <button type="button" className="finish-media-remove" onClick={() => removePhoto(index)} aria-label="Remove photo">×</button>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
