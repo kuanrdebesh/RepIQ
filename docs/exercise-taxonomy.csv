@@ -1,22 +1,22 @@
-# Total: 352 exercises
+# Total: 435 exercises
 id,name,primaryMuscle,secondaryMuscles,movementPattern,angle,equipment,difficultyLevel,exerciseType
-ab-crunch,Ab Crunch,Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight_only
-ab-wheel-rollout,Ab Wheel Rollout,Core,Shoulders | Lats,core_anterior,none,bodyweight,advanced,bodyweight_only
-archer-push-up,Archer Push-Up,Chest,Triceps | Shoulders,horizontal_push,flat,bodyweight,advanced,bodyweight_only
-arnold-press,Arnold Press,Shoulders,Triceps | Front Delts,vertical_push,overhead,dumbbell,intermediate,free_weights_accessories
+ab-crunch,Ab Crunch,Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight
+ab-wheel-rollout,Ab Wheel Rollout,Core,Shoulders | Lats,core_anterior,none,bodyweight,advanced,bodyweight
+archer-push-up,Archer Push-Up,Chest,Triceps | Shoulders,horizontal_push,flat,bodyweight,advanced,bodyweight
+arnold-press,Arnold Press,Shoulders,Triceps | Front Delts,vertical_push,overhead,dumbbell,intermediate,dumbbell
 assault-bike,Assault Bike,Quads,Shoulders | Core,cardio,none,machine,intermediate,machine
-assisted-pull-up,Assisted Pull-Up,Lats,Upper Back | Biceps,vertical_pull,overhead,machine,beginner,machine
-assisted-tricep-dip,Assisted Tricep Dip,Triceps,Chest,vertical_push,decline,bodyweight,beginner,machine
-australian-pull-up,Australian Pull-Up,Upper Back,Biceps | Rear Delts,horizontal_pull,flat,bodyweight,beginner,bodyweight_only
-axe-hold,Axe Hold,Forearms,Shoulders | Biceps,carry,flat,dumbbell,beginner,free_weights_accessories
-b-stance-rdl,B-Stance Romanian Deadlift,Hamstrings,Glutes,hip_hinge,none,dumbbell,intermediate,free_weights_accessories
-back-extension,Back Extension,Lower Back,Glutes | Hamstrings,hip_hinge,prone,bodyweight,beginner,bodyweight_only
+assisted-pull-up,Assisted Pull-Up,Lats,Upper | Biceps,vertical_pull,overhead,machine,beginner,machine
+assisted-tricep-dip,Assisted Tricep Dip,Triceps,Chest,vertical_push,decline,machine,beginner,machine
+australian-pull-up,Australian Pull-Up,Upper Back,Biceps | Rear Delts,horizontal_pull,flat,bodyweight,beginner,bodyweight
+axe-hold,Axe Hold,Forearms,Shoulders | Biceps,carry,flat,dumbbell,beginner,dumbbell
+b-stance-rdl,B-Stance Romanian Deadlift,Hamstrings,Glutes,hip_hinge,none,dumbbell,intermediate,dumbbell
+back-extension,Back Extension,Lower Back,Glutes | Hamstrings,hip_hinge,prone,bodyweight,beginner,bodyweight
 back-squat,Back Squat,Quads,Glutes | Hamstrings | Core,squat,none,barbell,advanced,barbell
-banded-clamshell,Banded Clamshell,Abductors,Glutes,isolation_legs,none,resistance_band,beginner,free_weights_accessories
-banded-deadlift,Banded Deadlift,Hamstrings,Glutes | Lower Back | Traps,hip_hinge,none,resistance_band,intermediate,free_weights_accessories
-banded-hip-thrust,Banded Hip Thrust,Glutes,Hamstrings,hip_hinge,none,resistance_band,beginner,free_weights_accessories
-banded-lateral-walk,Banded Lateral Walk,Abductors,Glutes,isolation_legs,none,resistance_band,beginner,free_weights_accessories
-banded-pull-through,Banded Pull-Through,Glutes,Hamstrings,hip_hinge,none,resistance_band,beginner,free_weights_accessories
+banded-clamshell,Banded Clamshell,Abductors,Glutes,isolation_legs,none,resistance_band,beginner,resistance_band
+banded-deadlift,Banded Deadlift,Hamstrings,Glutes | Lower | Traps,hip_hinge,none,resistance_band,intermediate,resistance_band
+banded-hip-thrust,Banded Hip Thrust,Glutes,Hamstrings,hip_hinge,none,resistance_band,beginner,resistance_band
+banded-lateral-walk,Banded Lateral Walk,Abductors,Glutes,isolation_legs,none,resistance_band,beginner,resistance_band
+banded-pull-through,Banded Pull-Through,Glutes,Hamstrings,hip_hinge,none,resistance_band,beginner,resistance_band
 barbell-21s,Barbell 21s,Biceps,Forearms,isolation_pull,none,barbell,intermediate,barbell
 barbell-bent-over-row,Barbell Bent-Over Row,Upper Back,Lats | Biceps | Rear Delts,horizontal_pull,flat,barbell,intermediate,barbell
 barbell-curl,Barbell Curl,Biceps,Forearms,isolation_pull,none,barbell,beginner,barbell
@@ -27,328 +27,411 @@ barbell-lunge,Barbell Lunge,Quads,Glutes | Hamstrings,lunge,none,barbell,interme
 barbell-row-underhand,Barbell Row (Underhand),Upper Back,Biceps | Lats,horizontal_pull,flat,barbell,intermediate,barbell
 barbell-shrug,Barbell Shrug,Traps,Rhomboids | Forearms,isolation_pull,none,barbell,beginner,barbell
 barbell-skull-crusher,Barbell Skull Crusher,Triceps,Front Delts,isolation_push,flat,barbell,intermediate,barbell
-barbell-squat,Barbell Squat,Quads,Glutes | Lower Back,squat,none,barbell,advanced,barbell
+barbell-squat,Barbell Squat,Quads,Glutes | Lower,squat,none,barbell,advanced,barbell
 barbell-walking-lunge,Barbell Walking Lunge,Quads,Glutes | Hamstrings | Core,lunge,none,barbell,intermediate,barbell
-battle-ropes,Battle Ropes,Shoulders,Core | Back,cardio,none,none,intermediate,free_weights_accessories
-bayesian-curl,Bayesian Curl,Biceps,Forearms,isolation_pull,incline,cable,intermediate,machine
-bear-crawl,Bear Crawl,Shoulders,Core | Quads | Hip Flexors,cardio,none,bodyweight,intermediate,bodyweight_only
-bear-walk,Bear Walk,Chest,Shoulders | Core | Triceps,horizontal_push,flat,bodyweight,beginner,bodyweight_only
+battle-ropes,Battle Ropes,Shoulders,Core,cardio,none,none,intermediate,freestyle_cardio
+bayesian-curl,Bayesian Curl,Biceps,Forearms,isolation_pull,incline,cable,intermediate,cable
+bear-crawl,Bear Crawl,Shoulders,Core | Quads | Hip Flexors,cardio,none,bodyweight,intermediate,bodyweight
+bear-walk,Bear Walk,Chest,Shoulders | Core | Triceps,horizontal_push,flat,bodyweight,beginner,bodyweight
 belt-squat,Belt Squat,Quads,Glutes,squat,none,machine,intermediate,machine
 bench-press,Bench Press,Chest,Front Delts | Triceps,horizontal_push,flat,barbell,intermediate,barbell
-bicycle-crunch,Bicycle Crunch,Abs / Core,Obliques,core_rotational,none,bodyweight,beginner,bodyweight_only
-bird-dog,Bird Dog,Abs / Core,Glutes | Lower Back,core_anterior,none,bodyweight,beginner,bodyweight_only
-bodyweight-calf-raise,Bodyweight Calf Raise,Calves,,isolation_legs,none,bodyweight,beginner,bodyweight_only
-bodyweight-lunge,Bodyweight Lunge,Quads,Glutes,lunge,none,bodyweight,beginner,bodyweight_only
-bodyweight-squat,Bodyweight Squat,Quads,Glutes,squat,none,bodyweight,beginner,bodyweight_only
-box-jump,Box Jump,Quads,Glutes | Calves | Hamstrings,squat,none,bodyweight,intermediate,bodyweight_only
+bicycle-crunch,Bicycle Crunch,Core,Obliques,core_rotational,none,bodyweight,beginner,bodyweight
+bird-dog,Bird Dog,Core,Glutes | Lower,core_anterior,none,bodyweight,beginner,bodyweight
+bodyweight-calf-raise,Bodyweight Calf Raise,Calves,,isolation_legs,none,bodyweight,beginner,bodyweight
+bodyweight-lunge,Bodyweight Lunge,Quads,Glutes,lunge,none,bodyweight,beginner,bodyweight
+bodyweight-squat,Bodyweight Squat,Quads,Glutes,squat,none,bodyweight,beginner,bodyweight
+box-jump,Box Jump,Quads,Glutes | Calves | Hamstrings,squat,none,bodyweight,intermediate,bodyweight
 box-squat,Box Squat,Quads,Glutes | Hamstrings,squat,none,barbell,intermediate,barbell
-box-step-up,Box Step-Up,Quads,Glutes,lunge,none,dumbbell,beginner,free_weights_accessories
+box-step-up,Box Step-Up,Quads,Glutes,lunge,none,dumbbell,beginner,dumbbell
 bradford-press,Bradford Press,Shoulders,Traps | Triceps,vertical_push,overhead,barbell,intermediate,barbell
-bulgarian-split-squat,Bulgarian Split Squat,Quads,Glutes | Hamstrings,lunge,none,dumbbell,intermediate,free_weights_accessories
-burpee,Burpee,Quads,Shoulders | Core | Chest,squat,none,bodyweight,intermediate,bodyweight_only
+bulgarian-split-squat,Bulgarian Split Squat,Quads,Glutes | Hamstrings,lunge,none,dumbbell,intermediate,dumbbell
+burpee,Burpee,Quads,Shoulders | Core | Chest,squat,none,bodyweight,intermediate,bodyweight
 butterfly-machine,Butterfly Machine,Chest,Front Delts,isolation_push,flat,machine,beginner,machine
-cable-chest-fly,Cable Chest Fly,Chest,Front Delts,isolation_push,flat,cable,beginner,machine
-cable-chest-press,Cable Chest Press,Chest,Front Delts | Triceps,horizontal_push,flat,cable,beginner,machine
-cable-crossover,Cable Crossover,Chest,Front Delts,isolation_push,flat,cable,beginner,machine
-cable-crunch,Cable Crunch,Core,Hip Flexors,core_anterior,none,cable,beginner,machine
-cable-curl,Cable Curl,Biceps,Forearms,isolation_pull,none,cable,beginner,machine
-cable-external-rotation,Cable External Rotation,Rotator Cuff,Rear Delts,isolation_pull,none,cable,beginner,machine
-glute-kickback-cable,Cable Glute Kickback,Glutes,Hamstrings,hip_hinge,none,cable,beginner,machine
-cable-hammer-curl,Cable Hammer Curl,Biceps,Brachialis | Forearms,isolation_pull,none,cable,beginner,machine
-cable-hip-abduction,Cable Hip Abduction,Abductors,Glutes,isolation_legs,none,cable,beginner,machine
-cable-hip-flexor,Cable Hip Flexor Raise,Hip Flexors,Abs / Core,isolation_legs,none,cable,beginner,machine
-cable-lateral-raise,Cable Lateral Raise,Shoulders,Traps,isolation_push,none,cable,beginner,machine
-cable-leg-curl,Cable Leg Curl,Hamstrings,Calves,isolation_legs,none,cable,beginner,machine
-cable-preacher-curl,Cable Preacher Curl,Biceps,Forearms,isolation_pull,incline,cable,beginner,machine
-cable-pull-through,Cable Pull-Through,Glutes,Hamstrings,hip_hinge,none,cable,beginner,machine
-cable-rear-delt-fly,Cable Rear Delt Fly,Rear Delts,Traps | Upper Back,isolation_pull,prone,cable,beginner,machine
-cable-shrug,Cable Shrug,Traps,Forearms,isolation_pull,none,cable,beginner,machine
-cable-tricep-kickback,Cable Tricep Kickback,Triceps,,isolation_push,none,cable,beginner,machine
-cable-wood-chop,Cable Wood Chop,Core,Shoulders | Obliques,core_rotational,none,cable,beginner,machine
-captain-chair-knee-raise,Captain's Chair Knee Raise,Abs / Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight_only
-chest-dip,Chest Dip,Chest,Triceps | Front Delts,vertical_push,decline,bodyweight,intermediate,bodyweight_only
-chest-stretch,Chest Stretch,Chest,Front Delts,cardio,none,bodyweight,beginner,bodyweight_only
-chest-supported-dumbbell-row,Chest-Supported Dumbbell Row,Upper Back,Lats | Rear Delts,horizontal_pull,prone,dumbbell,beginner,free_weights_accessories
+cable-chest-fly,Cable Chest Fly,Chest,Front Delts,isolation_push,flat,cable,beginner,cable
+cable-chest-press,Cable Chest Press,Chest,Front Delts | Triceps,horizontal_push,flat,cable,beginner,cable
+cable-crossover,Cable Crossover,Chest,Front Delts,isolation_push,flat,cable,beginner,cable
+cable-crunch,Cable Crunch,Core,Hip Flexors,core_anterior,none,cable,beginner,cable
+cable-curl,Cable Curl,Biceps,Forearms,isolation_pull,none,cable,beginner,cable
+cable-external-rotation,Cable External Rotation,Rotator Cuff,Rear Delts,isolation_pull,none,cable,beginner,cable
+glute-kickback-cable,Cable Glute Kickback,Glutes,Hamstrings,hip_hinge,none,cable,beginner,cable
+cable-hammer-curl,Cable Hammer Curl,Biceps,Brachialis | Forearms,isolation_pull,none,cable,beginner,cable
+cable-hip-abduction,Cable Hip Abduction,Abductors,Glutes,isolation_legs,none,cable,beginner,cable
+cable-hip-flexor,Cable Hip Flexor Raise,Hip Flexors,Core,isolation_legs,none,cable,beginner,cable
+cable-lateral-raise,Cable Lateral Raise,Shoulders,Traps,isolation_push,none,cable,beginner,cable
+cable-leg-curl,Cable Leg Curl,Hamstrings,Calves,isolation_legs,none,cable,beginner,cable
+cable-preacher-curl,Cable Preacher Curl,Biceps,Forearms,isolation_pull,incline,cable,beginner,cable
+cable-pull-through,Cable Pull-Through,Glutes,Hamstrings,hip_hinge,none,cable,beginner,cable
+cable-rear-delt-fly,Cable Rear Delt Fly,Rear Delts,Traps | Upper,isolation_pull,prone,cable,beginner,cable
+cable-shrug,Cable Shrug,Traps,Forearms,isolation_pull,none,cable,beginner,cable
+cable-tricep-kickback,Cable Tricep Kickback,Triceps,,isolation_push,none,cable,beginner,cable
+cable-wood-chop,Cable Wood Chop,Core,Shoulders | Obliques,core_rotational,none,cable,beginner,cable
+captain-chair-knee-raise,Captain's Chair Knee Raise,Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight
+chest-dip,Chest Dip,Chest,Triceps | Front Delts,vertical_push,decline,bodyweight,intermediate,bodyweight
+chest-stretch,Chest Stretch,Chest,Front Delts,mobility,none,bodyweight,beginner,bodyweight
+chest-supported-dumbbell-row,Chest-Supported Dumbbell Row,Upper Back,Lats | Rear Delts,horizontal_pull,prone,dumbbell,beginner,dumbbell
 chest-supported-machine-row,Chest-Supported Machine Row,Upper Back,Lats | Rear Delts,horizontal_pull,prone,machine,beginner,machine
-chest-supported-row,Chest-Supported Row,Upper Back,Rear Delts | Biceps,horizontal_pull,prone,dumbbell,beginner,free_weights_accessories
-chin-up,Chin-Up,Lats,Biceps | Upper Back,vertical_pull,overhead,bodyweight,intermediate,bodyweight_only
+chest-supported-row,Chest-Supported Row,Upper Back,Rear Delts | Biceps,horizontal_pull,prone,dumbbell,beginner,dumbbell
+chin-up,Chin-Up,Lats,Biceps | Upper,vertical_pull,overhead,bodyweight,intermediate,bodyweight
 clean-and-jerk,Clean and Jerk,Hamstrings,Shoulders | Glutes | Traps,hip_hinge,overhead,barbell,advanced,barbell
 clean-pull,Clean Pull,Hamstrings,Traps | Glutes,hip_hinge,none,barbell,advanced,barbell
 close-grip-bench-press,Close-Grip Bench Press,Triceps,Chest | Front Delts,isolation_push,flat,barbell,intermediate,barbell
-close-grip-cable-row,Close-Grip Cable Row,Lats,Upper Back | Biceps,horizontal_pull,flat,cable,beginner,machine
-close-grip-lat-pulldown,Close-Grip Lat Pulldown,Lats,Biceps | Upper Back,vertical_pull,overhead,cable,beginner,machine
-concentration-curl,Concentration Curl,Biceps,Forearms | Brachialis,isolation_pull,none,dumbbell,beginner,free_weights_accessories
-conventional-deadlift,Conventional Deadlift,Hamstrings,Glutes | Lower Back | Traps,hip_hinge,none,barbell,advanced,barbell
-copenhagen-plank,Copenhagen Plank,Core,Inner Thigh | Glutes,core_anterior,none,bodyweight,advanced,bodyweight_only
-cossack-squat,Cossack Squat,Adductors,Glutes | Quads,lunge,none,bodyweight,intermediate,bodyweight_only
-cross-body-hammer-curl,Cross-Body Hammer Curl,Biceps,Brachialis | Forearms,isolation_pull,none,dumbbell,beginner,free_weights_accessories
-cuban-press,Cuban Press,Shoulders,Rotator Cuff | Traps,isolation_push,overhead,dumbbell,intermediate,free_weights_accessories
-curtsy-lunge,Curtsy Lunge,Glutes,Quads | Inner Thigh,lunge,none,dumbbell,beginner,free_weights_accessories
+close-grip-cable-row,Close-Grip Cable Row,Lats,Upper | Biceps,horizontal_pull,flat,cable,beginner,cable
+close-grip-lat-pulldown,Close-Grip Lat Pulldown,Lats,Biceps | Upper,vertical_pull,overhead,cable,beginner,cable
+concentration-curl,Concentration Curl,Biceps,Forearms | Brachialis,isolation_pull,none,dumbbell,beginner,dumbbell
+conventional-deadlift,Conventional Deadlift,Hamstrings,Glutes | Lower | Traps,hip_hinge,none,barbell,advanced,barbell
+copenhagen-plank,Copenhagen Plank,Core,Adductors | Glutes,core_anterior,none,bodyweight,advanced,bodyweight
+cossack-squat,Cossack Squat,Adductors,Glutes | Quads,lunge,none,bodyweight,intermediate,bodyweight
+cross-body-hammer-curl,Cross-Body Hammer Curl,Biceps,Brachialis | Forearms,isolation_pull,none,dumbbell,beginner,dumbbell
+cuban-press,Cuban Press,Shoulders,Rotator Cuff | Traps,isolation_push,overhead,dumbbell,intermediate,dumbbell
+curtsy-lunge,Curtsy Lunge,Glutes,Quads | Adductors,lunge,none,dumbbell,beginner,dumbbell
 cycling,Cycling,Cardio,Quads | Glutes | Calves,cardio,none,none,beginner,freestyle_cardio
-dead-bug,Dead Bug,Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight_only
-dead-hang,Dead Hang,Lats,Forearms | Shoulders,vertical_pull,overhead,bodyweight,beginner,bodyweight_only
-deadhang,Deadhang,Forearms,Lats | Shoulders,vertical_pull,overhead,bodyweight,beginner,bodyweight_only
+dead-bug,Dead Bug,Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight
+dead-hang,Dead Hang,Lats,Forearms | Shoulders,vertical_pull,overhead,bodyweight,beginner,bodyweight
+deadhang,Deadhang,Forearms,Lats | Shoulders,vertical_pull,overhead,bodyweight,beginner,bodyweight
 decline-barbell-press,Decline Barbell Press,Lower Chest,Front Delts | Triceps,horizontal_push,decline,barbell,intermediate,barbell
-decline-crunch,Decline Crunch,Abs / Core,Hip Flexors,core_anterior,decline,bodyweight,intermediate,bodyweight_only
-decline-dumbbell-fly,Decline Dumbbell Fly,Lower Chest,Front Delts,isolation_push,decline,dumbbell,beginner,free_weights_accessories
-decline-dumbbell-press,Decline Dumbbell Press,Lower Chest,Front Delts | Triceps,horizontal_push,decline,dumbbell,intermediate,free_weights_accessories
+decline-crunch,Decline Crunch,Core,Hip Flexors,core_anterior,decline,bodyweight,intermediate,bodyweight
+decline-dumbbell-fly,Decline Dumbbell Fly,Lower Chest,Front Delts,isolation_push,decline,dumbbell,beginner,dumbbell
+decline-dumbbell-press,Decline Dumbbell Press,Lower Chest,Front Delts | Triceps,horizontal_push,decline,dumbbell,intermediate,dumbbell
 decline-machine-press,Decline Machine Press,Lower Chest,Triceps | Front Delts,horizontal_push,decline,machine,beginner,machine
-push-up-decline,Decline Push-Up,Lower Chest,Triceps | Front Delts,horizontal_push,decline,bodyweight,intermediate,bodyweight_only
-decline-sit-up,Decline Sit-Up,Abs / Core,Hip Flexors,core_anterior,decline,bodyweight,intermediate,bodyweight_only
-deficit-deadlift,Deficit Deadlift,Hamstrings,Glutes | Lower Back,hip_hinge,none,barbell,advanced,barbell
-deficit-push-up,Deficit Push-Up,Chest,Triceps | Front Delts,horizontal_push,flat,bodyweight,intermediate,bodyweight_only
-jump-box,Depth Jump,Quads,Glutes | Calves,squat,none,bodyweight,advanced,bodyweight_only
-diamond-push-up,Diamond Push-Up,Triceps,Chest,isolation_push,flat,bodyweight,intermediate,bodyweight_only
-donkey-calf-raise,Donkey Calf Raise,Calves,,isolation_legs,none,bodyweight,beginner,bodyweight_only
-double-under,Double Under,Calves,Shoulders | Core,cardio,none,none,intermediate,bodyweight_only
+push-up-decline,Decline Push-Up,Lower Chest,Triceps | Front Delts,horizontal_push,decline,bodyweight,intermediate,bodyweight
+decline-sit-up,Decline Sit-Up,Core,Hip Flexors,core_anterior,decline,bodyweight,intermediate,bodyweight
+deficit-deadlift,Deficit Deadlift,Hamstrings,Glutes | Lower,hip_hinge,none,barbell,advanced,barbell
+deficit-push-up,Deficit Push-Up,Chest,Triceps | Front Delts,horizontal_push,flat,bodyweight,intermediate,bodyweight
+jump-box,Depth Jump,Quads,Glutes | Calves,squat,none,bodyweight,advanced,bodyweight
+diamond-push-up,Diamond Push-Up,Triceps,Chest,isolation_push,flat,bodyweight,intermediate,bodyweight
+donkey-calf-raise,Donkey Calf Raise,Calves,,isolation_legs,none,bodyweight,beginner,bodyweight
+double-under,Double Under,Calves,Shoulders | Core,cardio,none,none,intermediate,freestyle_cardio
 drag-curl,Drag Curl,Biceps,Forearms | Brachialis,isolation_pull,none,barbell,intermediate,barbell
-drag-pushdown,Drag Pushdown,Triceps,Lats,isolation_push,none,cable,intermediate,machine
-dragon-flag,Dragon Flag,Abs / Core,Lats,core_anterior,none,bodyweight,advanced,bodyweight_only
-dumbbell-bench-press,Dumbbell Bench Press,Chest,Front Delts | Triceps,horizontal_push,flat,dumbbell,beginner,free_weights_accessories
-dumbbell-calf-raise,Dumbbell Calf Raise,Calves,,isolation_legs,none,dumbbell,beginner,free_weights_accessories
-dumbbell-chest-fly,Dumbbell Chest Fly,Chest,Front Delts,isolation_push,flat,dumbbell,beginner,free_weights_accessories
-dumbbell-curl,Dumbbell Curl,Biceps,Forearms,isolation_pull,none,dumbbell,beginner,free_weights_accessories
-dumbbell-deadlift,Dumbbell Deadlift,Hamstrings,Glutes | Lower Back | Traps,hip_hinge,none,dumbbell,beginner,free_weights_accessories
-dumbbell-forward-lunge,Dumbbell Forward Lunge,Quads,Glutes | Hamstrings,lunge,none,dumbbell,beginner,free_weights_accessories
-dumbbell-front-raise,Dumbbell Front Raise,Front Delts,Shoulders,isolation_push,none,dumbbell,beginner,free_weights_accessories
-dumbbell-hip-thrust,Dumbbell Hip Thrust,Glutes,Hamstrings,hip_hinge,none,dumbbell,beginner,free_weights_accessories
-dumbbell-lateral-raise,Dumbbell Lateral Raise,Shoulders,Traps,isolation_push,none,dumbbell,beginner,free_weights_accessories
-dumbbell-pullover-back,Dumbbell Pullover (Back),Lats,Chest | Serratus | Triceps,vertical_pull,flat,dumbbell,intermediate,free_weights_accessories
-dumbbell-pullover-chest,Dumbbell Pullover (Chest),Chest,Lats | Triceps,horizontal_push,flat,dumbbell,intermediate,free_weights_accessories
-dumbbell-rear-delt-fly,Dumbbell Rear Delt Fly,Rear Delts,Traps | Upper Back,isolation_pull,prone,dumbbell,beginner,free_weights_accessories
-dumbbell-reverse-lunge,Dumbbell Reverse Lunge,Quads,Glutes | Hamstrings,lunge,none,dumbbell,beginner,free_weights_accessories
-dumbbell-romanian-deadlift,Dumbbell Romanian Deadlift,Hamstrings,Glutes | Lower Back,hip_hinge,none,dumbbell,beginner,free_weights_accessories
-dumbbell-row,Dumbbell Row,Upper Back,Lats | Biceps,horizontal_pull,flat,dumbbell,beginner,free_weights_accessories
-dumbbell-scaption,Dumbbell Scaption,Shoulders,Rotator Cuff | Serratus,isolation_push,incline,dumbbell,beginner,free_weights_accessories
-dumbbell-shoulder-press,Dumbbell Shoulder Press,Shoulders,Triceps | Front Delts,vertical_push,overhead,dumbbell,beginner,free_weights_accessories
-dumbbell-shrug,Dumbbell Shrug,Traps,Forearms,isolation_pull,none,dumbbell,beginner,free_weights_accessories
-dumbbell-side-bend,Dumbbell Side Bend,Obliques,Core | Quadratus Lumborum,core_rotational,none,dumbbell,beginner,free_weights_accessories
-dumbbell-skull-crusher,Dumbbell Skull Crusher,Triceps,Forearms,isolation_push,flat,dumbbell,intermediate,free_weights_accessories
-dumbbell-squeeze-press,Dumbbell Squeeze Press,Chest,Triceps,isolation_push,flat,dumbbell,beginner,free_weights_accessories
-dumbbell-sumo-deadlift,Dumbbell Sumo Deadlift,Hamstrings,Glutes | Inner Thigh,hip_hinge,none,dumbbell,beginner,free_weights_accessories
-dumbbell-thruster,Dumbbell Thruster,Quads,Shoulders | Glutes | Triceps,squat,overhead,dumbbell,intermediate,free_weights_accessories
-dumbbell-tricep-kickback,Dumbbell Tricep Kickback,Triceps,,isolation_push,none,dumbbell,beginner,free_weights_accessories
-dumbbell-upright-row,Dumbbell Upright Row,Traps,Side Delts | Biceps,isolation_pull,none,dumbbell,intermediate,free_weights_accessories
+drag-pushdown,Drag Pushdown,Triceps,Lats,isolation_push,none,cable,intermediate,cable
+dragon-flag,Dragon Flag,Core,Lats,core_anterior,none,bodyweight,advanced,bodyweight
+dumbbell-bench-press,Dumbbell Bench Press,Chest,Front Delts | Triceps,horizontal_push,flat,dumbbell,beginner,dumbbell
+dumbbell-calf-raise,Dumbbell Calf Raise,Calves,,isolation_legs,none,dumbbell,beginner,dumbbell
+dumbbell-chest-fly,Dumbbell Chest Fly,Chest,Front Delts,isolation_push,flat,dumbbell,beginner,dumbbell
+dumbbell-curl,Dumbbell Curl,Biceps,Forearms,isolation_pull,none,dumbbell,beginner,dumbbell
+dumbbell-deadlift,Dumbbell Deadlift,Hamstrings,Glutes | Lower | Traps,hip_hinge,none,dumbbell,beginner,dumbbell
+dumbbell-forward-lunge,Dumbbell Forward Lunge,Quads,Glutes | Hamstrings,lunge,none,dumbbell,beginner,dumbbell
+dumbbell-front-raise,Dumbbell Front Raise,Front Delts,Shoulders,isolation_push,none,dumbbell,beginner,dumbbell
+dumbbell-hip-thrust,Dumbbell Hip Thrust,Glutes,Hamstrings,hip_hinge,none,dumbbell,beginner,dumbbell
+dumbbell-lateral-raise,Dumbbell Lateral Raise,Shoulders,Traps,isolation_push,none,dumbbell,beginner,dumbbell
+dumbbell-pullover-back,Dumbbell Pullover (Back),Lats,Chest | Serratus | Triceps,vertical_pull,flat,dumbbell,intermediate,dumbbell
+dumbbell-pullover-chest,Dumbbell Pullover (Chest),Chest,Lats | Triceps,isolation_push,flat,dumbbell,intermediate,dumbbell
+dumbbell-rear-delt-fly,Dumbbell Rear Delt Fly,Rear Delts,Traps | Upper,isolation_pull,prone,dumbbell,beginner,dumbbell
+dumbbell-reverse-lunge,Dumbbell Reverse Lunge,Quads,Glutes | Hamstrings,lunge,none,dumbbell,beginner,dumbbell
+dumbbell-romanian-deadlift,Dumbbell Romanian Deadlift,Hamstrings,Glutes | Lower,hip_hinge,none,dumbbell,beginner,dumbbell
+dumbbell-row,Dumbbell Row,Upper Back,Lats | Biceps,horizontal_pull,flat,dumbbell,beginner,dumbbell
+dumbbell-scaption,Dumbbell Scaption,Shoulders,Rotator Cuff | Serratus,isolation_push,incline,dumbbell,beginner,dumbbell
+dumbbell-shoulder-press,Dumbbell Shoulder Press,Shoulders,Triceps | Front Delts,vertical_push,overhead,dumbbell,beginner,dumbbell
+dumbbell-shrug,Dumbbell Shrug,Traps,Forearms,isolation_pull,none,dumbbell,beginner,dumbbell
+dumbbell-side-bend,Dumbbell Side Bend,Obliques,Core | Quadratus Lumborum,core_rotational,none,dumbbell,beginner,dumbbell
+dumbbell-skull-crusher,Dumbbell Skull Crusher,Triceps,Forearms,isolation_push,flat,dumbbell,intermediate,dumbbell
+dumbbell-squeeze-press,Dumbbell Squeeze Press,Chest,Triceps,isolation_push,flat,dumbbell,beginner,dumbbell
+dumbbell-sumo-deadlift,Dumbbell Sumo Deadlift,Hamstrings,Glutes | Adductors,hip_hinge,none,dumbbell,beginner,dumbbell
+dumbbell-thruster,Dumbbell Thruster,Quads,Shoulders | Glutes | Triceps,squat,overhead,dumbbell,intermediate,dumbbell
+dumbbell-tricep-kickback,Dumbbell Tricep Kickback,Triceps,,isolation_push,none,dumbbell,beginner,dumbbell
+dumbbell-upright-row,Dumbbell Upright Row,Traps,Side Delts | Biceps,isolation_pull,none,dumbbell,intermediate,dumbbell
 elliptical,Elliptical,Quads,Glutes | Calves,cardio,none,machine,beginner,machine
-ez-bar-curl,EZ Bar Curl,Biceps,Forearms,isolation_pull,none,barbell,beginner,free_weights_accessories
-ez-bar-skull-crusher,EZ Bar Skull Crusher,Triceps,Forearms,isolation_push,flat,barbell,intermediate,free_weights_accessories
-face-pull,Face Pull,Rear Delts,Traps | Upper Back,isolation_pull,none,cable,beginner,machine
-farmers-carry,Farmer's Carry,Forearms,Traps | Core | Glutes,carry,none,dumbbell,beginner,free_weights_accessories
-flat-dumbbell-press,Flat Dumbbell Press,Chest,Front Delts | Triceps,horizontal_push,flat,dumbbell,beginner,free_weights_accessories
-floor-leg-raise,Floor Leg Raise,Abs / Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight_only
-flutter-kicks,Flutter Kicks,Abs / Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight_only
-frog-pump,Frog Pump,Glutes,Inner Thigh,hip_hinge,none,bodyweight,beginner,bodyweight_only
+ez-bar-curl,EZ Bar Curl,Biceps,Forearms,isolation_pull,none,barbell,beginner,barbell
+ez-bar-skull-crusher,EZ Bar Skull Crusher,Triceps,Forearms,isolation_push,flat,barbell,intermediate,barbell
+face-pull,Face Pull,Rear Delts,Traps | Upper,isolation_pull,none,cable,beginner,cable
+farmers-carry,Farmer's Carry,Forearms,Traps | Core | Glutes,carry,none,dumbbell,beginner,dumbbell
+flat-dumbbell-press,Flat Dumbbell Press,Chest,Front Delts | Triceps,horizontal_push,flat,dumbbell,beginner,dumbbell
+floor-leg-raise,Floor Leg Raise,Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight
+flutter-kicks,Flutter Kicks,Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight
+frog-pump,Frog Pump,Glutes,Adductors,hip_hinge,none,bodyweight,beginner,bodyweight
 front-squat,Front Squat,Quads,Glutes | Core,squat,none,barbell,advanced,barbell
-ghd-sit-up,GHD Sit-Up,Abs / Core,Hip Flexors,core_anterior,none,machine,advanced,machine
-glute-bridge,Glute Bridge,Glutes,Hamstrings | Core,hip_hinge,none,bodyweight,beginner,bodyweight_only
+ghd-sit-up,GHD Sit-Up,Core,Hip Flexors,core_anterior,none,machine,advanced,machine
+glute-bridge,Glute Bridge,Glutes,Hamstrings | Core,hip_hinge,none,bodyweight,beginner,bodyweight
 glute-kickback-machine,Glute Kickback Machine,Glutes,Hamstrings,hip_hinge,none,machine,beginner,machine
-glute-ham-raise,Glute-Ham Raise,Hamstrings,Glutes | Lower Back,hip_hinge,none,bodyweight,advanced,machine
-goblet-squat,Goblet Squat,Quads,Glutes | Core,squat,none,dumbbell,beginner,free_weights_accessories
-good-morning,Good Morning,Hamstrings,Lower Back | Glutes,hip_hinge,none,barbell,intermediate,barbell
+glute-ham-raise,Glute-Ham Raise,Hamstrings,Glutes | Lower,hip_hinge,none,machine,advanced,machine
+goblet-squat,Goblet Squat,Quads,Glutes | Core,squat,none,dumbbell,beginner,dumbbell
+good-morning,Good Morning,Hamstrings,Lower | Glutes,hip_hinge,none,barbell,intermediate,barbell
 hack-squat,Hack Squat,Quads,Glutes,squat,none,machine,intermediate,machine
-hammer-curl,Hammer Curl,Biceps,Forearms,isolation_pull,none,dumbbell,beginner,free_weights_accessories
+hammer-curl,Hammer Curl,Biceps,Forearms,isolation_pull,none,dumbbell,beginner,dumbbell
 hamstring-curl,Hamstring Curl,Hamstrings,Calves,isolation_legs,none,machine,beginner,machine
-hamstring-kicks,Hamstring Kicks,Hamstrings,Glutes | Hip Flexors,hip_hinge,none,bodyweight,beginner,bodyweight_only
-handstand,Handstand,Shoulders,Triceps | Core | Upper Back,vertical_push,overhead,bodyweight,advanced,bodyweight_only
+hamstring-kicks,Hamstring Kicks,Hamstrings,Glutes | Hip Flexors,hip_hinge,none,bodyweight,beginner,bodyweight
+handstand,Handstand,Shoulders,Triceps | Core | Upper,vertical_push,overhead,bodyweight,advanced,bodyweight
 hang-clean,Hang Clean,Hamstrings,Traps | Shoulders | Glutes,hip_hinge,none,barbell,advanced,barbell
 hang-power-clean,Hang Power Clean,Hamstrings,Glutes | Traps | Shoulders,hip_hinge,none,barbell,advanced,barbell
-hanging-knee-raise,Hanging Knee Raise,Abs / Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight_only
-hanging-leg-raise,Hanging Leg Raise,Core,Hip Flexors,core_anterior,none,bodyweight,intermediate,bodyweight_only
-high-knees,High Knees,Quads,Hip Flexors | Calves,cardio,none,bodyweight,beginner,bodyweight_only
-high-row-cable,High Row (Cable),Upper Back,Rear Delts | Biceps | Rhomboids,horizontal_pull,flat,cable,beginner,machine
-high-to-low-cable-fly,High-to-Low Cable Fly,Lower Chest,Front Delts,isolation_push,decline,cable,beginner,machine
+hanging-knee-raise,Hanging Knee Raise,Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight
+hanging-leg-raise,Hanging Leg Raise,Core,Hip Flexors,core_anterior,none,bodyweight,intermediate,bodyweight
+high-knees,High Knees,Quads,Hip Flexors | Calves,cardio,none,bodyweight,beginner,bodyweight
+high-row-cable,High Row (Cable),Upper Back,Rear Delts | Biceps | Rhomboids,horizontal_pull,flat,cable,beginner,cable
+high-to-low-cable-fly,High-to-Low Cable Fly,Lower Chest,Front Delts,isolation_push,decline,cable,beginner,cable
 hiit-cardio,HIIT Cardio,Cardio,Full Body,cardio,none,none,intermediate,freestyle_cardio
 hip-abduction-machine,Hip Abduction Machine,Abductors,Glutes,isolation_legs,none,machine,beginner,machine
 hip-adduction-machine,Hip Adduction Machine,Adductors,Glutes,isolation_legs,none,machine,beginner,machine
-hip-circle,Hip Circle,Hip Flexors,Glutes | Abs / Core,isolation_legs,none,none,beginner,bodyweight_only
-hip-flexor-stretch,Hip Flexor Stretch,Quads,Glutes,cardio,none,bodyweight,beginner,bodyweight_only
-hollow-body-rock,Hollow Body Rock,Abs / Core,Hip Flexors,core_anterior,none,bodyweight,intermediate,bodyweight_only
-hollow-hold,Hollow Hold,Core,Hip Flexors,core_anterior,none,bodyweight,intermediate,bodyweight_only
+hip-circle,Hip Circle,Hip Flexors,Glutes | Core,isolation_legs,none,none,beginner,bodyweight
+hip-flexor-stretch,Hip Flexor Stretch,Quads,Glutes,mobility,none,bodyweight,beginner,bodyweight
+hollow-body-rock,Hollow Body Rock,Core,Hip Flexors,core_anterior,none,bodyweight,intermediate,bodyweight
+hollow-hold,Hollow Hold,Core,Hip Flexors,core_anterior,none,bodyweight,intermediate,bodyweight
 incline-barbell-press,Incline Barbell Press,Upper Chest,Front Delts | Triceps,horizontal_push,incline,barbell,intermediate,barbell
-incline-cable-fly,Incline Cable Fly,Upper Chest,Front Delts,isolation_push,incline,cable,beginner,machine
-incline-cable-press,Incline Cable Press,Upper Chest,Front Delts | Triceps,horizontal_push,incline,cable,beginner,machine
-incline-dumbbell-curl,Incline Dumbbell Curl,Biceps,Forearms,isolation_pull,incline,dumbbell,intermediate,free_weights_accessories
-incline-dumbbell-fly,Incline Dumbbell Fly,Upper Chest,Front Delts,isolation_push,incline,dumbbell,beginner,free_weights_accessories
-incline-dumbbell-press,Incline Dumbbell Press,Upper Chest,Front Delts | Triceps,horizontal_push,incline,dumbbell,beginner,free_weights_accessories
+incline-cable-fly,Incline Cable Fly,Upper Chest,Front Delts,isolation_push,incline,cable,beginner,cable
+incline-cable-press,Incline Cable Press,Upper Chest,Front Delts | Triceps,horizontal_push,incline,cable,beginner,cable
+incline-dumbbell-curl,Incline Dumbbell Curl,Biceps,Forearms,isolation_pull,incline,dumbbell,intermediate,dumbbell
+incline-dumbbell-fly,Incline Dumbbell Fly,Upper Chest,Front Delts,isolation_push,incline,dumbbell,beginner,dumbbell
+incline-dumbbell-press,Incline Dumbbell Press,Upper Chest,Front Delts | Triceps,horizontal_push,incline,dumbbell,beginner,dumbbell
 incline-machine-press,Incline Machine Press,Upper Chest,Front Delts | Triceps,horizontal_push,incline,machine,beginner,machine
-push-up-incline,Incline Push-Up,Upper Chest,Front Delts | Triceps,horizontal_push,incline,bodyweight,beginner,bodyweight_only
-incline-tricep-extension,Incline Tricep Extension,Triceps,Forearms,isolation_push,incline,dumbbell,beginner,free_weights_accessories
-inverted-row,Inverted Row,Upper Back,Biceps | Rear Delts,horizontal_pull,flat,bodyweight,beginner,bodyweight_only
-jackknife-sit-up,Jackknife Sit-Up,Abs / Core,Hip Flexors,core_anterior,none,bodyweight,intermediate,bodyweight_only
-jefferson-curl,Jefferson Curl,Hamstrings,Lower Back | Glutes,hip_hinge,none,dumbbell,intermediate,free_weights_accessories
+push-up-incline,Incline Push-Up,Upper Chest,Front Delts | Triceps,horizontal_push,incline,bodyweight,beginner,bodyweight
+incline-tricep-extension,Incline Tricep Extension,Triceps,Forearms,isolation_push,incline,dumbbell,beginner,dumbbell
+inverted-row,Inverted Row,Upper Back,Biceps | Rear Delts,horizontal_pull,flat,bodyweight,beginner,bodyweight
+jackknife-sit-up,Jackknife Sit-Up,Core,Hip Flexors,core_anterior,none,bodyweight,intermediate,bodyweight
+jefferson-curl,Jefferson Curl,Hamstrings,Lower | Glutes,hip_hinge,none,dumbbell,intermediate,dumbbell
 jm-press,JM Press,Triceps,Chest,isolation_push,flat,barbell,advanced,barbell
-jump-lunge,Jump Lunge,Quads,Glutes | Calves,lunge,none,bodyweight,intermediate,bodyweight_only
-jump-rope,Jump Rope,Calves,Shoulders | Core,cardio,none,none,beginner,bodyweight_only
-jumping-jacks,Jumping Jacks,Cardio,Shoulders | Legs | Calves,cardio,none,bodyweight,beginner,bodyweight_only
-kettlebell-clean-and-press,Kettlebell Clean and Press,Shoulders,Glutes | Core | Triceps,vertical_push,overhead,kettlebell,advanced,free_weights_accessories
-kettlebell-deadlift,Kettlebell Deadlift,Hamstrings,Glutes | Lower Back,hip_hinge,none,kettlebell,beginner,free_weights_accessories
-kettlebell-figure-8,Kettlebell Figure-8,Core,Shoulders | Glutes,core_rotational,none,kettlebell,intermediate,free_weights_accessories
-kettlebell-goblet-squat,Kettlebell Goblet Squat,Quads,Glutes | Core,squat,none,kettlebell,beginner,free_weights_accessories
-kettlebell-press,Kettlebell Press,Shoulders,Triceps,vertical_push,overhead,kettlebell,intermediate,free_weights_accessories
-kettlebell-row,Kettlebell Row,Upper Back,Biceps | Rear Delts,horizontal_pull,flat,kettlebell,beginner,free_weights_accessories
-kettlebell-snatch,Kettlebell Snatch,Glutes,Shoulders | Core | Hamstrings,hip_hinge,overhead,kettlebell,advanced,free_weights_accessories
-kettlebell-swing,Kettlebell Swing,Glutes,Hamstrings | Core | Shoulders,hip_hinge,none,kettlebell,intermediate,free_weights_accessories
-kettlebell-windmill,Kettlebell Windmill,Core,Shoulders | Glutes | Hips,carry,none,kettlebell,advanced,free_weights_accessories
-kipping-pull-up,Kipping Pull-Up,Lats,Shoulders | Core,vertical_pull,overhead,bodyweight,intermediate,bodyweight_only
-kong-curl,Kong Curl,Biceps,Forearms | Brachialis,isolation_pull,flat,dumbbell,beginner,free_weights_accessories
-kroc-row,Kroc Row,Lats,Upper Back | Biceps | Rear Delts,horizontal_pull,flat,dumbbell,advanced,free_weights_accessories
-l-sit,L-Sit,Abs / Core,Triceps | Hip Flexors,core_anterior,none,bodyweight,advanced,bodyweight_only
+jump-lunge,Jump Lunge,Quads,Glutes | Calves,lunge,none,bodyweight,intermediate,bodyweight
+jump-rope,Jump Rope,Calves,Shoulders | Core,cardio,none,none,beginner,freestyle_cardio
+jumping-jacks,Jumping Jacks,Cardio,Shoulders | Calves,cardio,none,bodyweight,beginner,bodyweight
+kettlebell-clean-and-press,Kettlebell Clean and Press,Shoulders,Glutes | Core | Triceps,vertical_push,overhead,kettlebell,advanced,dumbbell
+kettlebell-deadlift,Kettlebell Deadlift,Hamstrings,Glutes | Lower,hip_hinge,none,kettlebell,beginner,dumbbell
+kettlebell-figure-8,Kettlebell Figure-8,Core,Shoulders | Glutes,core_rotational,none,kettlebell,intermediate,dumbbell
+kettlebell-goblet-squat,Kettlebell Goblet Squat,Quads,Glutes | Core,squat,none,kettlebell,beginner,dumbbell
+kettlebell-press,Kettlebell Press,Shoulders,Triceps,vertical_push,overhead,kettlebell,intermediate,dumbbell
+kettlebell-row,Kettlebell Row,Upper Back,Biceps | Rear Delts,horizontal_pull,flat,kettlebell,beginner,dumbbell
+kettlebell-snatch,Kettlebell Snatch,Glutes,Shoulders | Core | Hamstrings,hip_hinge,overhead,kettlebell,advanced,dumbbell
+kettlebell-swing,Kettlebell Swing,Glutes,Hamstrings | Core | Shoulders,hip_hinge,none,kettlebell,intermediate,dumbbell
+kettlebell-windmill,Kettlebell Windmill,Core,Shoulders | Glutes,carry,none,kettlebell,advanced,dumbbell
+kipping-pull-up,Kipping Pull-Up,Lats,Shoulders | Core,vertical_pull,overhead,bodyweight,intermediate,bodyweight
+kong-curl,Kong Curl,Biceps,Forearms | Brachialis,isolation_pull,flat,dumbbell,beginner,dumbbell
+kroc-row,Kroc Row,Lats,Upper | Biceps | Rear Delts,horizontal_pull,flat,dumbbell,advanced,dumbbell
+l-sit,L-Sit,Core,Triceps | Hip Flexors,core_anterior,none,bodyweight,advanced,bodyweight
 landmine-hip-thrust,Landmine Hip Thrust,Glutes,Hamstrings,hip_hinge,none,landmine,beginner,barbell
 landmine-lateral-raise,Landmine Lateral Raise,Side Delts,Traps,isolation_push,none,landmine,intermediate,barbell
 landmine-press,Landmine Press,Shoulders,Chest | Triceps,vertical_push,overhead,landmine,beginner,barbell
 landmine-rotation,Landmine Rotation,Obliques,Core | Shoulders,core_rotational,none,landmine,beginner,barbell
 landmine-row,Landmine Row,Upper Back,Lats | Biceps,horizontal_pull,flat,landmine,beginner,barbell
 landmine-squat,Landmine Squat,Quads,Glutes | Core,squat,none,landmine,beginner,barbell
-lat-pulldown,Lat Pulldown,Lats,Upper Back | Biceps,vertical_pull,overhead,cable,beginner,machine
-lateral-lunge,Lateral Lunge,Quads,Glutes | Inner Thigh,lunge,none,bodyweight,beginner,bodyweight_only
+lat-pulldown,Lat Pulldown,Lats,Upper | Biceps,vertical_pull,overhead,cable,beginner,cable
+lateral-lunge,Lateral Lunge,Quads,Glutes | Adductors,lunge,none,bodyweight,beginner,bodyweight
 leg-extension,Leg Extension,Quads,,isolation_legs,none,machine,beginner,machine
 leg-press,Leg Press,Quads,Glutes | Hamstrings,squat,none,machine,beginner,machine
 leg-press-calf-raise,Leg Press Calf Raise,Calves,,isolation_legs,none,machine,beginner,machine
-leg-swings-front-back,Leg Swings (Front-Back),Hip Flexors,Hamstrings | Glutes,hip_hinge,none,bodyweight,beginner,bodyweight_only
-low-to-high-cable-fly,Low-to-High Cable Fly,Upper Chest,Front Delts,isolation_push,incline,cable,beginner,machine
+leg-swings-front-back,Leg Swings (Front-Back),Hip Flexors,Hamstrings | Glutes,hip_hinge,none,bodyweight,beginner,bodyweight
+low-to-high-cable-fly,Low-to-High Cable Fly,Upper Chest,Front Delts,isolation_push,incline,cable,beginner,cable
 lying-leg-curl,Lying Leg Curl,Hamstrings,Calves,isolation_legs,prone,machine,beginner,machine
 lying-tricep-extension,Lying Tricep Extension,Triceps,Forearms,isolation_push,flat,barbell,beginner,barbell
 machine-chest-press,Machine Chest Press,Chest,Front Delts | Triceps,horizontal_push,flat,machine,beginner,machine
-machine-crunch,Machine Crunch,Abs / Core,Hip Flexors,core_anterior,none,machine,beginner,machine
+machine-crunch,Machine Crunch,Core,Hip Flexors,core_anterior,none,machine,beginner,machine
 machine-curl,Machine Curl,Biceps,Forearms,isolation_pull,none,machine,beginner,machine
 machine-hip-thrust,Machine Hip Thrust,Glutes,Hamstrings,hip_hinge,none,machine,beginner,machine
 machine-lateral-raise,Machine Lateral Raise,Shoulders,Traps,isolation_push,none,machine,beginner,machine
 machine-preacher-curl,Machine Preacher Curl,Biceps,Forearms,isolation_pull,incline,machine,beginner,machine
-machine-pulldown,Machine Pulldown,Lats,Upper Back | Biceps,vertical_pull,overhead,machine,beginner,machine
-machine-rear-delt-fly,Machine Rear Delt Fly,Rear Delts,Upper Back,isolation_pull,prone,machine,beginner,machine
+machine-pulldown,Machine Pulldown,Lats,Upper | Biceps,vertical_pull,overhead,machine,beginner,machine
+machine-rear-delt-fly,Machine Rear Delt Fly,Rear Delts,Upper,isolation_pull,prone,machine,beginner,machine
 machine-row,Machine Row,Upper Back,Lats | Biceps,horizontal_pull,flat,machine,beginner,machine
 machine-shoulder-press,Machine Shoulder Press,Shoulders,Triceps,vertical_push,overhead,machine,beginner,machine
 meadows-row,Meadows Row,Upper Back,Lats | Rear Delts | Biceps,horizontal_pull,flat,barbell,advanced,barbell
-med-ball-slam,Med Ball Slam,Core,Shoulders | Back,core_rotational,none,none,intermediate,free_weights_accessories
-mountain-climber,Mountain Climber,Abs / Core,Shoulders | Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight_only
-muscle-up,Muscle-Up,Lats,Chest | Triceps | Shoulders,vertical_pull,overhead,bodyweight,advanced,bodyweight_only
-neutral-grip-pulldown,Neutral-Grip Pulldown,Lats,Biceps | Upper Back,vertical_pull,overhead,cable,beginner,machine
-nordic-curl,Nordic Curl,Hamstrings,Glutes | Lower Back,hip_hinge,none,bodyweight,advanced,bodyweight_only
-oblique-crunch,Oblique Crunch,Obliques,Abs / Core,core_rotational,none,bodyweight,beginner,bodyweight_only
-one-arm-cable-pushdown,One-Arm Cable Pushdown,Triceps,Forearms,isolation_push,none,cable,beginner,machine
+med-ball-slam,Med Ball Slam,Core,Shoulders,core_rotational,none,none,intermediate,freestyle_cardio
+mountain-climber,Mountain Climber,Core,Shoulders | Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight
+muscle-up,Muscle-Up,Lats,Chest | Triceps | Shoulders,vertical_pull,overhead,bodyweight,advanced,bodyweight
+neutral-grip-pulldown,Neutral-Grip Pulldown,Lats,Biceps | Upper,vertical_pull,overhead,cable,beginner,cable
+nordic-curl,Nordic Curl,Hamstrings,Glutes | Lower,hip_hinge,none,bodyweight,advanced,bodyweight
+oblique-crunch,Oblique Crunch,Obliques,Core,core_rotational,none,bodyweight,beginner,bodyweight
+one-arm-cable-pushdown,One-Arm Cable Pushdown,Triceps,Forearms,isolation_push,none,cable,beginner,cable
 outdoor-run,Outdoor Run,Cardio,Quads | Calves | Glutes | Hamstrings,cardio,none,none,beginner,freestyle_cardio
-overhead-barbell-press,Overhead Barbell Press,Shoulders,Triceps | Upper Traps,vertical_push,overhead,barbell,intermediate,barbell
-overhead-carry,Overhead Carry,Shoulders,Traps | Core,carry,none,dumbbell,intermediate,free_weights_accessories
-overhead-ez-bar-extension,Overhead EZ Bar Tricep Extension,Triceps,Forearms,isolation_push,none,barbell,beginner,free_weights_accessories
+overhead-barbell-press,Overhead Barbell Press,Shoulders,Triceps | Traps,vertical_push,overhead,barbell,intermediate,barbell
+overhead-carry,Overhead Carry,Shoulders,Traps | Core,carry,overhead,dumbbell,intermediate,dumbbell
+overhead-ez-bar-extension,Overhead EZ Bar Tricep Extension,Triceps,Forearms,isolation_push,overhead,barbell,beginner,barbell
 overhead-squat,Overhead Squat,Quads,Shoulders | Core | Glutes,squat,overhead,barbell,advanced,barbell
-overhead-tricep-extension,Overhead Tricep Extension,Triceps,Forearms,isolation_push,none,cable,beginner,machine
-pallof-press,Pallof Press,Abs / Core,Obliques,core_rotational,none,cable,beginner,machine
+overhead-tricep-extension,Overhead Tricep Extension,Triceps,Forearms,isolation_push,overhead,cable,beginner,cable
+pallof-press,Pallof Press,Core,Obliques,core_rotational,none,cable,beginner,cable
 pause-bench-press,Pause Bench Press,Chest,Front Delts | Triceps,horizontal_push,flat,barbell,intermediate,barbell
 pause-squat,Pause Squat,Quads,Glutes | Core,squat,none,barbell,advanced,barbell
 pec-deck,Pec Deck,Chest,Front Delts,isolation_push,flat,machine,beginner,machine
 pendlay-row,Pendlay Row,Upper Back,Lats | Biceps,horizontal_pull,flat,barbell,advanced,barbell
 pendulum-squat,Pendulum Squat,Quads,Glutes,squat,none,machine,intermediate,machine
-pike-push-up,Pike Push-Up,Shoulders,Triceps | Upper Chest,vertical_push,overhead,bodyweight,beginner,bodyweight_only
+pike-push-up,Pike Push-Up,Shoulders,Triceps | Upper Chest,vertical_push,overhead,bodyweight,beginner,bodyweight
 pin-press,Pin Press,Chest,Triceps | Front Delts,horizontal_push,flat,barbell,advanced,barbell
-pistol-squat,Pistol Squat,Quads,Glutes | Core,squat,none,bodyweight,advanced,bodyweight_only
-plank,Plank,Core,Glutes | Shoulders,core_anterior,none,bodyweight,beginner,bodyweight_only
-plank-shoulder-taps,Plank Shoulder Taps,Core,Shoulders | Obliques,core_anterior,none,bodyweight,beginner,bodyweight_only
-plate-front-raise,Plate Front Raise,Front Delts,Upper Chest,isolation_push,none,none,beginner,free_weights_accessories
-plate-pinch,Plate Pinch,Forearms,Traps,carry,none,none,beginner,free_weights_accessories
+pistol-squat,Pistol Squat,Quads,Glutes | Core,squat,none,bodyweight,advanced,bodyweight
+plank,Plank,Core,Glutes | Shoulders,core_anterior,none,bodyweight,beginner,bodyweight
+plank-shoulder-taps,Plank Shoulder Taps,Core,Shoulders | Obliques,core_anterior,none,bodyweight,beginner,bodyweight
+plate-front-raise,Plate Front Raise,Front Delts,Upper Chest,isolation_push,none,none,beginner,barbell
+plate-pinch,Plate Pinch,Forearms,Traps,carry,none,none,beginner,barbell
 power-clean,Power Clean,Hamstrings,Glutes | Traps | Shoulders,hip_hinge,none,barbell,advanced,barbell
-preacher-curl,Preacher Curl,Biceps,Forearms,isolation_pull,incline,barbell,beginner,free_weights_accessories
-pull-up,Pull-Up,Lats,Upper Back | Biceps,vertical_pull,overhead,bodyweight,intermediate,bodyweight_only
+preacher-curl,Preacher Curl,Biceps,Forearms,isolation_pull,incline,barbell,beginner,barbell
+pull-up,Pull-Up,Lats,Upper | Biceps,vertical_pull,overhead,bodyweight,intermediate,bodyweight
 push-press,Push Press,Shoulders,Triceps | Traps | Quads,vertical_push,overhead,barbell,intermediate,barbell
-push-up,Push-Up,Chest,Front Delts | Triceps | Core,horizontal_push,flat,bodyweight,beginner,bodyweight_only
+push-up,Push-Up,Chest,Front Delts | Triceps | Core,horizontal_push,flat,bodyweight,beginner,bodyweight
 rack-deadlift,Rack Deadlift,Lower Back,Glutes | Hamstrings | Traps,hip_hinge,none,barbell,intermediate,barbell
-rear-delt-raise,Rear Delt Raise,Rear Delts,Upper Back | Rhomboids,isolation_pull,prone,dumbbell,beginner,free_weights_accessories
+rear-delt-raise,Rear Delt Raise,Rear Delts,Upper | Rhomboids,isolation_pull,prone,dumbbell,beginner,dumbbell
 recumbent-bike,Recumbent Bike,Cardio,Quads | Hamstrings | Glutes,cardio,none,machine,beginner,machine
-reverse-cable-flye,Reverse Cable Flye,Rear Delts,Rhomboids | Traps,horizontal_pull,flat,cable,beginner,machine
-reverse-crunch,Reverse Crunch,Abs / Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight_only
+reverse-cable-flye,Reverse Cable Flye,Rear Delts,Rhomboids | Traps,isolation_pull,flat,cable,beginner,cable
+reverse-crunch,Reverse Crunch,Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight
 reverse-curl,Reverse Curl,Forearms,Biceps | Brachialis,isolation_pull,none,barbell,beginner,barbell
 reverse-grip-bench-press,Reverse Grip Bench Press,Upper Chest,Triceps | Front Delts,horizontal_push,flat,barbell,advanced,barbell
-reverse-grip-lat-pulldown,Reverse Grip Lat Pulldown,Lats,Biceps | Upper Back,vertical_pull,overhead,cable,beginner,machine
-reverse-grip-pushdown,Reverse Grip Tricep Pushdown,Triceps,Forearms,isolation_push,none,cable,beginner,machine
-reverse-hyperextension,Reverse Hyperextension,Glutes,Hamstrings | Lower Back,hip_hinge,prone,machine,intermediate,machine
-reverse-nordic-curl,Reverse Nordic Curl,Quads,Hip Flexors,squat,none,bodyweight,advanced,bodyweight_only
-reverse-pec-deck,Reverse Pec Deck,Rear Delts,Upper Back | Rhomboids,isolation_pull,prone,machine,beginner,machine
-ring-dip,Ring Dip,Triceps,Chest | Shoulders,vertical_push,decline,bodyweight,advanced,bodyweight_only
-romanian-deadlift,Romanian Deadlift,Hamstrings,Glutes | Lower Back,hip_hinge,none,barbell,intermediate,barbell
-rope-pushdown,Rope Pushdown,Triceps,Forearms,isolation_push,none,cable,beginner,machine
+reverse-grip-lat-pulldown,Reverse Grip Lat Pulldown,Lats,Biceps | Upper,vertical_pull,overhead,cable,beginner,cable
+reverse-grip-pushdown,Reverse Grip Tricep Pushdown,Triceps,Forearms,isolation_push,none,cable,beginner,cable
+reverse-hyperextension,Reverse Hyperextension,Glutes,Hamstrings | Lower,hip_hinge,prone,machine,intermediate,machine
+reverse-nordic-curl,Reverse Nordic Curl,Quads,Hip Flexors,squat,none,bodyweight,advanced,bodyweight
+reverse-pec-deck,Reverse Pec Deck,Rear Delts,Upper | Rhomboids,isolation_pull,prone,machine,beginner,machine
+ring-dip,Ring Dip,Triceps,Chest | Shoulders,vertical_push,decline,bodyweight,advanced,bodyweight
+romanian-deadlift,Romanian Deadlift,Hamstrings,Glutes | Lower,hip_hinge,none,barbell,intermediate,barbell
+rope-pushdown,Rope Pushdown,Triceps,Forearms,isolation_push,none,cable,beginner,cable
 rowing-machine,Rowing Machine,Back,Hamstrings | Core | Shoulders,cardio,none,machine,beginner,machine
-russian-twist,Russian Twist,Core,Obliques | Hip Flexors,core_rotational,none,bodyweight,beginner,bodyweight_only
-safety-bar-squat,Safety Bar Squat,Quads,Glutes | Upper Back,squat,none,barbell,intermediate,barbell
-scissor-kicks,Scissor Kicks,Abs / Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight_only
-seated-cable-row,Seated Cable Row,Upper Back,Lats | Biceps | Rear Delts,horizontal_pull,flat,cable,beginner,machine
+russian-twist,Russian Twist,Core,Obliques | Hip Flexors,core_rotational,none,bodyweight,beginner,bodyweight
+safety-bar-squat,Safety Bar Squat,Quads,Glutes | Upper,squat,none,barbell,intermediate,barbell
+scissor-kicks,Scissor Kicks,Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight
+seated-cable-row,Seated Cable Row,Upper Back,Lats | Biceps | Rear Delts,horizontal_pull,flat,cable,beginner,cable
 seated-calf-raise,Seated Calf Raise,Calves,,isolation_legs,none,machine,beginner,machine
-seated-dumbbell-calf-raise,Seated Dumbbell Calf Raise,Calves,,isolation_legs,none,dumbbell,beginner,free_weights_accessories
-seated-dumbbell-curl,Seated Dumbbell Curl,Biceps,Forearms,isolation_pull,none,dumbbell,beginner,free_weights_accessories
-seated-dumbbell-lateral-raise,Seated Dumbbell Lateral Raise,Side Delts,Traps,isolation_push,none,dumbbell,beginner,free_weights_accessories
-seated-good-morning,Seated Good Morning,Hamstrings,Lower Back | Glutes,hip_hinge,none,barbell,intermediate,barbell
+seated-dumbbell-calf-raise,Seated Dumbbell Calf Raise,Calves,,isolation_legs,none,dumbbell,beginner,dumbbell
+seated-dumbbell-curl,Seated Dumbbell Curl,Biceps,Forearms,isolation_pull,none,dumbbell,beginner,dumbbell
+seated-dumbbell-lateral-raise,Seated Dumbbell Lateral Raise,Side Delts,Traps,isolation_push,none,dumbbell,beginner,dumbbell
+seated-good-morning,Seated Good Morning,Hamstrings,Lower | Glutes,hip_hinge,none,barbell,intermediate,barbell
 seated-leg-curl,Seated Leg Curl,Hamstrings,Calves,isolation_legs,none,machine,beginner,machine
 shoulder-press,Shoulder Press,Shoulders,Triceps,vertical_push,overhead,machine,beginner,machine
-side-plank,Side Plank,Core,Glutes,core_anterior,none,bodyweight,beginner,bodyweight_only
-single-arm-cable-row,Single-Arm Cable Row,Upper Back,Lats | Biceps,horizontal_pull,flat,cable,beginner,machine
-single-arm-dumbbell-press,Single-Arm Dumbbell Press,Chest,Triceps | Core,horizontal_push,flat,dumbbell,intermediate,free_weights_accessories
-single-arm-lat-pulldown,Single-Arm Lat Pulldown,Lats,Biceps,vertical_pull,overhead,cable,beginner,machine
-single-arm-tricep-extension,Single-Arm Overhead Tricep Extension,Triceps,Forearms,isolation_push,none,dumbbell,beginner,free_weights_accessories
-single-leg-calf-raise,Single-Leg Calf Raise,Calves,,isolation_legs,none,bodyweight,beginner,bodyweight_only
+side-plank,Side Plank,Core,Glutes,core_anterior,none,bodyweight,beginner,bodyweight
+single-arm-cable-row,Single-Arm Cable Row,Upper Back,Lats | Biceps,horizontal_pull,flat,cable,beginner,cable
+single-arm-dumbbell-press,Single-Arm Dumbbell Press,Chest,Triceps | Core,horizontal_push,flat,dumbbell,intermediate,dumbbell
+single-arm-lat-pulldown,Single-Arm Lat Pulldown,Lats,Biceps,vertical_pull,overhead,cable,beginner,cable
+single-arm-tricep-extension,Single-Arm Overhead Tricep Extension,Triceps,Forearms,isolation_push,overhead,dumbbell,beginner,dumbbell
+single-leg-calf-raise,Single-Leg Calf Raise,Calves,,isolation_legs,none,bodyweight,beginner,bodyweight
 single-leg-curl,Single-Leg Curl,Hamstrings,Calves,isolation_legs,prone,machine,beginner,machine
-single-leg-glute-bridge,Single-Leg Glute Bridge,Glutes,Hamstrings | Core,hip_hinge,none,bodyweight,intermediate,bodyweight_only
+single-leg-glute-bridge,Single-Leg Glute Bridge,Glutes,Hamstrings | Core,hip_hinge,none,bodyweight,intermediate,bodyweight
 single-leg-leg-press,Single-Leg Leg Press,Quads,Glutes | Hamstrings,squat,none,machine,intermediate,machine
-single-leg-romanian-deadlift,Single-Leg Romanian Deadlift,Hamstrings,Glutes | Core,hip_hinge,none,dumbbell,intermediate,free_weights_accessories
-sissy-squat,Sissy Squat,Quads,Hip Flexors,squat,none,bodyweight,intermediate,bodyweight_only
-sit-up,Sit-Up,Abs / Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight_only
+single-leg-romanian-deadlift,Single-Leg Romanian Deadlift,Hamstrings,Glutes | Core,hip_hinge,none,dumbbell,intermediate,dumbbell
+sissy-squat,Sissy Squat,Quads,Hip Flexors,squat,none,bodyweight,intermediate,bodyweight
+sit-up,Sit-Up,Core,Hip Flexors,core_anterior,none,bodyweight,beginner,bodyweight
 ski-erg,Ski Erg,Back,Core | Shoulders | Lats,cardio,none,machine,intermediate,machine
-sled-pull,Sled Pull,Hamstrings,Glutes | Back,cardio,none,none,intermediate,bodyweight_only
-sled-push,Sled Push,Quads,Glutes | Core,cardio,none,none,intermediate,bodyweight_only
+sled-pull,Sled Pull,Hamstrings,Glutes,cardio,none,none,intermediate,freestyle_cardio
+sled-push,Sled Push,Quads,Glutes | Core,cardio,none,none,intermediate,freestyle_cardio
 smith-machine-bench-press,Smith Machine Bench Press,Chest,Front Delts | Triceps,horizontal_push,flat,smith_machine,beginner,machine
 smith-machine-incline-press,Smith Machine Incline Press,Upper Chest,Front Delts | Triceps,horizontal_push,incline,smith_machine,beginner,machine
 smith-machine-overhead-press,Smith Machine Overhead Press,Shoulders,Triceps,vertical_push,overhead,smith_machine,beginner,machine
 smith-machine-squat,Smith Machine Squat,Quads,Glutes | Hamstrings,squat,none,smith_machine,beginner,machine
 snatch-barbell,Snatch,Hamstrings,Shoulders | Glutes | Core,hip_hinge,overhead,barbell,advanced,barbell
-spider-curl,Spider Curl,Biceps,Forearms,isolation_pull,incline,dumbbell,beginner,free_weights_accessories
-split-squat,Split Squat,Quads,Glutes | Hamstrings,lunge,none,bodyweight,beginner,bodyweight_only
+spider-curl,Spider Curl,Biceps,Forearms,isolation_pull,incline,dumbbell,beginner,dumbbell
+split-squat,Split Squat,Quads,Glutes | Hamstrings,lunge,none,bodyweight,beginner,bodyweight
 stair-climber,Stair Climber,Glutes,Quads | Calves,cardio,none,machine,beginner,machine
 standing-calf-raise,Standing Calf Raise,Calves,,isolation_legs,none,machine,beginner,machine
 standing-leg-curl,Standing Leg Curl,Hamstrings,Calves,isolation_legs,none,machine,beginner,machine
 stationary-bike,Stationary Bike,Quads,Glutes | Calves,cardio,none,machine,beginner,machine
-step-up,Step-Up,Quads,Glutes,lunge,none,dumbbell,beginner,free_weights_accessories
-stiff-leg-deadlift,Stiff-Leg Deadlift,Hamstrings,Lower Back | Glutes,hip_hinge,none,barbell,intermediate,barbell
-straight-arm-lat-pulldown-cable,Straight Arm Lat Pulldown (Cable),Lats,Core | Rear Delts,vertical_pull,overhead,cable,intermediate,machine
-straight-arm-lat-pulldown-rope,Straight Arm Lat Pulldown (Rope),Lats,Core | Rear Delts,vertical_pull,overhead,cable,intermediate,machine
-suitcase-carry,Suitcase Carry,Core,Traps | Glutes,carry,none,dumbbell,intermediate,free_weights_accessories
-sumo-deadlift,Sumo Deadlift,Hamstrings,Glutes | Inner Thigh | Traps,hip_hinge,none,barbell,advanced,barbell
+step-up,Step-Up,Quads,Glutes,lunge,none,dumbbell,beginner,dumbbell
+stiff-leg-deadlift,Stiff-Leg Deadlift,Hamstrings,Lower | Glutes,hip_hinge,none,barbell,intermediate,barbell
+straight-arm-lat-pulldown-cable,Straight Arm Lat Pulldown (Cable),Lats,Core | Rear Delts,vertical_pull,overhead,cable,intermediate,cable
+straight-arm-lat-pulldown-rope,Straight Arm Lat Pulldown (Rope),Lats,Core | Rear Delts,vertical_pull,overhead,cable,intermediate,cable
+suitcase-carry,Suitcase Carry,Core,Traps | Glutes,carry,none,dumbbell,intermediate,dumbbell
+sumo-deadlift,Sumo Deadlift,Hamstrings,Glutes | Adductors | Traps,hip_hinge,none,barbell,advanced,barbell
 sumo-deadlift-high-pull,Sumo Deadlift High Pull,Hamstrings,Traps | Shoulders | Glutes,hip_hinge,none,barbell,advanced,barbell
-sumo-squat,Sumo Squat,Quads,Glutes | Inner Thigh,squat,none,dumbbell,beginner,free_weights_accessories
-superman,Superman,Lower Back,Glutes | Hamstrings,hip_hinge,prone,bodyweight,beginner,bodyweight_only
-svend-press,Svend Press,Chest,Front Delts,isolation_push,flat,none,beginner,free_weights_accessories
-swimming,Swimming,Cardio,Lats | Shoulders | Core | Legs,cardio,none,none,beginner,freestyle_cardio
-tate-press,Tate Press,Triceps,Forearms,isolation_push,flat,dumbbell,intermediate,free_weights_accessories
+sumo-squat,Sumo Squat,Quads,Glutes | Adductors,squat,none,dumbbell,beginner,dumbbell
+superman,Superman,Lower Back,Glutes | Hamstrings,hip_hinge,prone,bodyweight,beginner,bodyweight
+svend-press,Svend Press,Chest,Front Delts,isolation_push,flat,none,beginner,barbell
+swimming,Swimming,Cardio,Lats | Shoulders | Core,cardio,none,none,beginner,freestyle_cardio
+tate-press,Tate Press,Triceps,Forearms,isolation_push,flat,dumbbell,intermediate,dumbbell
 thruster,Thruster,Quads,Shoulders | Glutes | Core,squat,overhead,barbell,advanced,barbell
-tibia-raise,Tibia Raise,Calves,,isolation_legs,none,bodyweight,beginner,bodyweight_only
-toes-to-bar,Toes-to-Bar,Abs / Core,Hip Flexors | Lats,core_anterior,none,bodyweight,advanced,bodyweight_only
+tibia-raise,Tibia Raise,Calves,,isolation_legs,none,bodyweight,beginner,bodyweight
+toes-to-bar,Toes-to-Bar,Core,Hip Flexors | Lats,core_anterior,none,bodyweight,advanced,bodyweight
 trap-bar-deadlift,Trap Bar Deadlift,Hamstrings,Glutes | Traps | Quads,hip_hinge,none,barbell,intermediate,barbell
 treadmill-run,Treadmill Run,Quads,Calves | Glutes,cardio,none,machine,beginner,machine
-tricep-dip,Tricep Dip,Triceps,Chest | Shoulders,vertical_push,decline,bodyweight,intermediate,bodyweight_only
-tricep-pushdown,Tricep Pushdown,Triceps,Forearms,isolation_push,none,cable,beginner,machine
-turkish-get-up,Turkish Get-Up,Shoulders,Core | Glutes | Hips,carry,none,kettlebell,advanced,free_weights_accessories
-v-bar-pushdown,V-Bar Pushdown,Triceps,Forearms,isolation_push,none,cable,beginner,machine
-v-up,V-Up,Abs / Core,Hip Flexors,core_anterior,none,bodyweight,intermediate,bodyweight_only
-walking-lunge,Walking Lunge,Quads,Glutes | Hamstrings,lunge,none,dumbbell,beginner,free_weights_accessories
-wall-angels,Wall Angels,Shoulders,Rotator Cuff | Upper Back | Thoracic Spine,isolation_push,flat,bodyweight,beginner,bodyweight_only
-wall-ball,Wall Ball,Quads,Shoulders | Glutes | Core,squat,overhead,none,intermediate,free_weights_accessories
-wall-sit,Wall Sit,Quads,Glutes | Hamstrings,squat,none,bodyweight,beginner,bodyweight_only
-wall-squat,Wall Squat,Quads,Glutes | Hamstrings,squat,none,bodyweight,beginner,bodyweight_only
-weighted-back-extension,Weighted Back Extension,Lower Back,Glutes | Hamstrings,hip_hinge,prone,bodyweight,intermediate,bodyweight_weighted
-box-jump-weighted,Weighted Box Jump,Quads,Glutes | Calves,squat,none,dumbbell,advanced,free_weights_accessories
-weighted-chest-dip,Weighted Chest Dip,Chest,Triceps | Front Delts,vertical_push,decline,bodyweight,advanced,bodyweight_weighted
-weighted-chin-up,Weighted Chin-Up,Lats,Biceps | Upper Back,vertical_pull,overhead,bodyweight,advanced,bodyweight_weighted
-weighted-crunch,Weighted Crunch,Abs,Obliques,core_anterior,none,dumbbell,intermediate,bodyweight_weighted
-weighted-dip,Weighted Dip,Chest,Triceps | Front Delts,vertical_push,decline,bodyweight,advanced,bodyweight_weighted
-weighted-plank,Weighted Plank,Core,Glutes | Shoulders,core_anterior,none,bodyweight,intermediate,bodyweight_weighted
-weighted-pull-up,Weighted Pull-Up,Lats,Upper Back | Biceps | Forearms,vertical_pull,overhead,bodyweight,intermediate,bodyweight_weighted
-weighted-push-up,Weighted Push-Up,Chest,Front Delts | Triceps | Core,horizontal_push,flat,bodyweight,intermediate,bodyweight_weighted
-weighted-wall-sit,Weighted Wall Sit,Quads,Glutes | Hamstrings,squat,none,bodyweight,intermediate,bodyweight_weighted
-wide-grip-cable-row,Wide-Grip Cable Row,Upper Back,Rear Delts | Lats,horizontal_pull,flat,cable,beginner,machine
-wide-grip-pull-up,Wide-Grip Pull-Up,Lats,Upper Back | Rear Delts,vertical_pull,overhead,bodyweight,intermediate,bodyweight_only
-windshield-wiper,Windshield Wiper,Obliques,Abs / Core,core_rotational,none,bodyweight,advanced,bodyweight_only
-woodchop,Woodchop,Core,Shoulders,core_rotational,none,cable,beginner,machine
-wrist-curl,Wrist Curl,Forearms,Biceps,isolation_pull,none,dumbbell,beginner,free_weights_accessories
-wrist-extension,Wrist Extension,Forearms,,isolation_pull,none,dumbbell,beginner,free_weights_accessories
-wrist-roller,Wrist Roller,Forearms,,isolation_pull,none,none,beginner,free_weights_accessories
-yoke-carry,Yoke Carry,Traps,Glutes | Core | Quads,carry,none,none,advanced,machine
+tricep-dip,Tricep Dip,Triceps,Chest | Shoulders,vertical_push,decline,bodyweight,intermediate,bodyweight
+tricep-pushdown,Tricep Pushdown,Triceps,Forearms,isolation_push,none,cable,beginner,cable
+turkish-get-up,Turkish Get-Up,Shoulders,Core | Glutes,carry,none,kettlebell,advanced,dumbbell
+v-bar-pushdown,V-Bar Pushdown,Triceps,Forearms,isolation_push,none,cable,beginner,cable
+v-up,V-Up,Core,Hip Flexors,core_anterior,none,bodyweight,intermediate,bodyweight
+walking-lunge,Walking Lunge,Quads,Glutes | Hamstrings,lunge,none,dumbbell,beginner,dumbbell
+wall-angels,Wall Angels,Shoulders,Rotator Cuff | Upper | Thoracic Spine,isolation_push,flat,bodyweight,beginner,bodyweight
+wall-ball,Wall Ball,Quads,Shoulders | Glutes | Core,squat,overhead,none,intermediate,freestyle_cardio
+wall-sit,Wall Sit,Quads,Glutes | Hamstrings,squat,none,bodyweight,beginner,bodyweight
+wall-squat,Wall Squat,Quads,Glutes | Hamstrings,squat,none,bodyweight,beginner,bodyweight
+weighted-back-extension,Weighted Back Extension,Lower Back,Glutes | Hamstrings,hip_hinge,prone,bodyweight,intermediate,bodyweight
+box-jump-weighted,Weighted Box Jump,Quads,Glutes | Calves,squat,none,dumbbell,advanced,dumbbell
+weighted-chest-dip,Weighted Chest Dip,Chest,Triceps | Front Delts,vertical_push,decline,bodyweight,advanced,bodyweight
+weighted-chin-up,Weighted Chin-Up,Lats,Biceps | Upper,vertical_pull,overhead,bodyweight,advanced,bodyweight
+weighted-crunch,Weighted Crunch,Core,Obliques,core_anterior,none,dumbbell,intermediate,dumbbell
+weighted-dip,Weighted Dip,Chest,Triceps | Front Delts,vertical_push,decline,bodyweight,advanced,bodyweight
+weighted-plank,Weighted Plank,Core,Glutes | Shoulders,core_anterior,none,bodyweight,intermediate,bodyweight
+weighted-pull-up,Weighted Pull-Up,Lats,Upper | Biceps | Forearms,vertical_pull,overhead,bodyweight,intermediate,bodyweight
+weighted-push-up,Weighted Push-Up,Chest,Front Delts | Triceps | Core,horizontal_push,flat,bodyweight,intermediate,bodyweight
+weighted-wall-sit,Weighted Wall Sit,Quads,Glutes | Hamstrings,squat,none,bodyweight,intermediate,bodyweight
+wide-grip-cable-row,Wide-Grip Cable Row,Upper Back,Rear Delts | Lats,horizontal_pull,flat,cable,beginner,cable
+wide-grip-pull-up,Wide-Grip Pull-Up,Lats,Upper | Rear Delts,vertical_pull,overhead,bodyweight,intermediate,bodyweight
+windshield-wiper,Windshield Wiper,Obliques,Core,core_rotational,none,bodyweight,advanced,bodyweight
+woodchop,Woodchop,Core,Shoulders,core_rotational,none,cable,beginner,cable
+wrist-curl,Wrist Curl,Forearms,Biceps,isolation_pull,none,dumbbell,beginner,dumbbell
+wrist-extension,Wrist Extension,Forearms,,isolation_pull,none,dumbbell,beginner,dumbbell
+wrist-roller,Wrist Roller,Forearms,,isolation_pull,none,none,beginner,bodyweight
+yoke-carry,Yoke Carry,Traps,Glutes | Core | Quads,carry,none,none,advanced,bodyweight
 z-press,Z-Press,Shoulders,Core | Triceps,vertical_push,overhead,barbell,advanced,barbell
-zercher-squat,Zercher Squat,Quads,Glutes | Core | Upper Back,squat,none,barbell,advanced,barbell
+zercher-squat,Zercher Squat,Quads,Glutes | Core | Upper,squat,none,barbell,advanced,barbell
 zone-2-running,Zone 2 Running,Cardio,Quads | Calves | Glutes,cardio,none,none,beginner,freestyle_cardio
-zottman-curl,Zottman Curl,Biceps,Forearms | Brachialis,isolation_pull,none,dumbbell,intermediate,free_weights_accessories
+zottman-curl,Zottman Curl,Biceps,Forearms | Brachialis,isolation_pull,none,dumbbell,intermediate,dumbbell
+smith-machine-bent-over-row,Bent Over Barbell Row (Smith Machine),Upper Back,Lats | Biceps | Rear Delts,horizontal_pull,flat,smith_machine,intermediate,machine
+rear-delt-cable-fly,Rear Delt Cable Fly,Rear Delts,Upper | Traps,isolation_pull,flat,cable,beginner,cable
+behind-back-cable-curl,Behind the Back Biceps Cable Curl,Biceps,Forearms,isolation_pull,none,cable,intermediate,cable
+ab-crunch-machine-plate-loaded,Ab Crunch Machine (Plate Loaded),Core,Hip Flexors,core_anterior,none,machine,beginner,machine
+barbell-bulgarian-split-squat,Barbell Bulgarian Split Squat,Quads,Glutes | Hamstrings,lunge,none,barbell,advanced,barbell
+cable-goblet-squat,Cable Goblet Squat,Quads,Glutes | Core,squat,none,cable,beginner,cable
+cable-overhead-tricep-extension,Cable Overhead Triceps Extension,Triceps,Forearms,isolation_push,overhead,cable,beginner,cable
+cable-seated-pullover,Cable Seated Pullover,Lats,Serratus | Triceps,vertical_pull,flat,cable,intermediate,cable
+cable-twist,Cable Twist (Obliques),Core,Obliques,core_rotational,none,cable,beginner,cable
+chest-supported-lateral-raise,Chest Supported Lateral Raise,Shoulders,Traps,isolation_push,none,dumbbell,intermediate,dumbbell
+chest-supported-t-bar-row,Chest Supported T-Bar Row,Upper Back,Lats | Biceps,horizontal_pull,prone,machine,intermediate,machine
+cross-mountain-climber,Cross Mountain Climbers,Core,Shoulders | Hip Flexors,core_rotational,none,bodyweight,beginner,bodyweight
+smith-machine-shoulder-press-incline,Dual Incline Smith Machine Shoulder Press,Shoulders,Triceps,vertical_push,incline,smith_machine,intermediate,machine
+smith-machine-chest-press-incline,Dual Incline Smith Machine Chest Press,Upper Chest,Triceps | Front Delts,horizontal_push,incline,smith_machine,intermediate,machine
+dumbbell-supine-biceps-curl,Dumbbell Lying Supine Biceps Curl,Biceps,Forearms,isolation_pull,flat,dumbbell,intermediate,dumbbell
+goblet-box-squat,Goblet Box Squat,Quads,Glutes | Core,squat,none,dumbbell,beginner,dumbbell
+barbell-hammer-curl,Hammer Curl (Barbell),Biceps,Forearms | Brachialis,isolation_pull,none,barbell,intermediate,barbell
+weighted-hanging-leg-raise,Hanging Leg Raises (Weighted),Core,Hip Flexors,core_anterior,none,bodyweight,advanced,bodyweight
+high-bar-heel-elevated-squat,High Bar Elevated Barbell Squat,Quads,Glutes | Lower,squat,none,barbell,advanced,barbell
+hip-dip-plank,Hip Dip Plank,Core,Obliques,core_rotational,none,bodyweight,beginner,bodyweight
+smith-machine-hip-thrust,Hip Thrust (Smith Machine),Glutes,Hamstrings,hip_hinge,none,smith_machine,intermediate,machine
+incline-bench-cable-tricep-extension,Incline Bench Cable Tricep Extension,Triceps,Forearms,isolation_push,incline,cable,intermediate,cable
+incline-dumbbell-shrug,Incline Bench Shrugs (Dumbbell),Traps,Upper,isolation_pull,incline,dumbbell,beginner,dumbbell
+incline-hammer-curl,Incline Hammer Curl,Biceps,Forearms | Brachialis,isolation_pull,incline,dumbbell,beginner,dumbbell
+smith-machine-jm-press,JM Press (Smith Machine),Triceps,Chest,isolation_push,flat,smith_machine,advanced,machine
+barbell-jm-press,JM Press (Barbell),Triceps,Chest,isolation_push,flat,barbell,advanced,barbell
+l-squat-machine,L-Squat with Machine,Quads,Glutes,squat,none,machine,intermediate,machine
+landmine-sumo-squat,Landmine Sumo Squat,Quads,Glutes | Adductors,squat,none,landmine,intermediate,barbell
+neutral-grip-lat-pulldown,Lat Pull Down Neutral Grip,Lats,Biceps | Upper,vertical_pull,overhead,cable,beginner,cable
+sideways-incline-lateral-raise,Sideways Incline Dumbbell Lateral Raise,Shoulders,Traps,isolation_push,incline,dumbbell,intermediate,dumbbell
+smith-machine-lunge,Lunges (Smith Machine),Quads,Glutes | Hamstrings,lunge,none,smith_machine,beginner,machine
+lying-machine-chest-press,Lying Machine Chest Press,Chest,Triceps | Front Delts,horizontal_push,flat,machine,beginner,machine
+overhead-cable-curl-one-arm,Overhead Cable Curl (One Arm),Biceps,Forearms,isolation_pull,overhead,cable,intermediate,cable
+overhead-cable-curl-both-arms,Overhead Cable Curl (Both Arms),Biceps,Forearms,isolation_pull,overhead,cable,intermediate,cable
+overhead-tricep-extension-rope,Overhead Tricep Extension (Rope),Triceps,Forearms,isolation_push,overhead,cable,beginner,cable
+preacher-hammer-curl-dumbbell,Preacher Hammer Curl (Dumbbell),Biceps,Forearms | Brachialis,isolation_pull,incline,dumbbell,beginner,dumbbell
+bent-over-rear-delt-cable-fly,Bentover Rear Delt Cable Fly,Rear Delts,Upper,isolation_pull,flat,cable,intermediate,cable
+rear-delt-machine,Rear Delt Machine,Rear Delts,Upper,isolation_pull,none,machine,beginner,machine
+lateral-raise-machine,Lateral Raise Machine,Shoulders,Traps,isolation_push,none,machine,beginner,machine
+lateral-raise-machine-arm-supported,Lateral Raise Machine (Arm Supported),Shoulders,Traps,isolation_push,none,machine,beginner,machine
+reverse-cable-pushdown,Reverse Cable Pushdown,Triceps,Forearms,isolation_push,none,cable,beginner,cable
+smith_machine_rdl,Romanian Deadlift (Smith Machine),Hamstrings,Glutes | Lower,hip_hinge,none,smith_machine,intermediate,machine
+seated-bench-leg-pull-in,Seated Bench Leg Pull In,Core,Hip Flexors,core_anterior,flat,bodyweight,beginner,bodyweight
+seated-calf-raise-free-weights,Seated Calf Raises (Free Weights),Calves,,isolation_legs,none,dumbbell,beginner,dumbbell
+seated-smith-machine-shoulder-press,Seated Smith Machine Shoulder Press,Shoulders,Triceps,vertical_push,overhead,smith_machine,intermediate,machine
+standing-cable-crunch,Standing Cable Crunches,Core,Hip Flexors,core_anterior,none,cable,beginner,cable
+one-arm-preacher-curl-dumbbell,Standing Dumbbell One Arm Preacher Curl,Biceps,Forearms,isolation_pull,incline,dumbbell,beginner,dumbbell
+v-squat-machine,V Squat Machine,Quads,Glutes,squat,none,machine,intermediate,machine
+weighted-glute-bridge,Weighted Glute Bridge,Glutes,Hamstrings | Core,hip_hinge,none,barbell,intermediate,barbell
+band-pull-apart,Band Pull-Apart,Rear Delts,Upper | Traps,isolation_pull,flat,resistance_band,beginner,resistance_band
+band-face-pull,Band Face Pull,Rear Delts,Upper | Traps,isolation_pull,none,resistance_band,beginner,resistance_band
+band-row,Band Row,Upper Back,Lats | Biceps,horizontal_pull,flat,resistance_band,beginner,resistance_band
+band-lat-pulldown,Band Lat Pulldown,Lats,Upper | Biceps,vertical_pull,overhead,resistance_band,beginner,resistance_band
+band-seated-row,Band Seated Row,Upper Back,Lats | Biceps,horizontal_pull,flat,resistance_band,beginner,resistance_band
+band-reverse-fly,Band Reverse Fly,Rear Delts,Upper,isolation_pull,flat,resistance_band,beginner,resistance_band
+band-chest-press,Band Chest Press,Chest,Front Delts | Triceps,horizontal_push,flat,resistance_band,beginner,resistance_band
+band-chest-fly,Band Chest Fly,Chest,Front Delts,isolation_push,flat,resistance_band,beginner,resistance_band
+band-shoulder-press,Band Shoulder Press,Shoulders,Triceps,vertical_push,overhead,resistance_band,beginner,resistance_band
+band-lateral-raise,Band Lateral Raise,Shoulders,Traps,isolation_push,none,resistance_band,beginner,resistance_band
+band-front-raise,Band Front Raise,Front Delts,Shoulders,isolation_push,none,resistance_band,beginner,resistance_band
+band-upright-row,Band Upright Row,Traps,Side Delts | Biceps,isolation_pull,none,resistance_band,beginner,resistance_band
+band-bicep-curl,Band Bicep Curl,Biceps,Forearms,isolation_pull,none,resistance_band,beginner,resistance_band
+band-hammer-curl,Band Hammer Curl,Biceps,Forearms | Brachialis,isolation_pull,none,resistance_band,beginner,resistance_band
+band-tricep-pushdown,Band Tricep Pushdown,Triceps,Forearms,isolation_push,none,resistance_band,beginner,resistance_band
+band-overhead-tricep-extension,Band Overhead Tricep Extension,Triceps,Forearms,isolation_push,overhead,resistance_band,beginner,resistance_band
+band-woodchop,Band Woodchop,Obliques,Core | Shoulders,core_rotational,none,resistance_band,beginner,resistance_band
+trx-row,TRX Row,Upper Back,Lats | Biceps,horizontal_pull,flat,bodyweight,intermediate,bodyweight
+trx-push-up,TRX Push-Up,Chest,Front Delts | Triceps | Core,horizontal_push,flat,bodyweight,intermediate,bodyweight
+trx-chest-press,TRX Chest Press,Chest,Front Delts | Triceps | Core,horizontal_push,flat,bodyweight,intermediate,bodyweight
+trx-fallout,TRX Fallout,Core,Shoulders | Lats,core_anterior,none,bodyweight,advanced,bodyweight
+trx-pike,TRX Pike,Core,Shoulders | Hip Flexors,core_anterior,none,bodyweight,advanced,bodyweight
+trx-plank,TRX Plank,Core,Shoulders,core_anterior,none,bodyweight,intermediate,bodyweight
+trx-mountain-climber,TRX Mountain Climber,Core,Shoulders | Hip Flexors,core_anterior,none,bodyweight,intermediate,bodyweight
+trx-bicep-curl,TRX Bicep Curl,Biceps,Forearms,isolation_pull,none,bodyweight,intermediate,bodyweight
+trx-tricep-extension,TRX Tricep Extension,Triceps,Chest,isolation_push,none,bodyweight,intermediate,bodyweight
+trx-y-fly,TRX Y-Fly,Rear Delts,Upper | Traps | Shoulders,isolation_pull,none,bodyweight,intermediate,bodyweight
+trx-t-fly,TRX T-Fly,Rear Delts,Upper | Traps,isolation_pull,none,bodyweight,intermediate,bodyweight
+trx-shoulder-press,TRX Shoulder Press,Shoulders,Triceps,vertical_push,overhead,bodyweight,intermediate,bodyweight
+trx-squat,TRX Squat,Quads,Glutes,squat,none,bodyweight,beginner,bodyweight
+trx-lunge,TRX Lunge,Quads,Glutes,lunge,none,bodyweight,intermediate,bodyweight
+trx-hamstring-curl,TRX Hamstring Curl,Hamstrings,Glutes | Calves,isolation_legs,none,bodyweight,advanced,bodyweight
+trx-hip-press,TRX Hip Press,Glutes,Hamstrings,hip_hinge,none,bodyweight,intermediate,bodyweight
+trx-sprinter-start,TRX Sprinter Start,Hip Flexors,Quads | Core,lunge,none,bodyweight,intermediate,bodyweight
