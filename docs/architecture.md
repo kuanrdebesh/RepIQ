@@ -151,7 +151,17 @@ These are not first-slice blockers, but they are part of the intended product di
 
 Equipment access is split into two independent axes:
 
-**Tier** (`EquipmentAccess` — pick one): `bodyweight` → `dumbbell_pair` → `home_setup` → `basic_gym` → `full_gym`. Each tier is a superset of the one below. Kettlebell is included from `dumbbell_pair` upward.
+**Tier** (`EquipmentAccess` — pick one):
+
+| Tier | Equipment |
+|---|---|
+| `bodyweight` | bodyweight |
+| `dumbbell_pair` | bodyweight, dumbbell, kettlebell |
+| `home_setup` | bodyweight, dumbbell, kettlebell, barbell *(implies squat rack)* |
+| `basic_gym` | bodyweight, dumbbell, cable, machine *(no rack, no barbell, no smith, no landmine, no kettlebell)* |
+| `full_gym` | bodyweight, dumbbell, kettlebell, barbell, cable, machine, smith_machine, landmine |
+
+Note: `basic_gym` is NOT a superset of `home_setup` — they diverge. A home gym has a rack and barbell but no cables or machines; a basic commercial gym has cables and machines but no rack or barbell.
 
 **Standalone add-ons** (`additionalEquipment: string[]` on `UserPsychProfile` — opt-in, independent of tier):
 - `resistance_band` — bands are not implied by any gym tier
