@@ -13265,7 +13265,7 @@ function InsightsPage({
   // Summary and Stats. weekStats + hasEnoughData below keep the full list on
   // purpose: "this week" is definitionally the current week, and the empty-
   // state gate should not flip just because the user narrows the window.
-  const consistency = useMemo(() => computeConsistencyStats(rangedWorkouts, psychProfile), [rangedWorkouts, psychProfile]);
+  const consistency = useMemo(() => computeConsistencyStats(rangedWorkouts, psychProfile, savedWorkouts), [rangedWorkouts, psychProfile, savedWorkouts]);
   const sessionSummary = useMemo(() => computeSessionSummary(rangedWorkouts), [rangedWorkouts]);
   const laggingMuscles = useMemo(() => computeLaggingMuscles(rangedWorkouts, psychProfile, library), [rangedWorkouts, psychProfile, library]);
   const exerciseProgress = useMemo(() => computeExerciseProgress(rangedWorkouts), [rangedWorkouts]);
@@ -15113,7 +15113,14 @@ function wkToMs(w: SavedWorkoutData): number {
   return Date.UTC(y, mo - 1, d);
 }
 
-function computeConsistencyStats(workouts: SavedWorkoutData[], profile: UserPsychProfile): ConsistencyStats {
+function computeConsistencyStats(
+  workouts: SavedWorkoutData[],
+  profile: UserPsychProfile,
+  // All saved workouts (unfiltered) — used for time-invariant metrics like
+  // lastGapDays and isReturningAfterGap, which must not shift when the user
+  // changes the date-range picker.
+  allWorkouts: SavedWorkoutData[] = workouts,
+): ConsistencyStats {
   const msPerDay = 86400000;
   const today = new Date();
   const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
@@ -15139,12 +15146,15 @@ function computeConsistencyStats(workouts: SavedWorkoutData[], profile: UserPsyc
   const target30d = targetPerWeek * 4;
   const consistencyPct = Math.min(Math.round((sessions30d / Math.max(target30d, 1)) * 100), 100);
 
-  // Days since last workout
-  const lastMs = workouts.length > 0 ? wkToMs(workouts[0]) : null;
+  // Days since last workout — always from the full unfiltered list so this
+  // value doesn't jump when the user narrows the date range.
+  const allSorted = [...allWorkouts].sort((a, b) => wkToMs(b) - wkToMs(a));
+  const lastMs = allSorted.length > 0 ? wkToMs(allSorted[0]) : null;
   const lastGapDays = lastMs != null ? Math.round((todayMs - lastMs) / msPerDay) : 999;
 
   // Returning after gap: had a 14+ day break at some point in last 30 days
-  const recent = workouts.filter(w => todayMs - wkToMs(w) <= 30 * msPerDay);
+  // (also from the full list so it doesn't vanish on narrow ranges)
+  const recent = allSorted.filter(w => todayMs - wkToMs(w) <= 30 * msPerDay);
   let isReturningAfterGap = false;
   if (recent.length >= 2) {
     const rMs = recent.map(wkToMs).sort((a, b) => b - a);
