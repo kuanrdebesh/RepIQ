@@ -25,3 +25,4 @@ apps/web/dev-dist
 supabase/.temp
 .claude/
 apps/api/uploads/workouts/
+resources/
