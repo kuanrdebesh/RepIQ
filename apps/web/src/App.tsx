@@ -13140,11 +13140,12 @@ function DateRangeSelector({
               key={c}
               type="button" role="tab"
               aria-selected={toDateChip === c}
+              aria-label={TO_DATE_FULL_LABELS[c]}
+              title={TO_DATE_FULL_LABELS[c]}
               className={`dr-todate-btn${toDateChip === c ? " is-active" : ""}`}
               onClick={() => onChipChange(c)}
             >
-              <span className="dr-todate-abbr">{c.toUpperCase()}</span>
-              <span className="dr-todate-full">{TO_DATE_FULL_LABELS[c]}</span>
+              <span className="dr-todate-abbr">{c === "all" ? "All" : c.toUpperCase()}</span>
             </button>
           ))}
         </div>

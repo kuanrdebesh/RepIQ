@@ -15705,28 +15705,31 @@ ol {
   background: var(--paper);
 }
 
-/* Mode tabs — full-width underline style */
+/* Mode toggle — full-width pill */
 .dr-mode-tabs {
   display: flex;
-  border-bottom: 1.5px solid var(--line);
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 3px;
 }
 .dr-mode-tab {
   flex: 1;
-  padding: 8px 0;
+  padding: 7px 0;
   background: none;
   border: none;
-  border-bottom: 2.5px solid transparent;
-  margin-bottom: -1.5px;
+  border-radius: 5px;
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--subtle-text);
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition: background 0.15s, color 0.15s;
   text-align: center;
 }
 .dr-mode-tab.is-active {
-  color: var(--ink);
-  border-bottom-color: var(--accent);
+  background: var(--ink);
+  color: var(--paper);
 }
 
 /* Rolling slider */
@@ -15805,26 +15808,17 @@ ol {
   font-weight: 700;
 }
 
-/* To-date grid */
+/* To-date grid — single row, 5 equal columns */
 .dr-todate-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 7px;
-}
-/* Last two items (YTD + All) span proportionally */
-.dr-todate-grid .dr-todate-btn:nth-child(4) {
-  grid-column: 1 / 2;
-}
-.dr-todate-grid .dr-todate-btn:nth-child(5) {
-  grid-column: 2 / 4;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
 }
 .dr-todate-btn {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 10px 6px;
+  padding: 9px 4px;
   background: var(--surface);
   border: 1.5px solid var(--line);
   border-radius: 8px;
@@ -15836,18 +15830,12 @@ ol {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
 }
 .dr-todate-abbr {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 700;
   color: var(--ink);
   line-height: 1;
 }
 .dr-todate-btn.is-active .dr-todate-abbr { color: var(--accent); }
-.dr-todate-full {
-  font-size: 0.62rem;
-  color: var(--subtle-text);
-  font-weight: 400;
-  white-space: nowrap;
-}
 
 /* Range meta label */
 .dr-range-meta {
