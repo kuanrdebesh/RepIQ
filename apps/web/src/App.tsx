@@ -13363,7 +13363,7 @@ function InsightsPage({
   // to be meaningful. They still appear in the sets-list slide if trained.
   // Deviation = (actual − ideal) / ideal × 100 (relative %).
   // Thresholds: green ≤ ±15%, amber ≤ ±40%, red > ±40%.
-  type MuscleShareRow = { label: string; muscles: string[]; actualPct: number; idealPct: number; deviationPct: number; status: "green" | "amber" | "red" };
+  type MuscleShareRow = { label: string; muscles: string[]; actualPct: number; prevActualPct: number; idealPct: number; deviationPct: number; status: "green" | "amber" | "red" };
   const muscleShareRows = useMemo((): MuscleShareRow[] => {
     const PRIMARY_GROUPS: { label: string; muscles: string[]; ideal: number }[] = [
       { label: "Chest",      muscles: ["Chest", "Upper Chest"],                                  ideal: 12 },
@@ -13378,22 +13378,30 @@ function InsightsPage({
       { label: "Calves",     muscles: ["Calves"],                                                ideal: 6  },
       // Totals: 12+14+8+5+5+8+16+12+14+6 = 100
     ];
-    // Build a lookup from catalog muscle name → group index
     const muscleToGroup = new Map<string, number>();
     PRIMARY_GROUPS.forEach((g, i) => g.muscles.forEach(m => muscleToGroup.set(m, i)));
-    // Count sets per group using muscleSetRows (already aggregated for current period)
+    // Current period
     const groupSets = PRIMARY_GROUPS.map(() => 0);
     let totalMapped = 0;
+    // Previous period
+    const prevGroupSets = PRIMARY_GROUPS.map(() => 0);
+    let prevTotalMapped = 0;
     for (const r of muscleSetRows) {
       const gi = muscleToGroup.get(r.muscle);
-      if (gi !== undefined) { groupSets[gi] += r.sets; totalMapped += r.sets; }
+      if (gi !== undefined) {
+        groupSets[gi] += r.sets;     totalMapped     += r.sets;
+        prevGroupSets[gi] += r.prevSets; prevTotalMapped += r.prevSets;
+      }
     }
     return PRIMARY_GROUPS.map((g, i) => {
-      const actualPct = totalMapped > 0 ? Math.round(groupSets[i] / totalMapped * 100) : 0;
+      const actualPct     = totalMapped     > 0 ? Math.round(groupSets[i]     / totalMapped     * 100) : 0;
+      const prevActualPct = prevTotalMapped > 0 ? Math.round(prevGroupSets[i] / prevTotalMapped * 100) : 0;
       const deviationPct = Math.round((actualPct - g.ideal) / g.ideal * 100);
       const abs = Math.abs(deviationPct);
       return {
-        label: g.label, muscles: g.muscles, actualPct, idealPct: g.ideal, deviationPct,
+        label: g.label, muscles: g.muscles,
+        actualPct, prevActualPct,
+        idealPct: g.ideal, deviationPct,
         status: (abs <= 15 ? "green" : abs <= 40 ? "amber" : "red") as MuscleShareRow["status"],
       };
     });
@@ -13811,15 +13819,16 @@ function InsightsPage({
                   { key: "lower", label: "Lower body", muscleLabels: ["Quads","Hamstrings","Glutes","Calves"] },
                   { key: "core",  label: "Core",       muscleLabels: ["Core"] },
                 ];
-                // Region-level share data: raw actual% and ideal% of total volume,
-                // plus achievement ratio (pct) for coloring.
+                // Region-level share data: raw actual%/ideal% plus period-over-period delta.
                 const regionAch = Object.fromEntries(SHARE_GROUPS.map(g => {
                   const rows = muscleShareRows.filter(r => g.muscleLabels.includes(r.label));
-                  const actualSum = rows.reduce((s, r) => s + r.actualPct, 0);
-                  const idealSum  = rows.reduce((s, r) => s + r.idealPct,  0);
+                  const actualSum     = rows.reduce((s, r) => s + r.actualPct,     0);
+                  const prevActualSum = rows.reduce((s, r) => s + r.prevActualPct, 0);
+                  const idealSum      = rows.reduce((s, r) => s + r.idealPct,      0);
                   const pct = idealSum > 0 ? Math.round(actualSum / idealSum * 100) : 0;
                   const st = pct >= 85 ? "green" : pct >= 60 ? "amber" : "red";
-                  return [g.key, { actualSum, idealSum, pct, st }];
+                  const periodDelta = actualSum - prevActualSum; // +ve = share grew vs prev period
+                  return [g.key, { actualSum, prevActualSum, idealSum, pct, st, periodDelta }];
                 }));
                 // Filter share groups by active chip
                 const visibleShareGroups = muscleFilter === "all"
@@ -13955,7 +13964,9 @@ function InsightsPage({
                           <div className="az-share-chart">
                             {SHARE_GROUPS.map(group => {
                               const rows = muscleShareRows.filter(r => group.muscleLabels.includes(r.label));
-                              const { actualSum, idealSum, st } = regionAch[group.key] ?? { actualSum: 0, idealSum: 0, pct: 0, st: "red" as const };
+                              const { actualSum, idealSum, st, periodDelta } = regionAch[group.key] ?? { actualSum: 0, idealSum: 0, pct: 0, st: "red" as const, periodDelta: 0 };
+                              const regionArrow = comparisonWorkouts.length > 0 ? (periodDelta > 0 ? "↑" : periodDelta < 0 ? "↓" : "→") : null;
+                              const regionArrowClass = periodDelta > 0 ? "up" : periodDelta < 0 ? "down" : "flat";
                               const isOpen = expandedShareGroups.has(group.key);
                               return (
                                 <div key={group.key} className="az-share-group">
@@ -13968,31 +13979,38 @@ function InsightsPage({
                                   >
                                     <span className="az-share-group-label">{group.label}</span>
                                     <span className={`az-share-group-actual-num az-share-group-pct--${st}`}>{actualSum}%</span>
+                                    {regionArrow && <span className={`az-muscle-arrow az-mov-arrow--${regionArrowClass}`}>{regionArrow}</span>}
                                     <span className="az-share-group-sep">· target {idealSum}%</span>
                                     <span className={`az-chevron${isOpen ? " az-chevron--up" : ""}`} />
                                   </button>
                                   {isOpen && (
                                     <div className="az-share-detail">
-                                      {rows.map(row => (
-                                        <div key={row.label} className="az-share-row">
-                                          <div className="az-share-row-top">
-                                            <span className="az-share-row-label">{row.label}</span>
-                                            <span className={`az-share-row-deviation az-share-row-deviation--${row.status}`}>
-                                              {row.deviationPct > 0 ? "+" : ""}{row.deviationPct}%
-                                            </span>
+                                      {rows.map(row => {
+                                        const rd = row.actualPct - row.prevActualPct;
+                                        const ra = comparisonWorkouts.length > 0 ? (rd > 0 ? "↑" : rd < 0 ? "↓" : "→") : null;
+                                        const rac = rd > 0 ? "up" : rd < 0 ? "down" : "flat";
+                                        return (
+                                          <div key={row.label} className="az-share-row">
+                                            <div className="az-share-row-top">
+                                              <span className="az-share-row-label">{row.label}</span>
+                                              {ra && <span className={`az-muscle-arrow az-mov-arrow--${rac}`}>{ra}</span>}
+                                              <span className={`az-share-row-deviation az-share-row-deviation--${row.status}`}>
+                                                {row.deviationPct > 0 ? "+" : ""}{row.deviationPct}%
+                                              </span>
+                                            </div>
+                                            <div className="az-share-track">
+                                              <div className="az-share-ideal-tick"
+                                                style={{ left: `${Math.min(row.idealPct * 2, 98)}%` }} />
+                                              <div className={`az-share-bar az-share-bar--${row.status}`}
+                                                style={{ width: `${Math.min(row.actualPct * 2, 100)}%` }} />
+                                            </div>
+                                            <div className="az-share-row-meta">
+                                              <span className="az-share-actual">{row.actualPct}% actual</span>
+                                              <span className="az-share-ideal">target {row.idealPct}%</span>
+                                            </div>
                                           </div>
-                                          <div className="az-share-track">
-                                            <div className="az-share-ideal-tick"
-                                              style={{ left: `${Math.min(row.idealPct * 2, 98)}%` }} />
-                                            <div className={`az-share-bar az-share-bar--${row.status}`}
-                                              style={{ width: `${Math.min(row.actualPct * 2, 100)}%` }} />
-                                          </div>
-                                          <div className="az-share-row-meta">
-                                            <span className="az-share-actual">{row.actualPct}% actual</span>
-                                            <span className="az-share-ideal">target {row.idealPct}%</span>
-                                          </div>
-                                        </div>
-                                      ))}
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>
@@ -14004,26 +14022,32 @@ function InsightsPage({
                           <div className="az-share-chart">
                             {muscleShareRows
                               .filter(r => visibleShareGroups[0]?.muscleLabels.includes(r.label))
-                              .map(row => (
-                                <div key={row.label} className="az-share-row">
-                                  <div className="az-share-row-top">
-                                    <span className="az-share-row-label">{row.label}</span>
-                                    <span className={`az-share-row-deviation az-share-row-deviation--${row.status}`}>
-                                      {row.deviationPct > 0 ? "+" : ""}{row.deviationPct}%
-                                    </span>
+                              .map(row => {
+                                const rd = row.actualPct - row.prevActualPct;
+                                const ra = comparisonWorkouts.length > 0 ? (rd > 0 ? "↑" : rd < 0 ? "↓" : "→") : null;
+                                const rac = rd > 0 ? "up" : rd < 0 ? "down" : "flat";
+                                return (
+                                  <div key={row.label} className="az-share-row">
+                                    <div className="az-share-row-top">
+                                      <span className="az-share-row-label">{row.label}</span>
+                                      {ra && <span className={`az-muscle-arrow az-mov-arrow--${rac}`}>{ra}</span>}
+                                      <span className={`az-share-row-deviation az-share-row-deviation--${row.status}`}>
+                                        {row.deviationPct > 0 ? "+" : ""}{row.deviationPct}%
+                                      </span>
+                                    </div>
+                                    <div className="az-share-track">
+                                      <div className="az-share-ideal-tick"
+                                        style={{ left: `${Math.min(row.idealPct * 2, 98)}%` }} />
+                                      <div className={`az-share-bar az-share-bar--${row.status}`}
+                                        style={{ width: `${Math.min(row.actualPct * 2, 100)}%` }} />
+                                    </div>
+                                    <div className="az-share-row-meta">
+                                      <span className="az-share-actual">{row.actualPct}% actual</span>
+                                      <span className="az-share-ideal">target {row.idealPct}%</span>
+                                    </div>
                                   </div>
-                                  <div className="az-share-track">
-                                    <div className="az-share-ideal-tick"
-                                      style={{ left: `${Math.min(row.idealPct * 2, 98)}%` }} />
-                                    <div className={`az-share-bar az-share-bar--${row.status}`}
-                                      style={{ width: `${Math.min(row.actualPct * 2, 100)}%` }} />
-                                  </div>
-                                  <div className="az-share-row-meta">
-                                    <span className="az-share-actual">{row.actualPct}% actual</span>
-                                    <span className="az-share-ideal">target {row.idealPct}%</span>
-                                  </div>
-                                </div>
-                              ))
+                                );
+                              })
                             }
                           </div>
                         )}
