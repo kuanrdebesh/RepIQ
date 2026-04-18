@@ -13111,6 +13111,7 @@ function InsightsPage({
   resolvedTheme,
   onToggleTheme,
   initialTab,
+  onGenerateWithMuscle,
 }: {
   savedWorkouts: SavedWorkoutData[];
   psychProfile: UserPsychProfile;
@@ -13122,6 +13123,7 @@ function InsightsPage({
   resolvedTheme?: string;
   onToggleTheme?: () => void;
   initialTab?: "summary" | "stats" | "progress";
+  onGenerateWithMuscle?: (muscle: string) => void;
 }) {
   const [tab, setTab] = useState<"summary" | "stats" | "progress">(initialTab ?? "summary");
   const [savedToast, setSavedToast] = useState<string | null>(null);
@@ -13340,42 +13342,138 @@ function InsightsPage({
                 <p className="planner-empty-title">No workouts yet</p>
                 <p className="planner-empty-sub">Complete a workout to see your insights here.</p>
               </div>
-            ) : insightFeed.length === 0 ? (
+            ) : !hasEnoughData ? (
               <div className="planner-builder-stub">
                 <p className="planner-empty-title">Still learning your patterns</p>
                 <p className="planner-empty-sub">Complete {Math.max(0, 3 - savedWorkouts.length)} more workout{savedWorkouts.length < 2 ? "s" : ""} to unlock insights.</p>
               </div>
             ) : (
               <div className="az-content">
-                {insightFeed.map(card => (
-                  <div key={card.id} className={`az-card az-insight-card az-severity-${card.severity}`}>
-                    <div className="az-card-header-row">
-                      <p className="az-card-title">{card.headline}</p>
-                      <span className={`az-severity-badge az-severity-${card.severity}`}>
-                        {card.severity === "green" ? "✓" : card.severity === "amber" ? "⚠" : card.severity === "red" ? "!" : "ℹ"}
-                      </span>
+
+                {/* ── A2: Headline card ─────────────────────────────────────────── */}
+                <div className="az-card az-headline-card">
+                  <p className="az-headline-text">{trainingTrend.insight}</p>
+                </div>
+
+                {/* ── A3: Next Best Target card ─────────────────────────────────── */}
+                {(() => {
+                  const top = laggingMuscles[0];
+                  if (!top) {
+                    return (
+                      <div className="az-card az-nbt-card az-nbt-clear">
+                        <p className="az-nbt-label">NEXT BEST TARGET</p>
+                        <p className="az-nbt-muscle">You're well-covered</p>
+                        <p className="az-card-sub">All major muscle groups have been trained recently. Keep it up.</p>
+                      </div>
+                    );
+                  }
+                  const pattern = library.find(e => e.primaryMuscle === top.muscle)?.movementPattern;
+                  const patternLabel = pattern
+                    ? pattern.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+                    : null;
+                  return (
+                    <div className="az-card az-nbt-card">
+                      <p className="az-nbt-label">NEXT BEST TARGET</p>
+                      <p className="az-nbt-muscle">{top.muscle}</p>
+                      <p className="az-card-sub">
+                        {top.lastTrainedDaysAgo != null
+                          ? `Last trained ${top.lastTrainedDaysAgo} day${top.lastTrainedDaysAgo !== 1 ? "s" : ""} ago`
+                          : "Not trained recently"}
+                        {patternLabel ? ` · ${patternLabel}` : ""}
+                      </p>
+                      {onGenerateWithMuscle && (
+                        <button
+                          type="button"
+                          className="az-nbt-cta"
+                          onClick={() => onGenerateWithMuscle(top.muscle)}
+                        >
+                          Generate session →
+                        </button>
+                      )}
                     </div>
-                    <p className="az-card-sub">{card.detail}</p>
+                  );
+                })()}
+
+                {/* ── A4: 3 health score chips ─────────────────────────────────── */}
+                <div className="az-health-scores">
+                  {/* Consistency */}
+                  <div className={`az-score-chip az-score-chip--${ringConsistency >= 75 ? "green" : ringConsistency >= 50 ? "amber" : "red"}`}>
+                    <p className="az-score-val">{ringConsistency}%</p>
+                    <p className="az-score-lbl">Consistency</p>
+                  </div>
+                  {/* Goal alignment */}
+                  <div className={`az-score-chip az-score-chip--${goalAlignment.label === "aligned" ? "green" : goalAlignment.label === "partially_aligned" ? "amber" : "red"}`}>
+                    <p className="az-score-val">
+                      {goalAlignment.label === "aligned" ? "Aligned" : goalAlignment.label === "partially_aligned" ? "Drifting" : "Off-track"}
+                    </p>
+                    <p className="az-score-lbl">Goal</p>
+                  </div>
+                  {/* Movement balance */}
+                  <div className={`az-score-chip az-score-chip--${movementBalance.imbalances.length === 0 ? "green" : "amber"}`}>
+                    <p className="az-score-val">{movementBalance.imbalances.length === 0 ? "Balanced" : "Imbalanced"}</p>
+                    <p className="az-score-lbl">Movement</p>
+                  </div>
+                </div>
+
+                {/* ── A5: Max 2 takeaway cards (red > amber > green) ───────────── */}
+                {[...insightFeed]
+                  .sort((a, b) => {
+                    const order = { red: 0, amber: 1, green: 2, info: 3 } as const;
+                    return order[a.severity] - order[b.severity];
+                  })
+                  .slice(0, 2)
+                  .map(card => (
+                    <div key={card.id} className={`az-card az-takeaway-card az-severity-${card.severity}`}>
+                      <div className="az-card-header-row">
+                        <p className="az-card-title">{card.headline}</p>
+                        <span className={`az-severity-dot az-severity-dot--${card.severity}`} aria-hidden="true" />
+                      </div>
+                      <p className="az-card-sub">{card.detail}</p>
+                      <button
+                        type="button"
+                        className="az-expand-btn"
+                        onClick={() => toggleInsight(card.id)}
+                        aria-expanded={expandedInsight === card.id}
+                      >
+                        {expandedInsight === card.id ? "Hide details" : "See details"}
+                      </button>
+                      {expandedInsight === card.id && (
+                        <div className="az-insight-details">
+                          <p className="az-detail-why"><strong>Why it matters</strong><br />{card.why}</p>
+                          <p className="az-detail-action"><strong>Suggested response</strong><br />{card.action}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                {/* ── Keep-in-mind checkpoint (optional) ───────────────────────── */}
+                {actionPlan.length > 0 && (
+                  <div className="az-card az-checkpoint-card">
                     <button
                       type="button"
-                      className="az-expand-btn"
-                      onClick={() => toggleInsight(card.id)}
-                      aria-expanded={expandedInsight === card.id}
+                      className="az-checkpoint-toggle"
+                      onClick={() => toggleInsight("__actions__")}
+                      aria-expanded={expandedInsight === "__actions__"}
                     >
-                      {expandedInsight === card.id ? "Hide details" : "Show details"}
+                      <span>Keep in mind</span>
+                      <span className="az-checkpoint-chevron">{expandedInsight === "__actions__" ? "↑" : "↓"}</span>
                     </button>
-                    {expandedInsight === card.id && (
-                      <div className="az-insight-details" style={{ marginTop: 12 }}>
-                        <p style={{ fontSize: "0.9rem", color: "var(--subtle-text)", marginBottom: 8 }}>
-                          <strong>Why:</strong> {card.why}
-                        </p>
-                        <p style={{ fontSize: "0.9rem", color: "var(--accent)" }}>
-                          <strong>Next step:</strong> {card.action}
-                        </p>
+                    {expandedInsight === "__actions__" && (
+                      <div className="az-action-list" style={{ marginTop: 12 }}>
+                        {actionPlan.map((a, i) => (
+                          <div key={a.id} className="az-action-item">
+                            <span className="az-action-num">{i + 1}</span>
+                            <div className="az-action-body">
+                              <p className="az-action-title">{a.title}</p>
+                              <p className="az-action-detail">{a.detail}</p>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
-                ))}
+                )}
+
               </div>
             )}
           </section>
@@ -19420,6 +19518,11 @@ export function App() {
           resolvedTheme={resolvedTheme}
           onToggleTheme={() => setThemePreference(resolvedTheme === "dark" ? "light" : "dark")}
           initialTab={insightsInitialTab}
+          onGenerateWithMuscle={(muscle) => {
+            setPlannerGenDraftConfig(prev => ({ ...prev, muscles: [muscle] }));
+            setPlannerView("generate");
+            navigateRoot("planner");
+          }}
         />
         <BottomNav activeView={appView} onNavigate={(view) => navigateRoot(view)} onMore={() => setShowMoreSheet(true)} />
         <WorkoutTrayOverlay {...trayOverlayProps} />
