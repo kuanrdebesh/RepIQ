@@ -13214,11 +13214,17 @@ function InsightsPage({
   // Muscle cards: independent expand state for each
   const [expandedGroups, setExpandedGroups] = useState<Set<"upper" | "lower" | "core">>(new Set());
   const [expandedShareGroups, setExpandedShareGroups] = useState<Set<string>>(new Set());
-  // Reset expand state when leaving Stats tab
+  // Progress tab: sub-tab + exercise expand state
+  const [progressSubTab, setProgressSubTab] = useState<"goals" | "body" | "performance">("goals");
+  const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null);
+  // Reset expand states on tab change
   useEffect(() => {
     if (tab !== "stats") {
       setExpandedGroups(new Set());
       setExpandedShareGroups(new Set());
+    }
+    if (tab !== "progress") {
+      setExpandedExerciseId(null);
     }
   }, [tab]);
 
@@ -13762,7 +13768,7 @@ function InsightsPage({
           </div>
         </div>
 
-        {tab !== "progress" && (
+        {(tab !== "progress" || progressSubTab === "performance") && (
           <DateRangeSelector
             mode={dateRangePrefs.lastMode}
             rollingChip={dateRangePrefs.rollingChip}
@@ -14359,8 +14365,163 @@ function InsightsPage({
         )}
 
         {tab === "progress" && (
-          <section className="planner-section az-section" style={{ padding: 0 }}>
-            <ProgressPhotoTab savedWorkouts={savedWorkouts} />
+          <section className="planner-section az-section az-progress-section">
+
+            {/* ── Progress sub-tab bar ─────────────────────────────────────── */}
+            <div className="az-progress-subtabs">
+              <button type="button" className={progressSubTab === "goals" ? "is-active" : ""} onClick={() => setProgressSubTab("goals")}>Goals</button>
+              <button type="button" className={progressSubTab === "body" ? "is-active" : ""} onClick={() => setProgressSubTab("body")}>Body</button>
+              <button type="button" className={progressSubTab === "performance" ? "is-active" : ""} onClick={() => setProgressSubTab("performance")}>Performance</button>
+            </div>
+
+            {/* ── A13: Goals sub-tab ───────────────────────────────────────── */}
+            {progressSubTab === "goals" && (
+              <div className="az-progress-content">
+                {/* Training Score */}
+                <div className="az-card az-card--top">
+                  <div className="az-card-header-row">
+                    <p className="az-card-title">Training score</p>
+                    <span className="az-goal-score">{goalProgress.score}/100</span>
+                  </div>
+                  <div className="az-progress-bar-wrap">
+                    <div className="az-progress-bar" style={{ width: `${goalProgress.score}%` }} />
+                  </div>
+                  <p className="az-goal-label">{goalProgress.label}</p>
+                  <p className="az-card-sub">{goalProgress.insight}</p>
+                </div>
+                {/* My Goals stub — placeholder until Goal Planner (Session C) ships */}
+                <div className="az-card az-card--top az-goals-stub">
+                  <p className="az-card-title">My goals</p>
+                  <p className="az-card-sub" style={{ marginTop: 6 }}>
+                    Track specific targets — strength milestones, weekly training frequency, body composition — here once you've set them in the Planner.
+                  </p>
+                  <div className="az-goals-stub-cta-row">
+                    <span className="az-goals-stub-badge">Coming soon</span>
+                    <span className="az-card-sub">Set goals in Planner → Goals</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── A10 Body sub-tab (existing ProgressPhotoTab, no changes) ── */}
+            {progressSubTab === "body" && (
+              <ProgressPhotoTab savedWorkouts={savedWorkouts} />
+            )}
+
+            {/* ── A11 + A12: Performance sub-tab ──────────────────────────── */}
+            {progressSubTab === "performance" && (
+              <div className="az-progress-content">
+
+                {/* A11 — PR timeline */}
+                <div className="az-card az-card--top">
+                  <p className="az-card-title">Personal records</p>
+                  <p className="az-card-subtitle">{resolvedRange.label}</p>
+                  {prsHistory.length === 0 ? (
+                    <p className="az-card-sub" style={{ marginTop: 8 }}>No PRs in this period — keep training.</p>
+                  ) : (
+                    <div className="az-pr-list">
+                      {prsHistory.map((pr, i) => {
+                        const typeLabel = pr.prType === "weight" ? "Wt PR" : pr.prType === "reps" ? "Rep PR" : "1RM PR";
+                        const d = new Date((pr.date.slice(0, 10)) + "T12:00:00");
+                        const dateStr = d.toLocaleDateString("en", { day: "numeric", month: "short" });
+                        return (
+                          <div key={i} className="az-pr-row">
+                            <div className="az-pr-row-left">
+                              <span className="az-pr-name">{pr.exerciseName}</span>
+                              <span className="az-pr-detail">{pr.detail}</span>
+                            </div>
+                            <div className="az-pr-row-right">
+                              <span className={`az-pr-chip az-pr-chip--${pr.prType}`}>{typeLabel}</span>
+                              <span className="az-pr-date">{dateStr}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* A12 — Exercise progress list */}
+                <div className="az-card az-card--top">
+                  <p className="az-card-title">Exercise progress</p>
+
+                  {/* Plateau callout — always shown first if any */}
+                  {plateaus.length > 0 && (
+                    <div className="az-plateau-section">
+                      <p className="az-plateau-heading">⚠ Plateaus detected</p>
+                      {plateaus.map(p => (
+                        <div key={p.exerciseId} className="az-plateau-row">
+                          <div className="az-plateau-row-top">
+                            <span className="az-plateau-name">{p.name}</span>
+                            <span className="az-plateau-cause">
+                              {p.cause === "weight_stuck" ? "Weight stuck" : p.cause === "reps_stuck" ? "Reps stuck" : "Volume stuck"}
+                            </span>
+                          </div>
+                          <p className="az-plateau-action">{p.action}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Exercise rows (exclude insufficient_data) */}
+                  {(() => {
+                    const rows = exerciseProgress.filter(e => e.status !== "insufficient_data");
+                    if (rows.length === 0) return (
+                      <p className="az-card-sub" style={{ marginTop: 8 }}>Log at least 3 sessions of an exercise to see its trend.</p>
+                    );
+                    const STATUS_LABEL: Record<string, string> = {
+                      improving: "Improving", stable: "Stable", building: "Building",
+                      stalled: "Stalled", regressing: "Regressing"
+                    };
+                    return (
+                      <div className="az-pex-list">
+                        {rows.map(ex => {
+                          const isOpen = expandedExerciseId === ex.exerciseId;
+                          const trendClass = ex.volumeTrend === "up" ? "up" : ex.volumeTrend === "down" ? "down" : "flat";
+                          const trendArrowStr = ex.volumeTrend === "up" ? "↑" : ex.volumeTrend === "down" ? "↓" : "→";
+                          return (
+                            <div key={ex.exerciseId} className="az-pex-row">
+                              <button
+                                type="button"
+                                className="az-pex-header"
+                                onClick={() => setExpandedExerciseId(isOpen ? null : ex.exerciseId)}
+                              >
+                                <span className="az-pex-name">{ex.name}</span>
+                                <span className={`az-pex-chip az-pex-chip--${ex.status}`}>
+                                  {STATUS_LABEL[ex.status] ?? ex.status}
+                                </span>
+                                <span className={`az-mov-arrow az-mov-arrow--${trendClass}`}>{trendArrowStr}</span>
+                                <span className={`az-chevron${isOpen ? " az-chevron--up" : ""}`} />
+                              </button>
+                              {isOpen && (
+                                <div className="az-pex-detail">
+                                  {ex.recentBestSet && (
+                                    <p className="az-pex-detail-line">
+                                      Recent best: <strong>{ex.recentBestSet.weight}kg × {ex.recentBestSet.reps}</strong>
+                                    </p>
+                                  )}
+                                  {ex.bestSetEver && ex.bestSetEver.weight !== ex.recentBestSet?.weight && (
+                                    <p className="az-pex-detail-line">
+                                      All-time best: <strong>{ex.bestSetEver.weight}kg × {ex.bestSetEver.reps}</strong>
+                                    </p>
+                                  )}
+                                  <p className="az-pex-detail-meta">
+                                    {ex.sessionsCount} session{ex.sessionsCount !== 1 ? "s" : ""} tracked
+                                    {" · "}{ex.primaryMuscle}
+                                    {" · "}Confidence: {ex.confidence}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+              </div>
+            )}
           </section>
         )}
 
