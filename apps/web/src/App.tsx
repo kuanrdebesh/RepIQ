@@ -13768,7 +13768,7 @@ function InsightsPage({
           </div>
         </div>
 
-        {(tab !== "progress" || progressSubTab === "performance") && (
+        {tab !== "progress" && (
           <DateRangeSelector
             mode={dateRangePrefs.lastMode}
             rollingChip={dateRangePrefs.rollingChip}
@@ -14403,13 +14403,26 @@ function InsightsPage({
               </div>
             )}
 
-            {/* ── A10 Body sub-tab (existing ProgressPhotoTab, no changes) ── */}
+            {/* ── A10 Body sub-tab ─────────────────────────────────────────── */}
             {progressSubTab === "body" && (
-              <ProgressPhotoTab savedWorkouts={savedWorkouts} />
+              <div className="az-progress-body-wrap">
+                <ProgressPhotoTab savedWorkouts={savedWorkouts} />
+              </div>
             )}
 
             {/* ── A11 + A12: Performance sub-tab ──────────────────────────── */}
             {progressSubTab === "performance" && (
+              <>
+                {/* Date range selector — full-width, outside card padding */}
+                <DateRangeSelector
+                  mode={dateRangePrefs.lastMode}
+                  rollingChip={dateRangePrefs.rollingChip}
+                  toDateChip={dateRangePrefs.toDateChip}
+                  onModeChange={handleDateRangeModeChange}
+                  onChipChange={handleDateRangeChipChange}
+                  rangeLabel={resolvedRange.label}
+                  comparisonLabel={resolvedRange.comparisonLabel}
+                />
               <div className="az-progress-content">
 
                 {/* A11 — PR timeline */}
@@ -14521,6 +14534,7 @@ function InsightsPage({
                 </div>
 
               </div>
+              </>
             )}
           </section>
         )}

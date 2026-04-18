@@ -16311,7 +16311,8 @@ ol {
 .az-progress-subtabs {
   display: flex;
   gap: 6px;
-  padding: 12px 16px 0;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--line);
 }
 .az-progress-subtabs button {
   padding: 6px 14px;
@@ -16332,10 +16333,15 @@ ol {
 
 /* Content wrapper shared by Goals and Performance */
 .az-progress-content {
-  padding: 12px 16px 24px;
+  padding: 0 16px 24px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+/* Body sub-tab wrapper — lets ProgressPhotoTab render in its own space */
+.az-progress-body-wrap {
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ── A13: Goals stub ───────────────────────────────────────────────────── */
