@@ -15705,31 +15705,53 @@ ol {
   background: var(--paper);
 }
 
-/* Mode toggle — full-width pill */
-.dr-mode-tabs {
+/* Top row: toggle + mode label + active selection label */
+.dr-top-row {
   display: flex;
-  background: var(--surface);
-  border: 1.5px solid var(--line);
-  border-radius: 8px;
-  padding: 3px;
-  gap: 3px;
+  align-items: center;
+  gap: 8px;
 }
-.dr-mode-tab {
-  flex: 1;
-  padding: 7px 0;
-  background: none;
+/* iOS-style toggle switch */
+.dr-toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--line);
   border: none;
-  border-radius: 5px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--subtle-text);
+  padding: 0;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  text-align: center;
+  flex-shrink: 0;
+  transition: background 0.2s;
 }
-.dr-mode-tab.is-active {
-  background: var(--ink);
-  color: var(--paper);
+.dr-toggle.is-on { background: var(--accent); }
+.dr-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  transition: transform 0.2s;
+  pointer-events: none;
+}
+.dr-toggle.is-on .dr-toggle-thumb { transform: translateX(16px); }
+/* Mode name next to toggle */
+.dr-toggle-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+/* Active selection label — right side */
+.dr-active-label {
+  margin-left: auto;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
 }
 
 /* Rolling slider */
@@ -15808,34 +15830,6 @@ ol {
   font-weight: 700;
 }
 
-/* To-date grid — single row, 5 equal columns */
-.dr-todate-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 6px;
-}
-.dr-todate-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 9px 4px;
-  background: var(--surface);
-  border: 1.5px solid var(--line);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-.dr-todate-btn.is-active {
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
-}
-.dr-todate-abbr {
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: var(--ink);
-  line-height: 1;
-}
-.dr-todate-btn.is-active .dr-todate-abbr { color: var(--accent); }
 
 /* Range meta label */
 .dr-range-meta {
