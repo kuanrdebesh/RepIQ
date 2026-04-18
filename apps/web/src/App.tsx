@@ -13203,15 +13203,15 @@ function InsightsPage({
   const [showDetails, setShowDetails] = useState(false);
   const [muscleFilter, setMuscleFilter] = useState<"all" | "upper" | "lower" | "core">("all");
   const [showAllExercises, setShowAllExercises] = useState(false);
-  // Muscle card — slider view (0=sets, 1=share chart) + collapsible group state
+  // Muscle card — slider view (0=sets, 1=share chart) + unified expand state
   const [muscleCardView, setMuscleCardView] = useState<0 | 1>(0);
-  const [expandedGroups, setExpandedGroups] = useState<Set<"upper" | "lower" | "core">>(new Set());
+  const [allGroupsExpanded, setAllGroupsExpanded] = useState(false);
   const muscleSliderRef = useRef<HTMLDivElement>(null);
   // Reset muscle card state when leaving stats tab
   useEffect(() => {
     if (tab !== "stats") {
       setMuscleCardView(0);
-      setExpandedGroups(new Set());
+      setAllGroupsExpanded(false);
     }
   }, [tab]);
 
@@ -13351,24 +13351,46 @@ function InsightsPage({
       .sort((a, b) => b.sets - a.sets);
   }, [rangedWorkouts, comparisonWorkouts]);
 
-  // ── A7b: Muscle region share vs ideal ──────────────────────────────────────
-  // Ideal shares: balanced defaults (upper 50%, lower 35%, core 15%).
+  // ── A7b: Primary-muscle share vs ideal ─────────────────────────────────────
+  // 10 primary muscles with balanced defaults (sum = 100%).
+  // Adductors & Abductors excluded: they're rarely the primary focus and their
+  // combined share is typically < 3%, which would make ideal slices too small
+  // to be meaningful. They still appear in the sets-list slide if trained.
   // Deviation = (actual − ideal) / ideal × 100 (relative %).
   // Thresholds: green ≤ ±15%, amber ≤ ±40%, red > ±40%.
-  type MuscleShareRow = { region: "upper" | "lower" | "core"; label: string; actualPct: number; idealPct: number; deviationPct: number; status: "green" | "amber" | "red" };
+  type MuscleShareRow = { label: string; muscles: string[]; actualPct: number; idealPct: number; deviationPct: number; status: "green" | "amber" | "red" };
   const muscleShareRows = useMemo((): MuscleShareRow[] => {
-    const IDEAL: Record<"upper" | "lower" | "core", number> = { upper: 50, lower: 35, core: 15 };
-    const totals: Record<"upper" | "lower" | "core", number> = { upper: 0, lower: 0, core: 0 };
-    for (const r of muscleSetRows) totals[r.region] += r.sets;
-    const grand = totals.upper + totals.lower + totals.core;
-    return (["upper", "lower", "core"] as const).map(region => {
-      const actualPct = grand > 0 ? Math.round(totals[region] / grand * 100) : 0;
-      const idealPct = IDEAL[region];
-      const deviationPct = idealPct > 0 ? Math.round((actualPct - idealPct) / idealPct * 100) : 0;
+    const PRIMARY_GROUPS: { label: string; muscles: string[]; ideal: number }[] = [
+      { label: "Chest",      muscles: ["Chest", "Upper Chest"],                                  ideal: 12 },
+      { label: "Back",       muscles: ["Back", "Lats", "Middle Back", "Traps"],                  ideal: 14 },
+      { label: "Shoulders",  muscles: ["Shoulders", "Front Delts", "Side Delts", "Rear Delts"],  ideal: 8  },
+      { label: "Biceps",     muscles: ["Biceps", "Brachialis"],                                  ideal: 5  },
+      { label: "Triceps",    muscles: ["Triceps"],                                               ideal: 5  },
+      { label: "Core",       muscles: ["Core", "Abs"],                                           ideal: 8  },
+      { label: "Quads",      muscles: ["Quads"],                                                 ideal: 16 },
+      { label: "Hamstrings", muscles: ["Hamstrings"],                                            ideal: 12 },
+      { label: "Glutes",     muscles: ["Glutes"],                                                ideal: 14 },
+      { label: "Calves",     muscles: ["Calves"],                                                ideal: 6  },
+      // Totals: 12+14+8+5+5+8+16+12+14+6 = 100
+    ];
+    // Build a lookup from catalog muscle name → group index
+    const muscleToGroup = new Map<string, number>();
+    PRIMARY_GROUPS.forEach((g, i) => g.muscles.forEach(m => muscleToGroup.set(m, i)));
+    // Count sets per group using muscleSetRows (already aggregated for current period)
+    const groupSets = PRIMARY_GROUPS.map(() => 0);
+    let totalMapped = 0;
+    for (const r of muscleSetRows) {
+      const gi = muscleToGroup.get(r.muscle);
+      if (gi !== undefined) { groupSets[gi] += r.sets; totalMapped += r.sets; }
+    }
+    return PRIMARY_GROUPS.map((g, i) => {
+      const actualPct = totalMapped > 0 ? Math.round(groupSets[i] / totalMapped * 100) : 0;
+      const deviationPct = Math.round((actualPct - g.ideal) / g.ideal * 100);
       const abs = Math.abs(deviationPct);
-      const status: MuscleShareRow["status"] = abs <= 15 ? "green" : abs <= 40 ? "amber" : "red";
-      const label = region === "upper" ? "Upper body" : region === "lower" ? "Lower body" : "Core";
-      return { region, label, actualPct, idealPct, deviationPct, status };
+      return {
+        label: g.label, muscles: g.muscles, actualPct, idealPct: g.ideal, deviationPct,
+        status: (abs <= 15 ? "green" : abs <= 40 ? "amber" : "red") as MuscleShareRow["status"],
+      };
     });
   }, [muscleSetRows]);
 
@@ -13807,7 +13829,7 @@ function InsightsPage({
                     if (idx !== muscleCardView) setMuscleCardView(idx);
                   }}
                 >
-                  {/* Slide 0: set counts with collapsible groups */}
+                  {/* Slide 0: set counts — grouped (All) or flat (filtered) */}
                   <div className="az-muscle-slide">
                     {/* Filter chips */}
                     <div className="az-filter-chips">
@@ -13821,49 +13843,48 @@ function InsightsPage({
                       ))}
                     </div>
 
-                    {/* Rows: grouped when "all", flat when filtered */}
                     {muscleFilter === "all" ? (
-                      // Grouped collapsible view
-                      (["upper", "lower", "core"] as const).map(region => {
-                        const regionRows = muscleSetRows.filter(r => r.region === region);
-                        if (regionRows.length === 0) return null;
-                        const totalSets = regionRows.reduce((s, r) => s + r.sets, 0);
-                        const isOpen = expandedGroups.has(region);
-                        const label = region === "upper" ? "Upper" : region === "lower" ? "Lower" : "Core";
-                        return (
-                          <div key={region} className="az-muscle-group">
-                            <button
-                              type="button"
-                              className="az-muscle-group-header"
-                              onClick={() => setExpandedGroups(prev => {
-                                const next = new Set(prev);
-                                isOpen ? next.delete(region) : next.add(region);
-                                return next;
-                              })}
-                            >
-                              <span className="az-muscle-group-label">{label}</span>
-                              <span className="az-muscle-group-sets">{totalSets} sets</span>
-                              <span className="az-muscle-group-chevron">{isOpen ? "▲" : "▼"}</span>
-                            </button>
-                            {isOpen && (
-                              <div className="az-muscle-rows az-muscle-rows--nested">
-                                {regionRows.map(r => {
-                                  const delta = r.sets - r.prevSets;
-                                  const arrow = comparisonWorkouts.length > 0
-                                    ? (delta > 0 ? "↑" : delta < 0 ? "↓" : "→") : null;
-                                  return (
-                                    <div key={r.muscle} className="az-muscle-row">
-                                      <span className="az-muscle-row-name">{r.muscle}</span>
-                                      <span className="az-muscle-row-sets">{r.sets} sets</span>
-                                      {arrow && <span className={`az-muscle-arrow az-mov-arrow--${delta > 0 ? "up" : delta < 0 ? "down" : "flat"}`}>{arrow}</span>}
-                                    </div>
-                                  );
-                                })}
+                      // Three regions — all expand/collapse together
+                      <>
+                        {(["upper", "lower", "core"] as const).map(region => {
+                          const regionRows = muscleSetRows.filter(r => r.region === region);
+                          if (regionRows.length === 0) return null;
+                          const totalSets = regionRows.reduce((s, r) => s + r.sets, 0);
+                          const label = region === "upper" ? "Upper" : region === "lower" ? "Lower" : "Core";
+                          return (
+                            <div key={region} className="az-muscle-group">
+                              <div className="az-muscle-group-header">
+                                <span className="az-muscle-group-label">{label}</span>
+                                <span className="az-muscle-group-sets">{totalSets} sets</span>
                               </div>
-                            )}
-                          </div>
-                        );
-                      })
+                              {allGroupsExpanded && (
+                                <div className="az-muscle-rows az-muscle-rows--nested">
+                                  {regionRows.map(r => {
+                                    const delta = r.sets - r.prevSets;
+                                    const arrow = comparisonWorkouts.length > 0
+                                      ? (delta > 0 ? "↑" : delta < 0 ? "↓" : "→") : null;
+                                    return (
+                                      <div key={r.muscle} className="az-muscle-row">
+                                        <span className="az-muscle-row-name">{r.muscle}</span>
+                                        <span className="az-muscle-row-sets">{r.sets} sets</span>
+                                        {arrow && <span className={`az-muscle-arrow az-mov-arrow--${delta > 0 ? "up" : delta < 0 ? "down" : "flat"}`}>{arrow}</span>}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {/* Single toggle for all groups */}
+                        <button
+                          type="button"
+                          className="az-groups-toggle"
+                          onClick={() => setAllGroupsExpanded(v => !v)}
+                        >
+                          {allGroupsExpanded ? "Collapse ▲" : "Show muscles ▼"}
+                        </button>
+                      </>
                     ) : (
                       // Flat filtered view
                       <div className="az-muscle-rows">
@@ -13894,7 +13915,7 @@ function InsightsPage({
                     ) : (
                       <div className="az-share-chart">
                         {muscleShareRows.map(row => (
-                          <div key={row.region} className="az-share-row">
+                          <div key={row.label} className="az-share-row">
                             <div className="az-share-row-top">
                               <span className="az-share-row-label">{row.label}</span>
                               <span className={`az-share-row-deviation az-share-row-deviation--${row.status}`}>

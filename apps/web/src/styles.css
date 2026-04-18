@@ -14923,15 +14923,10 @@ ol {
 .az-muscle-group { border-bottom: 1px solid var(--line); }
 .az-muscle-group:last-child { border-bottom: none; }
 .az-muscle-group-header {
-  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 9px 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  text-align: left;
 }
 .az-muscle-group-label {
   font-size: 0.84rem;
@@ -14944,11 +14939,21 @@ ol {
   color: var(--text-muted);
   white-space: nowrap;
 }
-.az-muscle-group-chevron {
-  font-size: 0.6rem;
-  color: var(--text-muted);
-  width: 14px;
+/* Unified expand/collapse toggle for all groups */
+.az-groups-toggle {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 7px 0;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--line);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
   text-align: center;
+  letter-spacing: 0.02em;
 }
 .az-muscle-rows--nested {
   padding: 0 0 6px 12px;
