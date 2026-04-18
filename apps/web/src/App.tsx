@@ -13693,7 +13693,7 @@ function InsightsPage({
             <div className="az-content">
 
               {/* ── A6: Movement balance chart ──────────────────────────────── */}
-              <div className="az-card">
+              <div className="az-card az-card--top">
                 <p className="az-card-title">Movement balance</p>
                 <div className="az-mov-chart">
                   {(() => {
@@ -13728,19 +13728,17 @@ function InsightsPage({
               </div>
 
               {/* ── A7: Muscle set count ─────────────────────────────────────── */}
-              <div className="az-card">
-                <div className="az-card-header-row">
-                  <p className="az-card-title">Muscles</p>
-                  <div className="az-filter-chips">
-                    {(["all", "upper", "lower", "core"] as const).map(f => (
-                      <button key={f} type="button"
-                        className={`az-filter-chip${muscleFilter === f ? " is-active" : ""}`}
-                        onClick={() => setMuscleFilter(f)}
-                      >
-                        {f.charAt(0).toUpperCase() + f.slice(1)}
-                      </button>
-                    ))}
-                  </div>
+              <div className="az-card az-card--top">
+                <p className="az-card-title">Muscles</p>
+                <div className="az-filter-chips">
+                  {(["all", "upper", "lower", "core"] as const).map(f => (
+                    <button key={f} type="button"
+                      className={`az-filter-chip${muscleFilter === f ? " is-active" : ""}`}
+                      onClick={() => setMuscleFilter(f)}
+                    >
+                      {f.charAt(0).toUpperCase() + f.slice(1)}
+                    </button>
+                  ))}
                 </div>
                 <div className="az-muscle-rows">
                   {muscleSetRows
@@ -13765,7 +13763,7 @@ function InsightsPage({
               </div>
 
               {/* ── A8: Main exercises ───────────────────────────────────────── */}
-              <div className="az-card">
+              <div className="az-card az-card--top">
                 <p className="az-card-title">Main exercises</p>
                 <div className="az-ex-rows">
                   {(showAllExercises ? topExercises : topExercises.slice(0, 6)).map(ex => {
@@ -13801,7 +13799,7 @@ function InsightsPage({
               </div>
 
               {/* ── A9: Consistency breakdown ────────────────────────────────── */}
-              <div className="az-card">
+              <div className="az-card az-card--top">
                 <p className="az-card-title">Consistency</p>
                 <div className="az-stat-grid" style={{ marginBottom: 14 }}>
                   <div className="az-stat">
@@ -13853,7 +13851,7 @@ function InsightsPage({
               </div>
 
               {/* ── Training trend ───────────────────────────────────────────── */}
-              <div className="az-card">
+              <div className="az-card az-card--top">
                 <p className="az-card-title">Training trend</p>
                 <div className="az-trend-weeks">
                   {trainingTrend.recentWeeks.map(w => (
@@ -13867,7 +13865,7 @@ function InsightsPage({
               </div>
 
               {/* ── Session output ───────────────────────────────────────────── */}
-              <div className="az-card">
+              <div className="az-card az-card--top">
                 <div className="az-card-header-row">
                   <p className="az-card-title">Session output</p>
                   {sessionSummary.volumeTrend !== "insufficient" && (
@@ -13905,7 +13903,7 @@ function InsightsPage({
               </div>
 
               {/* ── Goal progress ─────────────────────────────────────────────── */}
-              <div className="az-card">
+              <div className="az-card az-card--top">
                 <div className="az-card-header-row">
                   <p className="az-card-title">Goal progress</p>
                   <span className="az-goal-score">{goalProgress.score}/100</span>

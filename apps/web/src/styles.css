@@ -14268,9 +14268,15 @@ ol {
 .az-card {
   background: var(--paper);
   border: 1px solid var(--line);
+  border-left: 2px solid var(--border);   /* subtle grey depth edge — all cards */
   border-radius: 12px;
   padding: 14px 14px 12px;
   box-shadow: 0 1px 4px var(--shadow);
+}
+/* Stats-tab cards: accent on top instead of left */
+.az-card--top {
+  border-left: 1px solid var(--line);
+  border-top: 2px solid var(--border);
 }
 .az-card--warn {
   border-color: rgba(245, 158, 11, 0.35);
