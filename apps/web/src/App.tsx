@@ -13943,15 +13943,17 @@ function InsightsPage({
                       </div>
                     )}
 
-                    {/* ── View 1: Share chart — filtered groups, collapsible ──── */}
+                    {/* ── View 1: Share chart ─────────────────────────────────── */}
+                    {/* All → collapsible groups; Upper/Lower/Core → flat rows  */}
                     {muscleCardView === 1 && (
                       <div className="az-muscle-view">
                         <p className="az-share-subtitle">Set share vs balanced ideal</p>
                         {muscleSetRows.length === 0 ? (
                           <p className="az-card-sub">No data in the selected period.</p>
-                        ) : (
+                        ) : muscleFilter === "all" ? (
+                          /* ── All: collapsible region groups ── */
                           <div className="az-share-chart">
-                            {visibleShareGroups.map(group => {
+                            {SHARE_GROUPS.map(group => {
                               const rows = muscleShareRows.filter(r => group.muscleLabels.includes(r.label));
                               const { actualSum, idealSum, st } = regionAch[group.key] ?? { actualSum: 0, idealSum: 0, pct: 0, st: "red" as const };
                               const isOpen = expandedShareGroups.has(group.key);
@@ -13996,6 +13998,33 @@ function InsightsPage({
                                 </div>
                               );
                             })}
+                          </div>
+                        ) : (
+                          /* ── Specific filter: flat rows, no header/chevron ── */
+                          <div className="az-share-chart">
+                            {muscleShareRows
+                              .filter(r => visibleShareGroups[0]?.muscleLabels.includes(r.label))
+                              .map(row => (
+                                <div key={row.label} className="az-share-row">
+                                  <div className="az-share-row-top">
+                                    <span className="az-share-row-label">{row.label}</span>
+                                    <span className={`az-share-row-deviation az-share-row-deviation--${row.status}`}>
+                                      {row.deviationPct > 0 ? "+" : ""}{row.deviationPct}%
+                                    </span>
+                                  </div>
+                                  <div className="az-share-track">
+                                    <div className="az-share-ideal-tick"
+                                      style={{ left: `${Math.min(row.idealPct * 2, 98)}%` }} />
+                                    <div className={`az-share-bar az-share-bar--${row.status}`}
+                                      style={{ width: `${Math.min(row.actualPct * 2, 100)}%` }} />
+                                  </div>
+                                  <div className="az-share-row-meta">
+                                    <span className="az-share-actual">{row.actualPct}% actual</span>
+                                    <span className="az-share-ideal">target {row.idealPct}%</span>
+                                  </div>
+                                </div>
+                              ))
+                            }
                           </div>
                         )}
                       </div>

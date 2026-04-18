@@ -14860,10 +14860,8 @@ ol {
   grid-template-columns: 1fr auto auto;
   align-items: center;
   gap: 8px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--line);
+  padding: 5px 0;
 }
-.az-muscle-row:last-child { border-bottom: none; }
 .az-muscle-row--zero { opacity: 0.45; }
 .az-muscle-row-name {
   font-size: 0.82rem;
@@ -14928,8 +14926,7 @@ ol {
 .az-muscle-slide-area { touch-action: pan-y; }
 
 /* ── A7 collapsible muscle groups (sets view) ────────────────────────────── */
-.az-muscle-group { border-bottom: 1px solid var(--line); }
-.az-muscle-group:last-child { border-bottom: none; }
+.az-muscle-group { }
 .az-muscle-group-header {
   width: 100%;
   display: flex;
