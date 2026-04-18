@@ -14883,6 +14883,148 @@ ol {
   text-align: center;
 }
 
+/* ── A7 slide dots ───────────────────────────────────────────────────────── */
+.az-card-dots {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.az-card-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+.az-card-dot.is-active {
+  background: var(--accent);
+  transform: scale(1.25);
+}
+
+/* ── A7 card slider ──────────────────────────────────────────────────────── */
+.az-muscle-slider {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.az-muscle-slider::-webkit-scrollbar { display: none; }
+.az-muscle-slide {
+  flex: 0 0 100%;
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+/* ── A7 collapsible muscle groups ────────────────────────────────────────── */
+.az-muscle-group { border-bottom: 1px solid var(--line); }
+.az-muscle-group:last-child { border-bottom: none; }
+.az-muscle-group-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+.az-muscle-group-label {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+}
+.az-muscle-group-sets {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.az-muscle-group-chevron {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  width: 14px;
+  text-align: center;
+}
+.az-muscle-rows--nested {
+  padding: 0 0 6px 12px;
+}
+.az-muscle-rows--nested .az-muscle-row {
+  border-color: color-mix(in srgb, var(--line) 60%, transparent);
+}
+.az-muscle-rows--nested .az-muscle-row-name { font-size: 0.78rem; }
+
+/* ── A7b: Share bullet chart ─────────────────────────────────────────────── */
+.az-share-subtitle {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  font-weight: 500;
+}
+.az-share-chart { display: flex; flex-direction: column; gap: 14px; }
+.az-share-row { display: flex; flex-direction: column; gap: 5px; }
+.az-share-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.az-share-row-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.az-share-row-deviation {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 5px;
+}
+.az-share-row-deviation--green { background: rgba(34,197,94,0.12);  color: #15803d; }
+.az-share-row-deviation--amber { background: rgba(245,158,11,0.12); color: #b45309; }
+.az-share-row-deviation--red   { background: rgba(239,68,68,0.12);  color: #dc2626; }
+.az-share-track {
+  position: relative;
+  height: 10px;
+  background: var(--line);
+  border-radius: 5px;
+  overflow: visible;
+}
+.az-share-bar {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.4s ease;
+}
+.az-share-bar--green { background: #22c55e; }
+.az-share-bar--amber { background: #f59e0b; }
+.az-share-bar--red   { background: #ef4444; }
+/* Ideal target tick — sits on top of track */
+.az-share-ideal-tick {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 16px;
+  background: var(--text);
+  border-radius: 1px;
+  transform: translateX(-50%);
+  opacity: 0.5;
+}
+.az-share-row-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+/* dark mode adjustments */
+:root[data-theme="dark"] .az-share-row-deviation--green { background: rgba(34,197,94,0.18);  }
+:root[data-theme="dark"] .az-share-row-deviation--amber { background: rgba(245,158,11,0.18); }
+:root[data-theme="dark"] .az-share-row-deviation--red   { background: rgba(239,68,68,0.18);  color: #fca5a5; }
+:root[data-theme="dark"] .az-share-ideal-tick { opacity: 0.35; }
+
 /* ── A8: Top exercises ───────────────────────────────────────────────────── */
 .az-ex-rows { display: flex; flex-direction: column; }
 .az-ex-row {
