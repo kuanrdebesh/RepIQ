@@ -15195,6 +15195,18 @@ ol {
 }
 .az-week-bar-count--met { color: #16a34a; font-weight: 600; }
 
+/* Daily variant — bar is binary, dot indicator replaces fraction */
+.az-week-bar-row--day { gap: 6px; }
+.az-week-bar-row--day .az-week-bar-label { font-size: 0.65rem; }
+.az-week-bar-row--day .az-week-bar-track { height: 6px; }
+.az-week-bar-day-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+  flex-shrink: 0;
+}
+.az-week-bar-day-dot.is-trained { background: #16a34a; }
+
 /* dark overrides for A6–A9 */
 :root[data-theme="dark"] .az-mov-status--missing  { background: rgba(107,114,128,0.18); }
 :root[data-theme="dark"] .az-mov-status--low      { background: rgba(245,158,11,0.18);  }

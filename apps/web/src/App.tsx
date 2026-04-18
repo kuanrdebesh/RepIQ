@@ -13449,25 +13449,139 @@ function InsightsPage({
   }, [rangedWorkouts, comparisonWorkouts]);
 
   // ── A9: Calendar dots (last 10 weeks) ───────────────────────────────────────
-  const calendarDots = useMemo(() => {
-    const trainedDays = new Set(savedWorkouts.map(w => w.savedAt.slice(0, 10)));
-    const today = new Date();
-    const weeks: { date: string; trained: boolean; future: boolean }[][] = [];
-    // Find start of the week 9 weeks ago (Monday)
-    const startDay = new Date(today);
-    startDay.setDate(today.getDate() - today.getDay() + 1 - 9 * 7); // Mon, 10 weeks ago
-    for (let w = 0; w < 10; w++) {
-      const week: { date: string; trained: boolean; future: boolean }[] = [];
-      for (let d = 0; d < 7; d++) {
-        const dt = new Date(startDay);
-        dt.setDate(startDay.getDate() + w * 7 + d);
-        const iso = dt.toISOString().slice(0, 10);
-        week.push({ date: iso, trained: trainedDays.has(iso), future: dt > today });
-      }
-      weeks.push(week);
+  // ── Adaptive consistency bars ─────────────────────────────────────────────
+  // Granularity adapts to the selected date range:
+  //   ≤ 14 days  → daily bars (binary: trained/rest)
+  //   15–90 days → weekly bars (sessions / targetPerWeek)
+  //   > 90 days  → monthly bars (prorated target)
+  // "all" chip: monthly with adaptive interval (1 / 3 / 6 / 12 / 24 months)
+  // based on total months of data.
+  type ConsistencyBar = {
+    label: string; sessions: number; target: number;
+    fillPct: number; met: boolean; isCurrent: boolean;
+    granularity: "day" | "week" | "month";
+  };
+  const consistencyBars = useMemo((): ConsistencyBar[] => {
+    const trainedSet = new Set(savedWorkouts.map(w => w.savedAt.slice(0, 10)));
+    const today = new Date(todayISO + "T12:00:00");
+    const chip = resolvedRange.chip;
+    const rangeEnd = new Date(resolvedRange.end + "T12:00:00");
+
+    // For "all" chip use first workout date; otherwise use range start
+    let effectiveStart: Date;
+    if (chip === "all") {
+      if (savedWorkouts.length === 0) return [];
+      const firstDate = [...savedWorkouts].map(w => w.savedAt.slice(0, 10)).sort()[0];
+      effectiveStart = new Date(firstDate + "T12:00:00");
+    } else {
+      effectiveStart = new Date(resolvedRange.start + "T12:00:00");
     }
-    return weeks;
-  }, [savedWorkouts]);
+
+    const totalDays = Math.round((rangeEnd.getTime() - effectiveStart.getTime()) / 864e5) + 1;
+
+    // Determine granularity + month interval (for "all")
+    type Gran = "day" | "week" | "month";
+    let gran: Gran;
+    let monthStep = 1;
+    if (chip === "all") {
+      gran = "month";
+      const totalMonths = Math.ceil(totalDays / 30.44);
+      if      (totalMonths <= 18)  monthStep = 1;
+      else if (totalMonths <= 54)  monthStep = 3;
+      else if (totalMonths <= 108) monthStep = 6;
+      else if (totalMonths <= 216) monthStep = 12;
+      else                         monthStep = 24;
+    } else if (totalDays <= 14) {
+      gran = "day";
+    } else if (totalDays <= 90) {
+      gran = "week";
+    } else {
+      gran = "month";
+    }
+
+    const bars: ConsistencyBar[] = [];
+
+    if (gran === "day") {
+      const short = totalDays <= 7;
+      const DAY_ABBR = ["Su","M","Tu","W","Th","F","Sa"];
+      for (let d = 0; d < totalDays; d++) {
+        const dt = new Date(effectiveStart);
+        dt.setDate(effectiveStart.getDate() + d);
+        if (dt > today) break;
+        const iso = dt.toISOString().slice(0, 10);
+        const trained = trainedSet.has(iso);
+        const isCurrent = iso === todayISO;
+        const label = short
+          ? DAY_ABBR[dt.getDay()]
+          : dt.toLocaleDateString("en", { month: "short", day: "numeric" });
+        bars.push({ label, sessions: trained ? 1 : 0, target: 1,
+          fillPct: trained ? 100 : 0, met: trained, isCurrent, granularity: "day" });
+      }
+    } else if (gran === "week") {
+      // Align to Monday of the week containing effectiveStart
+      const dow = effectiveStart.getDay();
+      const monday = new Date(effectiveStart);
+      monday.setDate(effectiveStart.getDate() - (dow === 0 ? 6 : dow - 1));
+      let wk = new Date(monday);
+      while (wk <= rangeEnd && wk <= today) {
+        const wkEnd = new Date(wk); wkEnd.setDate(wk.getDate() + 6);
+        const isCurrent = today >= wk && today <= wkEnd;
+        let sessions = 0;
+        for (let d = 0; d < 7; d++) {
+          const dt = new Date(wk); dt.setDate(wk.getDate() + d);
+          if (dt > today || dt > rangeEnd || dt < effectiveStart) continue;
+          if (trainedSet.has(dt.toISOString().slice(0, 10))) sessions++;
+        }
+        const label = wk.toLocaleDateString("en", { month: "short", day: "numeric" });
+        const fillPct = Math.min(sessions / Math.max(targetPerWeek, 1) * 100, 100);
+        bars.push({ label, sessions, target: targetPerWeek,
+          fillPct, met: sessions >= targetPerWeek, isCurrent, granularity: "week" });
+        wk.setDate(wk.getDate() + 7);
+      }
+    } else {
+      // Monthly (with adaptive monthStep for "all")
+      let y = effectiveStart.getFullYear(), m = effectiveStart.getMonth();
+      const endY = rangeEnd.getFullYear(), endM = rangeEnd.getMonth();
+      // Snap back to step boundary
+      m = Math.floor(m / monthStep) * monthStep;
+      while ((y < endY || (y === endY && m <= endM)) && new Date(y, m, 1) <= today) {
+        const bucketStart = new Date(y, m, 1);
+        const bucketEnd   = new Date(y, m + monthStep, 0); // last day of last month in bucket
+        const effStart = bucketStart < effectiveStart ? effectiveStart : bucketStart;
+        const effEnd   = bucketEnd   > today          ? today          : bucketEnd;
+        // Count workouts in bucket (within resolved range)
+        let sessions = 0;
+        const s = effStart.toISOString().slice(0, 10);
+        const e = effEnd.toISOString().slice(0, 10);
+        for (const w of savedWorkouts) {
+          const d = w.savedAt.slice(0, 10);
+          if (d >= s && d <= e) sessions++;
+        }
+        const bucketDays = Math.round((effEnd.getTime() - effStart.getTime()) / 864e5) + 1;
+        const target = Math.max(1, Math.round(targetPerWeek * bucketDays / 7));
+        const fillPct = Math.min(sessions / target * 100, 100);
+        const isCurrent = today >= bucketStart && today <= bucketEnd;
+        // Label
+        let label: string;
+        const yr2 = String(y).slice(2);
+        if      (monthStep === 1)  {
+          const newYear = m === 0 || (y === effectiveStart.getFullYear() && m === effectiveStart.getMonth());
+          label = newYear
+            ? bucketStart.toLocaleDateString("en", { month: "short", year: "2-digit" })
+            : bucketStart.toLocaleDateString("en", { month: "short" });
+        }
+        else if (monthStep === 3)  label = `Q${Math.floor(m/3)+1} '${yr2}`;
+        else if (monthStep === 6)  label = m < 6 ? `H1 '${yr2}` : `H2 '${yr2}`;
+        else if (monthStep === 12) label = String(y);
+        else                       label = `${y}–${String(y+1).slice(2)}`;
+        bars.push({ label, sessions, target, fillPct, met: sessions >= target && target > 0,
+          isCurrent, granularity: "month" });
+        m += monthStep;
+        while (m >= 12) { m -= 12; y++; }
+      }
+    }
+    return bars;
+  }, [savedWorkouts, resolvedRange, targetPerWeek, todayISO]);
 
   const hasEnoughData = savedWorkouts.length >= 3;
 
@@ -13823,29 +13937,35 @@ function InsightsPage({
                     <p className="az-stat-lbl">Last gap</p>
                   </div>
                 </div>
-                {/* Week bar chart — 10 weeks, most recent at bottom */}
+                {/* Adaptive bar chart — granularity follows date range */}
                 <div className="az-week-bars">
-                  {calendarDots.map((week, wi) => {
-                    const sessions = week.filter(d => d.trained).length;
-                    const isCurrent = wi === calendarDots.length - 1;
-                    const allFuture = week.every(d => d.future);
-                    if (allFuture) return null;
-                    const fillPct = Math.min(sessions / Math.max(targetPerWeek, 1) * 100, 100);
-                    const met = sessions >= targetPerWeek;
-                    const weekStart = new Date(week[0].date + "T12:00:00");
-                    const label = weekStart.toLocaleDateString("en", { month: "short", day: "numeric" });
+                  {consistencyBars.length === 0 && (
+                    <p className="az-card-sub">No workouts logged yet.</p>
+                  )}
+                  {consistencyBars.map((bar, i) => {
+                    const isDay = bar.granularity === "day";
+                    const showCount = !isDay; // daily bars are binary — no fraction needed
+                    const currentLabel = bar.granularity === "week" ? "This wk"
+                      : bar.granularity === "month" ? "Now" : "Today";
                     return (
-                      <div key={wi} className={`az-week-bar-row${isCurrent ? " is-current" : ""}`}>
-                        <span className="az-week-bar-label">{isCurrent ? "This wk" : label}</span>
+                      <div key={i} className={`az-week-bar-row${bar.isCurrent ? " is-current" : ""}${isDay ? " az-week-bar-row--day" : ""}`}>
+                        <span className="az-week-bar-label">
+                          {bar.isCurrent ? currentLabel : bar.label}
+                        </span>
                         <div className="az-week-bar-track">
                           <div
-                            className={`az-week-bar-fill${met ? " az-week-bar-fill--met" : isCurrent ? " az-week-bar-fill--current" : ""}`}
-                            style={{ width: `${fillPct}%` }}
+                            className={`az-week-bar-fill${bar.met ? " az-week-bar-fill--met" : bar.isCurrent ? " az-week-bar-fill--current" : ""}`}
+                            style={{ width: `${bar.fillPct}%` }}
                           />
                         </div>
-                        <span className={`az-week-bar-count${met ? " az-week-bar-count--met" : ""}`}>
-                          {sessions}/{targetPerWeek}
-                        </span>
+                        {showCount && (
+                          <span className={`az-week-bar-count${bar.met ? " az-week-bar-count--met" : ""}`}>
+                            {bar.sessions}/{bar.target}
+                          </span>
+                        )}
+                        {isDay && (
+                          <span className={`az-week-bar-day-dot${bar.met ? " is-trained" : ""}`} />
+                        )}
                       </div>
                     );
                   })}
