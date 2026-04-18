@@ -14659,31 +14659,42 @@ ol {
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
-.az-score-chip {
-  border-radius: 10px;
-  padding: 10px 8px;
+/* Ring progress indicators */
+.az-score-ring {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  text-align: center;
-  border: 1.5px solid transparent;
+  gap: 6px;
 }
-.az-score-chip--green { background: rgba(34,197,94,0.1);  border-color: rgba(34,197,94,0.2);  }
-.az-score-chip--amber { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.2); }
-.az-score-chip--red   { background: rgba(239,68,68,0.1);  border-color: rgba(239,68,68,0.2);  }
-.az-score-val {
-  font-size: 0.9rem;
+.az-score-ring-wrap {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  flex-shrink: 0;
+}
+.az-score-ring-wrap svg {
+  display: block;
+}
+.az-score-ring-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.az-score-ring-val {
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--text);
   line-height: 1;
 }
-.az-score-lbl {
+.az-score-ring-lbl {
   font-size: 0.65rem;
+  font-weight: 600;
   color: var(--text-muted);
-  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  text-align: center;
 }
 
 /* ── Summary tab — A5 takeaway cards ────────────────────────────────────── */
@@ -14758,9 +14769,7 @@ ol {
 
 /* dark mode extras */
 :root[data-theme="dark"] .az-nbt-clear .az-nbt-label { color: #86efac; }
-:root[data-theme="dark"] .az-score-chip--green { background: rgba(34,197,94,0.08);  }
-:root[data-theme="dark"] .az-score-chip--amber { background: rgba(245,158,11,0.08); }
-:root[data-theme="dark"] .az-score-chip--red   { background: rgba(239,68,68,0.08);  }
+/* ring track adapts via var(--line) — no dark overrides needed */
 
 /* ── A6: Movement balance chart ──────────────────────────────────────────── */
 .az-mov-chart { display: flex; flex-direction: column; gap: 10px; }

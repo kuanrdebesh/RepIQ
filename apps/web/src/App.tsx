@@ -13593,26 +13593,44 @@ function InsightsPage({
                   );
                 })()}
 
-                {/* ── A4: 3 health score chips ─────────────────────────────────── */}
-                <div className="az-health-scores">
-                  {/* Consistency */}
-                  <div className={`az-score-chip az-score-chip--${ringConsistency >= 75 ? "green" : ringConsistency >= 50 ? "amber" : "red"}`}>
-                    <p className="az-score-val">{ringConsistency}%</p>
-                    <p className="az-score-lbl">Consistency</p>
-                  </div>
-                  {/* Goal alignment */}
-                  <div className={`az-score-chip az-score-chip--${goalAlignment.label === "aligned" ? "green" : goalAlignment.label === "partially_aligned" ? "amber" : "red"}`}>
-                    <p className="az-score-val">
-                      {goalAlignment.label === "aligned" ? "Aligned" : goalAlignment.label === "partially_aligned" ? "Drifting" : "Off-track"}
-                    </p>
-                    <p className="az-score-lbl">Goal</p>
-                  </div>
-                  {/* Movement balance */}
-                  <div className={`az-score-chip az-score-chip--${movementBalance.imbalances.length === 0 ? "green" : "amber"}`}>
-                    <p className="az-score-val">{movementBalance.imbalances.length === 0 ? "Balanced" : "Imbalanced"}</p>
-                    <p className="az-score-lbl">Movement</p>
-                  </div>
-                </div>
+                {/* ── A4: 3 health score rings ─────────────────────────────────── */}
+                {(() => {
+                  const goalPct = goalAlignment.label === "aligned" ? 100
+                    : goalAlignment.label === "partially_aligned" ? 55 : 20;
+                  const movPct = Math.max(0, 100 - movementBalance.imbalances.length * 25);
+                  const rings: { pct: number; color: string; label: string; display: string }[] = [
+                    { pct: ringConsistency, color: "#4a97cf", label: "Consistency", display: `${ringConsistency}%` },
+                    { pct: goalPct,         color: "#8b5cf6", label: "Goal",        display: `${goalPct}%` },
+                    { pct: movPct,          color: "#10b981", label: "Movement",    display: `${movPct}%` },
+                  ];
+                  const R = 26, C = +(2 * Math.PI * R).toFixed(2);
+                  return (
+                    <div className="az-health-scores">
+                      {rings.map(({ pct, color, label, display }) => {
+                        const offset = +(C * (1 - Math.max(0, Math.min(100, pct)) / 100)).toFixed(2);
+                        return (
+                          <div key={label} className="az-score-ring">
+                            <div className="az-score-ring-wrap">
+                              <svg width="68" height="68" viewBox="0 0 68 68" aria-hidden>
+                                <circle cx="34" cy="34" r={R} fill="none" stroke="var(--line)" strokeWidth="7" />
+                                <circle cx="34" cy="34" r={R} fill="none"
+                                  stroke={color} strokeWidth="7" strokeLinecap="round"
+                                  strokeDasharray={C} strokeDashoffset={offset}
+                                  transform="rotate(-90 34 34)"
+                                  style={{ transition: "stroke-dashoffset 0.5s ease" }}
+                                />
+                              </svg>
+                              <div className="az-score-ring-inner">
+                                <span className="az-score-ring-val">{display}</span>
+                              </div>
+                            </div>
+                            <p className="az-score-ring-lbl">{label}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
 
                 {/* ── A5: Max 2 takeaway cards (red > amber > green) ───────────── */}
                 {[...insightFeed]
