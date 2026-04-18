@@ -18,7 +18,7 @@ import { allCatalogExercises, generationCatalogExercises } from "./catalog";
 import { getStoredReplacementEvents, persistReplacementEvent, getStoredExercisePreferences, persistExercisePreference, getStoredHiddenSuggestions, persistHiddenSuggestion, removeHiddenSuggestion, themeStorageKey, workoutSettingsStorageKey, customExercisesStorageKey, savedWorkoutsStorageKey, workoutPlansStorageKey, planBuilderDraftStorageKey, psychProfileStorageKey, postWorkoutPsychStorageKey, dailyReadinessStorageKey, sessionBehaviorStorageKey, derivedPsychStorageKey, repiqPlanStorageKey, getStoredSavedWorkouts, persistSavedWorkout, persistSavedWorkoutsList, overwriteSavedWorkout, getStoredPsychProfile, persistPsychProfile, getStoredRepIQPlan, persistRepIQPlan, getStoredPostWorkoutPsych, persistPostWorkoutPsych, getStoredDailyReadiness, persistDailyReadiness, getStoredSessionBehavior, persistSessionBehavior, getStoredWorkoutPlans, persistWorkoutPlans, getStoredPlanBuilderDraft, persistPlanBuilderDraft, SAMPLE_WORKOUT_PLANS, SAMPLE_PLAN_IDS, seedWorkoutHistory, getStoredDateRangePrefs, persistDateRangePrefs } from "./storage";
 import { resolveDateRange, isWithinRange, isWithinComparison, ROLLING_CHIPS, TO_DATE_CHIPS, chipLabel } from "./analytics/dateRange";
 import { resolveInsightMode, gapTier } from "./analytics/insightMode";
-import { TODAY_COPY, SIGNAL_COPY, WEEK_COPY, pickCopy } from "./analytics/insightCopy";
+import { TODAY_COPY, SIGNAL_COPY, WEEK_COPY, MONTH_COPY, pickCopy } from "./analytics/insightCopy";
 import { seedDemoWorkouts } from "./demoData";
 import { DEFAULT_PSYCH_PROFILE, deriveTimeOfDay, buildSessionBehaviorSignals, createInitialSwipeState, COMPOUND_PATTERNS } from "./types";
 import type { DateRangePrefs, DateRangeMode, RollingChip, ToDateChip, DateRangeChip, FlowState, DraftSet, ExerciseDraft, DetailTab, ThemePreference, DraftSetType, AppView, MotivationalWhy, TrainingGoal, ExperienceLevel, EquipmentAccess, ScheduleCommitment, MoodRating, EnergyRating, RPERating, ThreePointScale, TimeOfDay, SessionSource, Trend, MotivationStyle, UserPsychProfile, PostWorkoutPsych, DailyReadiness, SessionBehaviorSignals, DerivedPsychProfile, SplitType, RepIQPlanExercise, RepIQPlanDay, RepIQPlanWeek, RepIQPlan, PlannedExercise, WorkoutPlan, PlanBuilderMode, PlanSessionSource, ActivePlanSession, WorkoutSettings, WorkoutMeta, RewardCategory, RewardLevel, AddExerciseMode, CreateExerciseStep, CustomExerciseType, MeasurementType, MovementSide, MovementPattern, ExerciseDifficulty, ExerciseAngle, ExerciseEquipment, ExerciseImplement, ReplacementReason, ReplacementEvent, ExerciseWithTaxonomy, CustomExerciseInput, LoggerReward, RewardSummary, FinishedExerciseSummary, FinishWorkoutDraft, SavedWorkoutData, ExerciseRestDefaults, SwipeState, ActiveRestTimer, MuscleRegion } from "./types";
@@ -13296,6 +13296,28 @@ function InsightsPage({
     [psychProfile, savedWorkouts],
   );
 
+  // Month-over-month volume, for the This Month card on Summary.
+  // Current = calendar month to date; Prior = same range in previous month.
+  const monthVolume = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+    const curStartMs = Date.UTC(y, m, 1);
+    const curEndMs = Date.UTC(y, m, d, 23, 59, 59);
+    const prevStartMs = Date.UTC(y, m - 1, 1);
+    const prevEndMs = Date.UTC(y, m - 1, d, 23, 59, 59);
+    let cur = 0, prev = 0;
+    for (const w of savedWorkouts) {
+      const ds = (w.date ?? w.savedAt ?? "").slice(0, 10);
+      if (!ds) continue;
+      const [wy, wm, wd] = ds.split("-").map(Number);
+      const wMs = Date.UTC(wy, wm - 1, wd);
+      const v = w.totalVolume ?? 0;
+      if (wMs >= curStartMs && wMs <= curEndMs) cur += v;
+      else if (wMs >= prevStartMs && wMs <= prevEndMs) prev += v;
+    }
+    return { current: cur, previous: prev };
+  }, [savedWorkouts]);
+
   // Comparison-period workouts (for delta arrows in A6–A8)
   const comparisonWorkouts = useMemo(
     () => savedWorkouts.filter((w) => isWithinComparison(w.savedAt, resolvedRange)),
@@ -13975,6 +13997,37 @@ function InsightsPage({
                   return (
                     <div className={`az-card az-horizon-card az-horizon-card--${severity}`}>
                       <p className="az-horizon-label">THIS WEEK</p>
+                      <p className="az-horizon-body">{body}</p>
+                    </div>
+                  );
+                })()}
+
+                {/* ── This Month card — MoM volume pulse ─────────────────────────
+                    Requires L3 (plenty of data) AND a previous-month baseline.
+                    MoM comparison is noise-prone below 20 sessions, and
+                    meaningless if the user wasn't training last month. */}
+                {insightMode.maturity === "L3" && monthVolume.previous > 0 && (() => {
+                  const { tone } = insightMode;
+                  const { current, previous } = monthVolume;
+                  const deltaPct = Math.round(((current - previous) / previous) * 100);
+                  const absPct = Math.abs(deltaPct);
+
+                  const variant: "volumeUp" | "volumeDown" | "stable" =
+                    absPct < 5 ? "stable"
+                    : deltaPct > 0 ? "volumeUp"
+                    : "volumeDown";
+
+                  const body =
+                    variant === "stable"   ? pickCopy(MONTH_COPY.stable, tone)
+                    : variant === "volumeUp" ? pickCopy(MONTH_COPY.volumeUp, tone, absPct)
+                    : pickCopy(MONTH_COPY.volumeDown, tone, absPct);
+
+                  const severity: "good" | "warn" =
+                    variant === "volumeDown" ? "warn" : "good";
+
+                  return (
+                    <div className={`az-card az-horizon-card az-horizon-card--${severity}`}>
+                      <p className="az-horizon-label">THIS MONTH</p>
                       <p className="az-horizon-body">{body}</p>
                     </div>
                   );
