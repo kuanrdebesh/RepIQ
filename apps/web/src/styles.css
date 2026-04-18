@@ -14904,29 +14904,23 @@ ol {
   transform: scale(1.25);
 }
 
-/* ── A7 card slider ──────────────────────────────────────────────────────── */
-.az-muscle-slider {
-  display: flex;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-.az-muscle-slider::-webkit-scrollbar { display: none; }
-.az-muscle-slide {
-  flex: 0 0 100%;
-  min-width: 0;
-  scroll-snap-align: start;
-}
+/* ── A7 controlled view (no scroll-snap; height follows content) ─────────── */
+.az-muscle-view { animation: az-view-in 0.15s ease; }
+@keyframes az-view-in { from { opacity: 0; } to { opacity: 1; } }
 
-/* ── A7 collapsible muscle groups ────────────────────────────────────────── */
+/* ── A7 collapsible muscle groups (sets view) ────────────────────────────── */
 .az-muscle-group { border-bottom: 1px solid var(--line); }
 .az-muscle-group:last-child { border-bottom: none; }
 .az-muscle-group-header {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 9px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
 }
 .az-muscle-group-label {
   font-size: 0.84rem;
@@ -14939,22 +14933,6 @@ ol {
   color: var(--text-muted);
   white-space: nowrap;
 }
-/* Unified expand/collapse toggle for all groups */
-.az-groups-toggle {
-  display: block;
-  width: 100%;
-  margin-top: 10px;
-  padding: 7px 0;
-  background: none;
-  border: none;
-  border-top: 1px solid var(--line);
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--accent);
-  cursor: pointer;
-  text-align: center;
-  letter-spacing: 0.02em;
-}
 .az-muscle-rows--nested {
   padding: 0 0 6px 12px;
 }
@@ -14962,6 +14940,57 @@ ol {
   border-color: color-mix(in srgb, var(--line) 60%, transparent);
 }
 .az-muscle-rows--nested .az-muscle-row-name { font-size: 0.78rem; }
+
+/* ── A7b: Share chart — collapsible groups ───────────────────────────────── */
+.az-share-group {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 2px;
+}
+.az-share-group:last-child { border-bottom: none; }
+.az-share-group-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+.az-share-group-label {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+  min-width: 76px;
+}
+.az-share-group-track {
+  flex: 1;
+  height: 8px;
+  background: var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.az-share-group-pct {
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+  min-width: 34px;
+  text-align: right;
+}
+.az-share-group-pct--green { color: #16a34a; }
+.az-share-group-pct--amber { color: #b45309; }
+.az-share-group-pct--red   { color: #dc2626; }
+.az-share-detail {
+  padding: 2px 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* Individual rows inside expanded group — slightly more compact */
+.az-share-detail .az-share-row-label { font-size: 0.78rem; font-weight: 500; }
+.az-share-detail .az-share-track { height: 7px; }
 
 /* ── A7b: Share bullet chart ─────────────────────────────────────────────── */
 .az-share-subtitle {

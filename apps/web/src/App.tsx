@@ -13203,15 +13203,18 @@ function InsightsPage({
   const [showDetails, setShowDetails] = useState(false);
   const [muscleFilter, setMuscleFilter] = useState<"all" | "upper" | "lower" | "core">("all");
   const [showAllExercises, setShowAllExercises] = useState(false);
-  // Muscle card — slider view (0=sets, 1=share chart) + unified expand state
+  // Muscle card: controlled view (no scroll-snap, height follows content)
+  // expandedGroups  → per-group expand in the Sets slide
+  // expandedShareGroups → per-group expand in the Share-chart slide
   const [muscleCardView, setMuscleCardView] = useState<0 | 1>(0);
-  const [allGroupsExpanded, setAllGroupsExpanded] = useState(false);
-  const muscleSliderRef = useRef<HTMLDivElement>(null);
-  // Reset muscle card state when leaving stats tab
+  const [expandedGroups, setExpandedGroups] = useState<Set<"upper" | "lower" | "core">>(new Set());
+  const [expandedShareGroups, setExpandedShareGroups] = useState<Set<string>>(new Set());
+  // Reset when leaving Stats tab
   useEffect(() => {
     if (tab !== "stats") {
       setMuscleCardView(0);
-      setAllGroupsExpanded(false);
+      setExpandedGroups(new Set());
+      setExpandedShareGroups(new Set());
     }
   }, [tab]);
 
@@ -13799,153 +13802,177 @@ function InsightsPage({
                 )}
               </div>
 
-              {/* ── A7: Muscle set count + share chart (2-slide card) ─────────── */}
-              <div className="az-card az-card--top">
-                {/* Card header: title + slide dots */}
-                <div className="az-card-header-row" style={{ marginBottom: 10 }}>
-                  <p className="az-card-title" style={{ marginBottom: 0 }}>Muscles</p>
-                  <div className="az-card-dots">
-                    {([0, 1] as const).map(i => (
-                      <button key={i} type="button"
-                        className={`az-card-dot${muscleCardView === i ? " is-active" : ""}`}
-                        aria-label={i === 0 ? "Sets view" : "Share chart"}
-                        onClick={() => {
-                          setMuscleCardView(i);
-                          const el = muscleSliderRef.current;
-                          if (el) el.scrollTo({ left: i * el.offsetWidth, behavior: "smooth" });
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                {/* Slider */}
-                <div
-                  ref={muscleSliderRef}
-                  className="az-muscle-slider"
-                  onScroll={e => {
-                    const el = e.currentTarget;
-                    const idx = Math.round(el.scrollLeft / el.offsetWidth) as 0 | 1;
-                    if (idx !== muscleCardView) setMuscleCardView(idx);
-                  }}
-                >
-                  {/* Slide 0: set counts — grouped (All) or flat (filtered) */}
-                  <div className="az-muscle-slide">
-                    {/* Filter chips */}
-                    <div className="az-filter-chips">
-                      {(["all", "upper", "lower", "core"] as const).map(f => (
-                        <button key={f} type="button"
-                          className={`az-filter-chip${muscleFilter === f ? " is-active" : ""}`}
-                          onClick={() => setMuscleFilter(f)}
-                        >
-                          {f.charAt(0).toUpperCase() + f.slice(1)}
-                        </button>
-                      ))}
+              {/* ── A7: Muscle card — controlled two-view (height follows content) ── */}
+              {(() => {
+                // Share chart group definitions (used in view 1)
+                const SHARE_GROUPS: { key: string; label: string; muscleLabels: string[] }[] = [
+                  { key: "upper", label: "Upper body", muscleLabels: ["Chest","Back","Shoulders","Biceps","Triceps"] },
+                  { key: "lower", label: "Lower body", muscleLabels: ["Quads","Hamstrings","Glutes","Calves"] },
+                  { key: "core",  label: "Core",        muscleLabels: ["Core"] },
+                ];
+                return (
+                  <div className="az-card az-card--top">
+                    {/* Header: title + view dots */}
+                    <div className="az-card-header-row" style={{ marginBottom: 10 }}>
+                      <p className="az-card-title" style={{ marginBottom: 0 }}>Muscles</p>
+                      <div className="az-card-dots">
+                        {([0, 1] as const).map(i => (
+                          <button key={i} type="button"
+                            className={`az-card-dot${muscleCardView === i ? " is-active" : ""}`}
+                            aria-label={i === 0 ? "Sets view" : "Share chart"}
+                            onClick={() => setMuscleCardView(i)}
+                          />
+                        ))}
+                      </div>
                     </div>
 
-                    {muscleFilter === "all" ? (
-                      // Three regions — all expand/collapse together
-                      <>
-                        {(["upper", "lower", "core"] as const).map(region => {
-                          const regionRows = muscleSetRows.filter(r => r.region === region);
-                          if (regionRows.length === 0) return null;
-                          const totalSets = regionRows.reduce((s, r) => s + r.sets, 0);
-                          const label = region === "upper" ? "Upper" : region === "lower" ? "Lower" : "Core";
-                          return (
-                            <div key={region} className="az-muscle-group">
-                              <div className="az-muscle-group-header">
-                                <span className="az-muscle-group-label">{label}</span>
-                                <span className="az-muscle-group-sets">{totalSets} sets</span>
-                              </div>
-                              {allGroupsExpanded && (
-                                <div className="az-muscle-rows az-muscle-rows--nested">
-                                  {regionRows.map(r => {
-                                    const delta = r.sets - r.prevSets;
-                                    const arrow = comparisonWorkouts.length > 0
-                                      ? (delta > 0 ? "↑" : delta < 0 ? "↓" : "→") : null;
-                                    return (
-                                      <div key={r.muscle} className="az-muscle-row">
-                                        <span className="az-muscle-row-name">{r.muscle}</span>
-                                        <span className="az-muscle-row-sets">{r.sets} sets</span>
-                                        {arrow && <span className={`az-muscle-arrow az-mov-arrow--${delta > 0 ? "up" : delta < 0 ? "down" : "flat"}`}>{arrow}</span>}
-                                      </div>
-                                    );
+                    {/* ── View 0: Set counts ────────────────────────────────── */}
+                    {muscleCardView === 0 && (
+                      <div className="az-muscle-view">
+                        <div className="az-filter-chips">
+                          {(["all", "upper", "lower", "core"] as const).map(f => (
+                            <button key={f} type="button"
+                              className={`az-filter-chip${muscleFilter === f ? " is-active" : ""}`}
+                              onClick={() => setMuscleFilter(f)}
+                            >
+                              {f.charAt(0).toUpperCase() + f.slice(1)}
+                            </button>
+                          ))}
+                        </div>
+
+                        {muscleFilter === "all" ? (
+                          // Individually collapsible groups
+                          (["upper", "lower", "core"] as const).map(region => {
+                            const regionRows = muscleSetRows.filter(r => r.region === region);
+                            if (regionRows.length === 0) return null;
+                            const totalSets = regionRows.reduce((s, r) => s + r.sets, 0);
+                            const isOpen = expandedGroups.has(region);
+                            const label = region === "upper" ? "Upper" : region === "lower" ? "Lower" : "Core";
+                            return (
+                              <div key={region} className="az-muscle-group">
+                                <button type="button" className="az-muscle-group-header"
+                                  onClick={() => setExpandedGroups(prev => {
+                                    const next = new Set(prev);
+                                    isOpen ? next.delete(region) : next.add(region);
+                                    return next;
                                   })}
+                                >
+                                  <span className="az-muscle-group-label">{label}</span>
+                                  <span className="az-muscle-group-sets">{totalSets} sets</span>
+                                  <span className="az-muscle-group-chevron">{isOpen ? "▲" : "▼"}</span>
+                                </button>
+                                {isOpen && (
+                                  <div className="az-muscle-rows az-muscle-rows--nested">
+                                    {regionRows.map(r => {
+                                      const delta = r.sets - r.prevSets;
+                                      const arrow = comparisonWorkouts.length > 0
+                                        ? (delta > 0 ? "↑" : delta < 0 ? "↓" : "→") : null;
+                                      return (
+                                        <div key={r.muscle} className="az-muscle-row">
+                                          <span className="az-muscle-row-name">{r.muscle}</span>
+                                          <span className="az-muscle-row-sets">{r.sets} sets</span>
+                                          {arrow && <span className={`az-muscle-arrow az-mov-arrow--${delta > 0 ? "up" : delta < 0 ? "down" : "flat"}`}>{arrow}</span>}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="az-muscle-rows">
+                            {muscleSetRows.filter(r => r.region === muscleFilter).map(r => {
+                              const delta = r.sets - r.prevSets;
+                              const arrow = comparisonWorkouts.length > 0
+                                ? (delta > 0 ? "↑" : delta < 0 ? "↓" : "→") : null;
+                              return (
+                                <div key={r.muscle} className="az-muscle-row">
+                                  <span className="az-muscle-row-name">{r.muscle}</span>
+                                  <span className="az-muscle-row-sets">{r.sets} sets</span>
+                                  {arrow && <span className={`az-muscle-arrow az-mov-arrow--${delta > 0 ? "up" : delta < 0 ? "down" : "flat"}`}>{arrow}</span>}
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                        {/* Single toggle for all groups */}
-                        <button
-                          type="button"
-                          className="az-groups-toggle"
-                          onClick={() => setAllGroupsExpanded(v => !v)}
-                        >
-                          {allGroupsExpanded ? "Collapse ▲" : "Show muscles ▼"}
-                        </button>
-                      </>
-                    ) : (
-                      // Flat filtered view
-                      <div className="az-muscle-rows">
-                        {muscleSetRows.filter(r => r.region === muscleFilter).map(r => {
-                          const delta = r.sets - r.prevSets;
-                          const arrow = comparisonWorkouts.length > 0
-                            ? (delta > 0 ? "↑" : delta < 0 ? "↓" : "→") : null;
-                          return (
-                            <div key={r.muscle} className="az-muscle-row">
-                              <span className="az-muscle-row-name">{r.muscle}</span>
-                              <span className="az-muscle-row-sets">{r.sets} sets</span>
-                              {arrow && <span className={`az-muscle-arrow az-mov-arrow--${delta > 0 ? "up" : delta < 0 ? "down" : "flat"}`}>{arrow}</span>}
-                            </div>
-                          );
-                        })}
-                        {muscleSetRows.filter(r => r.region === muscleFilter).length === 0 && (
-                          <p className="az-card-sub">No data for this group in the selected period.</p>
+                              );
+                            })}
+                            {muscleSetRows.filter(r => r.region === muscleFilter).length === 0 && (
+                              <p className="az-card-sub">No data for this group in the selected period.</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── View 1: Share chart — grouped, collapsible ────────── */}
+                    {muscleCardView === 1 && (
+                      <div className="az-muscle-view">
+                        <p className="az-share-subtitle">Set share vs balanced ideal</p>
+                        {muscleSetRows.length === 0 ? (
+                          <p className="az-card-sub">No data in the selected period.</p>
+                        ) : (
+                          <div className="az-share-chart">
+                            {SHARE_GROUPS.map(group => {
+                              const rows = muscleShareRows.filter(r => group.muscleLabels.includes(r.label));
+                              const actualSum = rows.reduce((s, r) => s + r.actualPct, 0);
+                              const idealSum  = rows.reduce((s, r) => s + r.idealPct,  0);
+                              const achievement = idealSum > 0 ? Math.round(actualSum / idealSum * 100) : 0;
+                              const gStatus = achievement >= 85 ? "green" : achievement >= 60 ? "amber" : "red";
+                              const isOpen = expandedShareGroups.has(group.key);
+                              return (
+                                <div key={group.key} className="az-share-group">
+                                  {/* Group header row — achievement bar + % */}
+                                  <button type="button" className="az-share-group-header"
+                                    onClick={() => setExpandedShareGroups(prev => {
+                                      const next = new Set(prev);
+                                      isOpen ? next.delete(group.key) : next.add(group.key);
+                                      return next;
+                                    })}
+                                  >
+                                    <span className="az-share-group-label">{group.label}</span>
+                                    <div className="az-share-group-track">
+                                      <div
+                                        className={`az-share-bar az-share-bar--${gStatus}`}
+                                        style={{ width: `${Math.min(achievement, 100)}%` }}
+                                      />
+                                    </div>
+                                    <span className={`az-share-group-pct az-share-group-pct--${gStatus}`}>
+                                      {achievement}%
+                                    </span>
+                                    <span className="az-muscle-group-chevron">{isOpen ? "▲" : "▼"}</span>
+                                  </button>
+                                  {/* Expanded: individual muscle bullet rows */}
+                                  {isOpen && (
+                                    <div className="az-share-detail">
+                                      {rows.map(row => (
+                                        <div key={row.label} className="az-share-row">
+                                          <div className="az-share-row-top">
+                                            <span className="az-share-row-label">{row.label}</span>
+                                            <span className={`az-share-row-deviation az-share-row-deviation--${row.status}`}>
+                                              {row.deviationPct > 0 ? "+" : ""}{row.deviationPct}%
+                                            </span>
+                                          </div>
+                                          <div className="az-share-track">
+                                            <div className="az-share-ideal-tick" style={{ left: `${Math.min(row.idealPct * 2, 98)}%` }} />
+                                            <div className={`az-share-bar az-share-bar--${row.status}`}
+                                              style={{ width: `${Math.min(row.actualPct * 2, 100)}%` }} />
+                                          </div>
+                                          <div className="az-share-row-meta">
+                                            <span className="az-share-actual">{row.actualPct}% actual</span>
+                                            <span className="az-share-ideal">target {row.idealPct}%</span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         )}
                       </div>
                     )}
                   </div>
-
-                  {/* Slide 1: bullet share chart (actual vs ideal) */}
-                  <div className="az-muscle-slide">
-                    <p className="az-share-subtitle">Set share vs balanced ideal</p>
-                    {muscleSetRows.length === 0 ? (
-                      <p className="az-card-sub">No data in selected period.</p>
-                    ) : (
-                      <div className="az-share-chart">
-                        {muscleShareRows.map(row => (
-                          <div key={row.label} className="az-share-row">
-                            <div className="az-share-row-top">
-                              <span className="az-share-row-label">{row.label}</span>
-                              <span className={`az-share-row-deviation az-share-row-deviation--${row.status}`}>
-                                {row.deviationPct > 0 ? "+" : ""}{row.deviationPct}%
-                              </span>
-                            </div>
-                            <div className="az-share-track">
-                              {/* Ideal marker */}
-                              <div
-                                className="az-share-ideal-tick"
-                                style={{ left: `${row.idealPct}%` }}
-                                title={`Ideal: ${row.idealPct}%`}
-                              />
-                              {/* Actual bar */}
-                              <div
-                                className={`az-share-bar az-share-bar--${row.status}`}
-                                style={{ width: `${Math.min(row.actualPct, 100)}%` }}
-                              />
-                            </div>
-                            <div className="az-share-row-meta">
-                              <span className="az-share-actual">{row.actualPct}% actual</span>
-                              <span className="az-share-ideal">target {row.idealPct}%</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+                );
+              })()}
 
               {/* ── A8: Main exercises ───────────────────────────────────────── */}
               <div className="az-card az-card--top">
