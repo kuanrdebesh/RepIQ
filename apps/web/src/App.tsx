@@ -13777,6 +13777,128 @@ function InsightsPage({
             )}
             <div className="az-content">
 
+              {/* ══ SECTION 1: Frequency & Progress ════════════════════════════ */}
+              <p className="az-section-label">Frequency &amp; Progress</p>
+
+              {/* ── Consistency ─────────────────────────────────────────────── */}
+              <div className="az-card az-card--top">
+                <p className="az-card-title">Consistency</p>
+                <div className="az-stat-grid" style={{ marginBottom: 14 }}>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{rangedWorkouts.length}</p>
+                    <p className="az-stat-lbl">Sessions</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{consistency.avgPerWeek}</p>
+                    <p className="az-stat-lbl">Avg / week</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{ringConsistency}%</p>
+                    <p className="az-stat-lbl">vs target</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{consistency.streak}</p>
+                    <p className="az-stat-lbl">Streak</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{consistency.longestStreak}</p>
+                    <p className="az-stat-lbl">Best streak</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{consistency.lastGapDays < 999 ? `${consistency.lastGapDays}d` : "—"}</p>
+                    <p className="az-stat-lbl">Last gap</p>
+                  </div>
+                </div>
+                {/* Calendar dot grid — 10 weeks */}
+                <div className="az-cal-grid">
+                  {calendarDots.map((week, wi) => (
+                    <div key={wi} className="az-cal-week">
+                      {week.map(day => (
+                        <span
+                          key={day.date}
+                          className={`az-cal-dot${day.future ? " az-cal-dot--future" : day.trained ? " az-cal-dot--trained" : " az-cal-dot--rest"}`}
+                          title={day.date}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                <div className="az-cal-legend">
+                  <span><span className="az-cal-dot az-cal-dot--trained" />Trained</span>
+                  <span><span className="az-cal-dot az-cal-dot--rest" />Rest</span>
+                </div>
+                {consistency.lastGapDays > 7 && (
+                  <p className="az-card-note az-note-warn" style={{ marginTop: 8 }}>Last session was {consistency.lastGapDays} days ago.</p>
+                )}
+              </div>
+
+              {/* ── Goal progress ─────────────────────────────────────────────── */}
+              <div className="az-card az-card--top">
+                <div className="az-card-header-row">
+                  <p className="az-card-title">Goal progress</p>
+                  <span className="az-goal-score">{goalProgress.score}/100</span>
+                </div>
+                <div className="az-progress-bar-wrap">
+                  <div className="az-progress-bar" style={{ width: `${goalProgress.score}%` }} />
+                </div>
+                <p className="az-goal-label">{goalProgress.label}</p>
+                <p className="az-card-sub">{goalProgress.insight}</p>
+              </div>
+
+              {/* ══ SECTION 2: Volume & Output ══════════════════════════════════ */}
+              <p className="az-section-label">Volume &amp; Output</p>
+
+              {/* ── Training trend + Session output — merged card ─────────────── */}
+              <div className="az-card az-card--top">
+                <div className="az-card-header-row" style={{ marginBottom: 10 }}>
+                  <p className="az-card-title" style={{ marginBottom: 0 }}>Training trend</p>
+                  {sessionSummary.volumeTrend !== "insufficient" && (
+                    <span className={`az-trend-badge az-trend-badge--${sessionSummary.volumeTrend}`}>
+                      Volume {trendArrow(sessionSummary.volumeTrend)}
+                    </span>
+                  )}
+                </div>
+                <div className="az-trend-weeks">
+                  {trainingTrend.recentWeeks.map(w => (
+                    <div key={w.label} className={`az-trend-wk az-trend-wk--${w.zone}${w.isCurrent ? " is-current" : ""}`}>
+                      <span className="az-trend-wk-label">{w.label}</span>
+                      <span className="az-trend-wk-zone">{w.zone === "progress" ? "↑" : w.zone === "plateau" ? "↓" : w.zone === "missed" ? "–" : "→"}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="az-card-sub" style={{ marginBottom: 14 }}>{trainingTrend.insight}</p>
+                <div className="az-section-divider" />
+                <div className="az-stat-grid" style={{ marginTop: 12 }}>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{sessionSummary.totalWorkouts}</p>
+                    <p className="az-stat-lbl">Total workouts</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{sessionSummary.totalSets}</p>
+                    <p className="az-stat-lbl">Total sets</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{formatVol(sessionSummary.totalVolumeKg)}</p>
+                    <p className="az-stat-lbl">Total volume</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{sessionSummary.avgDurationMin}m</p>
+                    <p className="az-stat-lbl">Avg duration</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{sessionSummary.avgSets}</p>
+                    <p className="az-stat-lbl">Avg sets</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{sessionSummary.avgExercises}</p>
+                    <p className="az-stat-lbl">Avg exercises</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ══ SECTION 3: Muscle & Movement ════════════════════════════════ */}
+              <p className="az-section-label">Muscle &amp; Movement</p>
+
               {/* ── A6: Movement balance chart ──────────────────────────────── */}
               <div className="az-card az-card--top">
                 <p className="az-card-title">Movement balance</p>
@@ -14059,6 +14181,9 @@ function InsightsPage({
                 );
               })()}
 
+              {/* ══ SECTION 4: Exercises ════════════════════════════════════════ */}
+              <p className="az-section-label">Exercises</p>
+
               {/* ── A8: Main exercises ───────────────────────────────────────── */}
               <div className="az-card az-card--top">
                 <p className="az-card-title">Main exercises</p>
@@ -14093,123 +14218,6 @@ function InsightsPage({
                     {showAllExercises ? "Show less" : `See all ${topExercises.length}`}
                   </button>
                 )}
-              </div>
-
-              {/* ── A9: Consistency breakdown ────────────────────────────────── */}
-              <div className="az-card az-card--top">
-                <p className="az-card-title">Consistency</p>
-                <div className="az-stat-grid" style={{ marginBottom: 14 }}>
-                  <div className="az-stat">
-                    <p className="az-stat-val">{rangedWorkouts.length}</p>
-                    <p className="az-stat-lbl">Sessions</p>
-                  </div>
-                  <div className="az-stat">
-                    <p className="az-stat-val">{consistency.avgPerWeek}</p>
-                    <p className="az-stat-lbl">Avg / week</p>
-                  </div>
-                  <div className="az-stat">
-                    <p className="az-stat-val">{ringConsistency}%</p>
-                    <p className="az-stat-lbl">vs target</p>
-                  </div>
-                  <div className="az-stat">
-                    <p className="az-stat-val">{consistency.streak}</p>
-                    <p className="az-stat-lbl">Streak</p>
-                  </div>
-                  <div className="az-stat">
-                    <p className="az-stat-val">{consistency.longestStreak}</p>
-                    <p className="az-stat-lbl">Best streak</p>
-                  </div>
-                  <div className="az-stat">
-                    <p className="az-stat-val">{consistency.lastGapDays < 999 ? `${consistency.lastGapDays}d` : "—"}</p>
-                    <p className="az-stat-lbl">Last gap</p>
-                  </div>
-                </div>
-                {/* Calendar dot grid — 10 weeks */}
-                <div className="az-cal-grid">
-                  {calendarDots.map((week, wi) => (
-                    <div key={wi} className="az-cal-week">
-                      {week.map(day => (
-                        <span
-                          key={day.date}
-                          className={`az-cal-dot${day.future ? " az-cal-dot--future" : day.trained ? " az-cal-dot--trained" : " az-cal-dot--rest"}`}
-                          title={day.date}
-                        />
-                      ))}
-                    </div>
-                  ))}
-                </div>
-                <div className="az-cal-legend">
-                  <span><span className="az-cal-dot az-cal-dot--trained" />Trained</span>
-                  <span><span className="az-cal-dot az-cal-dot--rest" />Rest</span>
-                </div>
-                {consistency.lastGapDays > 7 && (
-                  <p className="az-card-note az-note-warn" style={{ marginTop: 8 }}>Last session was {consistency.lastGapDays} days ago.</p>
-                )}
-              </div>
-
-              {/* ── Training trend ───────────────────────────────────────────── */}
-              <div className="az-card az-card--top">
-                <p className="az-card-title">Training trend</p>
-                <div className="az-trend-weeks">
-                  {trainingTrend.recentWeeks.map(w => (
-                    <div key={w.label} className={`az-trend-wk az-trend-wk--${w.zone}${w.isCurrent ? " is-current" : ""}`}>
-                      <span className="az-trend-wk-label">{w.label}</span>
-                      <span className="az-trend-wk-zone">{w.zone === "progress" ? "↑" : w.zone === "plateau" ? "↓" : w.zone === "missed" ? "–" : "→"}</span>
-                    </div>
-                  ))}
-                </div>
-                <p className="az-card-sub">{trainingTrend.insight}</p>
-              </div>
-
-              {/* ── Session output ───────────────────────────────────────────── */}
-              <div className="az-card az-card--top">
-                <div className="az-card-header-row">
-                  <p className="az-card-title">Session output</p>
-                  {sessionSummary.volumeTrend !== "insufficient" && (
-                    <span className={`az-trend-badge az-trend-badge--${sessionSummary.volumeTrend}`}>
-                      Volume {trendArrow(sessionSummary.volumeTrend)}
-                    </span>
-                  )}
-                </div>
-                <div className="az-stat-grid">
-                  <div className="az-stat">
-                    <p className="az-stat-val">{sessionSummary.totalWorkouts}</p>
-                    <p className="az-stat-lbl">Total workouts</p>
-                  </div>
-                  <div className="az-stat">
-                    <p className="az-stat-val">{sessionSummary.totalSets}</p>
-                    <p className="az-stat-lbl">Total sets</p>
-                  </div>
-                  <div className="az-stat">
-                    <p className="az-stat-val">{formatVol(sessionSummary.totalVolumeKg)}</p>
-                    <p className="az-stat-lbl">Total volume</p>
-                  </div>
-                  <div className="az-stat">
-                    <p className="az-stat-val">{sessionSummary.avgDurationMin}m</p>
-                    <p className="az-stat-lbl">Avg duration</p>
-                  </div>
-                  <div className="az-stat">
-                    <p className="az-stat-val">{sessionSummary.avgSets}</p>
-                    <p className="az-stat-lbl">Avg sets</p>
-                  </div>
-                  <div className="az-stat">
-                    <p className="az-stat-val">{sessionSummary.avgExercises}</p>
-                    <p className="az-stat-lbl">Avg exercises</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* ── Goal progress ─────────────────────────────────────────────── */}
-              <div className="az-card az-card--top">
-                <div className="az-card-header-row">
-                  <p className="az-card-title">Goal progress</p>
-                  <span className="az-goal-score">{goalProgress.score}/100</span>
-                </div>
-                <div className="az-progress-bar-wrap">
-                  <div className="az-progress-bar" style={{ width: `${goalProgress.score}%` }} />
-                </div>
-                <p className="az-goal-label">{goalProgress.label}</p>
-                <p className="az-card-sub">{goalProgress.insight}</p>
               </div>
 
             </div>

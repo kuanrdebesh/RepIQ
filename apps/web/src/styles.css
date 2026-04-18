@@ -14264,6 +14264,24 @@ ol {
   padding: 0 16px;
 }
 
+/* ── Stats section labels — visual grouping, non-interactive ─────────────── */
+.az-section-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin: 10px 0 0;    /* gap above each section (gap: 12px handles spacing below) */
+}
+.az-section-label:first-child { margin-top: 2px; }
+
+/* ── Intra-card divider (used inside merged cards) ───────────────────────── */
+.az-section-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 0 -2px;      /* bleed to card padding edges */
+}
+
 /* Cards */
 .az-card {
   background: var(--paper);
