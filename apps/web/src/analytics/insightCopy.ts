@@ -137,6 +137,14 @@ export const SIGNAL_COPY = {
 // ─── This week card ─────────────────────────────────────────────────────────
 
 export const WEEK_COPY = {
+  fresh: {
+    beginner: (target: number) =>
+      `Fresh week. ${target} sessions to aim for — one at a time.`,
+    intermediate: (target: number) =>
+      `Fresh week. ${target} sessions to aim for.`,
+    advanced: (target: number) => `New week. Target: ${target}.`
+  } satisfies ToneCopy<[number]>,
+
   onTrack: {
     beginner: (done: number, target: number) =>
       `${done} of ${target} sessions done this week. You're on track.`,

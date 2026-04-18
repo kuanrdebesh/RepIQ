@@ -13948,16 +13948,25 @@ function InsightsPage({
                   const { tone } = insightMode;
                   const done = weekStats.sessions;
                   const target = targetPerWeek;
-                  const dow = new Date().getDay(); // 0=Sun
-                  const daysLeft = dow === 0 ? 0 : 7 - dow;
+                  const dow = new Date().getDay();                  // 0=Sun
+                  const dayOfWeekIdx = dow === 0 ? 6 : dow - 1;       // 0=Mon..6=Sun
+                  const daysLeft = 6 - dayOfWeekIdx;                   // incl. today
+                  const weekFractionElapsed = (dayOfWeekIdx + 1) / 7;
 
-                  const variant: "onTrack" | "behind" | "exceeded" =
-                    done > target ? "exceeded"
-                    : done >= Math.ceil((target * (7 - daysLeft)) / 7) ? "onTrack"
+                  // Fresh-week: early in the week with nothing logged yet — do
+                  // not punish users who just haven't started. Only fires Mon/
+                  // Tue (dayOfWeekIdx 0 or 1) and only if they've trained before.
+                  const isFreshWeek = done === 0 && dayOfWeekIdx <= 1;
+
+                  const variant: "fresh" | "onTrack" | "behind" | "exceeded" =
+                    isFreshWeek ? "fresh"
+                    : done > target ? "exceeded"
+                    : done >= Math.ceil(target * weekFractionElapsed) ? "onTrack"
                     : "behind";
 
                   const body =
-                    variant === "exceeded" ? pickCopy(WEEK_COPY.exceeded, tone, done, target)
+                    variant === "fresh"    ? pickCopy(WEEK_COPY.fresh, tone, target)
+                    : variant === "exceeded" ? pickCopy(WEEK_COPY.exceeded, tone, done, target)
                     : variant === "onTrack"  ? pickCopy(WEEK_COPY.onTrack, tone, done, target)
                     : pickCopy(WEEK_COPY.behind, tone, done, target, daysLeft);
 
