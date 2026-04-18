@@ -14908,21 +14908,24 @@ ol {
 .az-muscle-view { animation: az-view-in 0.15s ease; }
 @keyframes az-view-in { from { opacity: 0; } to { opacity: 1; } }
 
-/* ── CSS border chevron (replaces Unicode glyphs — consistent size) ──────── */
+/* ── CSS border chevron — subtle, not too dark, not too large ────────────── */
 .az-chevron {
   display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-right: 1.5px solid var(--text-muted);
-  border-bottom: 1.5px solid var(--text-muted);
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid #c4c4c4;
+  border-bottom: 1px solid #c4c4c4;
   transform: rotate(45deg);
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   flex-shrink: 0;
 }
 .az-chevron--up {
   transform: rotate(-135deg);
-  margin-bottom: -2px;
+  margin-bottom: -1px;
 }
+
+/* ── A7 swipe container — touch-action:pan-y so vertical scroll isn't blocked */
+.az-muscle-slide-area { touch-action: pan-y; }
 
 /* ── A7 collapsible muscle groups (sets view) ────────────────────────────── */
 .az-muscle-group { border-bottom: 1px solid var(--line); }
@@ -14948,6 +14951,14 @@ ol {
   font-size: 0.78rem;
   color: var(--text-muted);
   white-space: nowrap;
+}
+/* Collapsed group header: plain set count (no bar) */
+.az-muscle-group-total {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin-left: auto;
 }
 .az-muscle-rows--nested {
   padding: 0 0 6px 12px;
@@ -14979,8 +14990,23 @@ ol {
   font-weight: 700;
   color: var(--text);
   flex-shrink: 0;
-  min-width: 76px;
+  min-width: 72px;
 }
+/* Collapsed header: actual% shown in status colour */
+.az-share-group-actual-num {
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* "· target X%" shown in muted colour */
+.az-share-group-sep {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex: 1;
+}
+/* Legacy: keep track for any non-collapsed usage */
 .az-share-group-track {
   flex: 1;
   height: 8px;
