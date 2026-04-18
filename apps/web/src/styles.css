@@ -3825,7 +3825,8 @@ ol {
 .history-card {
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--paper) 95%, var(--surface));
+  background: var(--paper);
+  box-shadow: 0 1px 3px var(--shadow);
   padding: 9px 10px;
 }
 
@@ -14053,13 +14054,14 @@ ol {
   gap: 12px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: var(--surface);
-  border: 1.5px solid transparent;
+  background: var(--paper);
+  border: 1.5px solid var(--line);
+  box-shadow: 0 1px 3px var(--shadow);
   transition: border-color 0.15s;
 }
 .smart-replace-suggestion-card.is-best {
   border-color: rgba(251, 191, 36, 0.45);
-  background: color-mix(in srgb, var(--surface) 90%, rgba(251, 191, 36, 0.2));
+  background: color-mix(in srgb, var(--paper) 90%, rgba(251, 191, 36, 0.2));
 }
 
 .smart-replace-suggestion-info {
@@ -14203,7 +14205,7 @@ ol {
 }
 :root[data-theme="dark"] .smart-replace-suggestion-card.is-best {
   border-color: rgba(251, 191, 36, 0.3);
-  background: color-mix(in srgb, var(--surface) 90%, rgba(251, 191, 36, 0.12));
+  background: color-mix(in srgb, var(--paper) 90%, rgba(251, 191, 36, 0.12));
 }
 
 /* ── Insights Analyzer ───────────────────────────────────────────────────── */
@@ -14247,7 +14249,7 @@ ol {
   margin: 0 16px 12px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper));
   border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
 }
 .az-learning-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 1px; }
@@ -14264,14 +14266,15 @@ ol {
 
 /* Cards */
 .az-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--paper);
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 14px 14px 12px;
+  box-shadow: 0 1px 4px var(--shadow);
 }
 .az-card--warn {
   border-color: rgba(245, 158, 11, 0.35);
-  background: color-mix(in srgb, var(--surface) 92%, rgba(245, 158, 11, 0.1));
+  background: color-mix(in srgb, var(--paper) 94%, rgba(245, 158, 11, 0.08));
 }
 .az-card-title {
   font-size: 0.8rem;
@@ -14598,8 +14601,8 @@ ol {
 
 /* ── Summary tab — A2 headline card ─────────────────────────────────────── */
 .az-headline-card {
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 20%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper));
+  border-color: color-mix(in srgb, var(--accent) 20%, var(--line));
 }
 .az-headline-text {
   font-size: 0.95rem;
