@@ -13036,6 +13036,30 @@ function ProgressPhotoTab({ savedWorkouts }: { savedWorkouts: SavedWorkoutData[]
 
 // ── Date Range Selector ───────────────────────────────────────────────────────
 // See docs/analytics-plan-updated_v1.md §8 and docs/analytics-insight-model.md §9.
+const ROLLING_FULL_LABELS: Record<RollingChip, string> = {
+  "7d": "Last 7 days",
+  "14d": "Last 14 days",
+  "30d": "Last 30 days",
+  "60d": "Last 60 days",
+  "90d": "Last 90 days",
+  "6m": "Last 6 months",
+  "1y": "Last year",
+  all: "All time",
+};
+
+const TO_DATE_FULL_LABELS: Record<ToDateChip, string> = {
+  wtd: "Week to date",
+  mtd: "Month to date",
+  qtd: "Quarter to date",
+  ytd: "Year to date",
+  all: "All time",
+};
+
+const ROLLING_SHORT_TICKS: Record<RollingChip, string> = {
+  "7d": "7d", "14d": "14d", "30d": "30d", "60d": "60d",
+  "90d": "90d", "6m": "6m", "1y": "1y", all: "All",
+};
+
 function DateRangeSelector({
   mode,
   rollingChip,
@@ -13053,44 +13077,80 @@ function DateRangeSelector({
   rangeLabel: string;
   comparisonLabel?: string;
 }) {
-  const chips: DateRangeChip[] = mode === "rolling" ? ROLLING_CHIPS : TO_DATE_CHIPS;
-  const activeChip: DateRangeChip = mode === "rolling" ? rollingChip : toDateChip;
+  const rollingIdx = ROLLING_CHIPS.indexOf(rollingChip);
+
   return (
     <div className="dr-selector" role="group" aria-label="Date range">
-      <div className="dr-seg" role="tablist" aria-label="Range mode">
+
+      {/* ── Mode switcher ── */}
+      <div className="dr-mode-tabs" role="tablist" aria-label="Range mode">
         <button
-          type="button"
-          role="tab"
+          type="button" role="tab"
           aria-selected={mode === "rolling"}
-          className={`dr-seg-btn${mode === "rolling" ? " is-active" : ""}`}
+          className={`dr-mode-tab${mode === "rolling" ? " is-active" : ""}`}
           onClick={() => onModeChange("rolling")}
         >
           Rolling
         </button>
         <button
-          type="button"
-          role="tab"
+          type="button" role="tab"
           aria-selected={mode === "toDate"}
-          className={`dr-seg-btn${mode === "toDate" ? " is-active" : ""}`}
+          className={`dr-mode-tab${mode === "toDate" ? " is-active" : ""}`}
           onClick={() => onModeChange("toDate")}
         >
           To date
         </button>
       </div>
-      <div className="dr-chip-row" role="tablist" aria-label="Range">
-        {chips.map((c) => (
-          <button
-            key={c}
-            type="button"
-            role="tab"
-            aria-selected={activeChip === c}
-            className={`dr-chip${activeChip === c ? " dr-chip-active" : ""}`}
-            onClick={() => onChipChange(c)}
-          >
-            {chipLabel(c)}
-          </button>
-        ))}
-      </div>
+
+      {mode === "rolling" ? (
+        /* ── Rolling slider ── */
+        <div className="dr-slider-wrap">
+          <p className="dr-slider-label">{ROLLING_FULL_LABELS[rollingChip]}</p>
+          <input
+            type="range"
+            className="dr-slider"
+            min={0}
+            max={ROLLING_CHIPS.length - 1}
+            step={1}
+            value={rollingIdx}
+            onChange={(e) => onChipChange(ROLLING_CHIPS[Number(e.target.value)])}
+            aria-label="Select rolling range"
+            aria-valuetext={ROLLING_FULL_LABELS[rollingChip]}
+            style={{ "--dr-pct": `${(rollingIdx / (ROLLING_CHIPS.length - 1)) * 100}%` } as React.CSSProperties}
+          />
+          <div className="dr-slider-ticks" aria-hidden="true">
+            {ROLLING_CHIPS.map((c, i) => (
+              <button
+                key={c}
+                type="button"
+                className={`dr-tick-lbl${i === rollingIdx ? " is-active" : ""}`}
+                onClick={() => onChipChange(c)}
+                tabIndex={-1}
+              >
+                {ROLLING_SHORT_TICKS[c]}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        /* ── To-date grid ── */
+        <div className="dr-todate-grid" role="tablist" aria-label="Period">
+          {TO_DATE_CHIPS.map((c) => (
+            <button
+              key={c}
+              type="button" role="tab"
+              aria-selected={toDateChip === c}
+              className={`dr-todate-btn${toDateChip === c ? " is-active" : ""}`}
+              onClick={() => onChipChange(c)}
+            >
+              <span className="dr-todate-abbr">{c.toUpperCase()}</span>
+              <span className="dr-todate-full">{TO_DATE_FULL_LABELS[c]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Range label ── */}
       <div className="dr-range-meta">
         <span className="dr-range-label">{rangeLabel}</span>
         {comparisonLabel && <span className="dr-range-cmp">vs {comparisonLabel.toLowerCase()}</span>}
