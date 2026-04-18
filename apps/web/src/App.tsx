@@ -13869,105 +13869,60 @@ function InsightsPage({
                   );
                 })()}
 
-                {/* ── A4: 3 health score rings ─────────────────────────────────── */}
+                {/* ── Card 3: One signal — plain English, no numbers ───────────── */}
                 {(() => {
-                  const goalPct = goalAlignment.label === "aligned" ? 100
-                    : goalAlignment.label === "partially_aligned" ? 55 : 20;
-                  const movPct = Math.max(0, 100 - movementBalance.imbalances.length * 25);
-                  const rings: { pct: number; color: string; label: string; display: string }[] = [
-                    { pct: ringConsistency, color: "#4a97cf", label: "Consistency", display: `${ringConsistency}%` },
-                    { pct: goalPct,         color: "#8b5cf6", label: "Goal",        display: `${goalPct}%` },
-                    { pct: movPct,          color: "#10b981", label: "Movement",    display: `${movPct}%` },
-                  ];
-                  const R = 26, C = +(2 * Math.PI * R).toFixed(2);
-                  return (
-                    <div className="az-health-scores">
-                      {rings.map(({ pct, color, label, display }) => {
-                        const offset = +(C * (1 - Math.max(0, Math.min(100, pct)) / 100)).toFixed(2);
-                        return (
-                          <div key={label} className="az-score-ring">
-                            <div className="az-score-ring-wrap">
-                              <svg width="68" height="68" viewBox="0 0 68 68" aria-hidden>
-                                <circle cx="34" cy="34" r={R} fill="none" stroke="var(--line)" strokeWidth="7" />
-                                <circle cx="34" cy="34" r={R} fill="none"
-                                  stroke={color} strokeWidth="7" strokeLinecap="round"
-                                  strokeDasharray={C} strokeDashoffset={offset}
-                                  transform="rotate(-90 34 34)"
-                                  style={{ transition: "stroke-dashoffset 0.5s ease" }}
-                                />
-                              </svg>
-                              <div className="az-score-ring-inner">
-                                <span className="az-score-ring-val">{display}</span>
-                              </div>
-                            </div>
-                            <p className="az-score-ring-lbl">{label}</p>
-                          </div>
-                        );
-                      })}
+                  // If the gap headline is already the story, don't add a third card
+                  if (consistency.lastGapDays > 7) return null;
+
+                  // Plateau — most actionable warning
+                  const plateau = plateaus[0];
+                  if (plateau) return (
+                    <div className="az-card az-signal-card az-signal-card--warn">
+                      <p className="az-signal-headline">{plateau.name} has stalled.</p>
+                      <p className="az-signal-body">Try adding a little more weight or changing your rep range to break through.</p>
                     </div>
                   );
-                })()}
 
-                {/* ── A5: Max 2 takeaway cards (red > amber > green) ───────────── */}
-                {/* Suppress the generic "gap" card when the headline already covers it */}
-                {[...insightFeed]
-                  .filter(card => consistency.lastGapDays > 3 ? card.id !== "gap" : true)
-                  .sort((a, b) => {
-                    const order = { red: 0, amber: 1, green: 2, info: 3 } as const;
-                    return order[a.severity] - order[b.severity];
-                  })
-                  .slice(0, 2)
-                  .map(card => (
-                    <div key={card.id} className={`az-card az-takeaway-card az-severity-${card.severity}`}>
-                      <div className="az-card-header-row">
-                        <p className="az-card-title">{card.headline}</p>
-                        <span className={`az-severity-dot az-severity-dot--${card.severity}`} aria-hidden="true" />
-                      </div>
-                      <p className="az-card-sub">{card.detail}</p>
-                      <button
-                        type="button"
-                        className="az-expand-btn"
-                        onClick={() => toggleInsight(card.id)}
-                        aria-expanded={expandedInsight === card.id}
-                      >
-                        {expandedInsight === card.id ? "Hide details" : "See details"}
-                      </button>
-                      {expandedInsight === card.id && (
-                        <div className="az-insight-details">
-                          <p className="az-detail-why"><strong>Why it matters</strong><br />{card.why}</p>
-                          <p className="az-detail-action"><strong>Suggested response</strong><br />{card.action}</p>
-                        </div>
-                      )}
+                  // Improving exercise — positive reinforcement
+                  const improving = exerciseProgress.find(e => e.status === "improving");
+                  if (improving) return (
+                    <div className="az-card az-signal-card az-signal-card--good">
+                      <p className="az-signal-headline">{improving.name} is responding well.</p>
+                      <p className="az-signal-body">It's progressing — keep it in your rotation.</p>
                     </div>
-                  ))}
+                  );
 
-                {/* ── Keep-in-mind checkpoint (optional) ───────────────────────── */}
-                {actionPlan.length > 0 && (
-                  <div className="az-card az-checkpoint-card">
-                    <button
-                      type="button"
-                      className="az-checkpoint-toggle"
-                      onClick={() => toggleInsight("__actions__")}
-                      aria-expanded={expandedInsight === "__actions__"}
-                    >
-                      <span>Keep in mind</span>
-                      <span className="az-checkpoint-chevron">{expandedInsight === "__actions__" ? "↑" : "↓"}</span>
-                    </button>
-                    {expandedInsight === "__actions__" && (
-                      <div className="az-action-list" style={{ marginTop: 12 }}>
-                        {actionPlan.map((a, i) => (
-                          <div key={a.id} className="az-action-item">
-                            <span className="az-action-num">{i + 1}</span>
-                            <div className="az-action-body">
-                              <p className="az-action-title">{a.title}</p>
-                              <p className="az-action-detail">{a.detail}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                  // Recent PRs
+                  if (prsHistory.length > 0) return (
+                    <div className="az-card az-signal-card az-signal-card--good">
+                      <p className="az-signal-headline">New personal record{prsHistory.length > 1 ? "s" : ""} recently.</p>
+                      <p className="az-signal-body">Your training is working — keep the same approach.</p>
+                    </div>
+                  );
+
+                  // Second lagging muscle (different from the NBT)
+                  const second = laggingMuscles[1];
+                  if (second) return (
+                    <div className="az-card az-signal-card az-signal-card--warn">
+                      <p className="az-signal-headline">Your {second.muscle} also needs attention.</p>
+                      <p className="az-signal-body">
+                        {second.lastTrainedDaysAgo != null
+                          ? `Hasn't been trained in ${second.lastTrainedDaysAgo} days.`
+                          : "Not trained recently."} Worth including in an upcoming session.
+                      </p>
+                    </div>
+                  );
+
+                  // Streak — quiet positive
+                  if (consistency.streak >= 4) return (
+                    <div className="az-card az-signal-card az-signal-card--good">
+                      <p className="az-signal-headline">You're on a {consistency.streak}-session streak.</p>
+                      <p className="az-signal-body">Consistency compounds. Keep showing up.</p>
+                    </div>
+                  );
+
+                  return null;
+                })()}
 
               </div>
             )}
