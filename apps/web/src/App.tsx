@@ -17,6 +17,8 @@ import anatomyBackImg from "./assets/anatomy-back.png";
 import { allCatalogExercises, generationCatalogExercises } from "./catalog";
 import { getStoredReplacementEvents, persistReplacementEvent, getStoredExercisePreferences, persistExercisePreference, getStoredHiddenSuggestions, persistHiddenSuggestion, removeHiddenSuggestion, themeStorageKey, workoutSettingsStorageKey, customExercisesStorageKey, savedWorkoutsStorageKey, workoutPlansStorageKey, planBuilderDraftStorageKey, psychProfileStorageKey, postWorkoutPsychStorageKey, dailyReadinessStorageKey, sessionBehaviorStorageKey, derivedPsychStorageKey, repiqPlanStorageKey, getStoredSavedWorkouts, persistSavedWorkout, persistSavedWorkoutsList, overwriteSavedWorkout, getStoredPsychProfile, persistPsychProfile, getStoredRepIQPlan, persistRepIQPlan, getStoredPostWorkoutPsych, persistPostWorkoutPsych, getStoredDailyReadiness, persistDailyReadiness, getStoredSessionBehavior, persistSessionBehavior, getStoredWorkoutPlans, persistWorkoutPlans, getStoredPlanBuilderDraft, persistPlanBuilderDraft, SAMPLE_WORKOUT_PLANS, SAMPLE_PLAN_IDS, seedWorkoutHistory, getStoredDateRangePrefs, persistDateRangePrefs } from "./storage";
 import { resolveDateRange, isWithinRange, isWithinComparison, ROLLING_CHIPS, TO_DATE_CHIPS, chipLabel } from "./analytics/dateRange";
+import { resolveInsightMode, gapTier } from "./analytics/insightMode";
+import { TODAY_COPY, SIGNAL_COPY, pickCopy } from "./analytics/insightCopy";
 import { seedDemoWorkouts } from "./demoData";
 import { DEFAULT_PSYCH_PROFILE, deriveTimeOfDay, buildSessionBehaviorSignals, createInitialSwipeState, COMPOUND_PATTERNS } from "./types";
 import type { DateRangePrefs, DateRangeMode, RollingChip, ToDateChip, DateRangeChip, FlowState, DraftSet, ExerciseDraft, DetailTab, ThemePreference, DraftSetType, AppView, MotivationalWhy, TrainingGoal, ExperienceLevel, EquipmentAccess, ScheduleCommitment, MoodRating, EnergyRating, RPERating, ThreePointScale, TimeOfDay, SessionSource, Trend, MotivationStyle, UserPsychProfile, PostWorkoutPsych, DailyReadiness, SessionBehaviorSignals, DerivedPsychProfile, SplitType, RepIQPlanExercise, RepIQPlanDay, RepIQPlanWeek, RepIQPlan, PlannedExercise, WorkoutPlan, PlanBuilderMode, PlanSessionSource, ActivePlanSession, WorkoutSettings, WorkoutMeta, RewardCategory, RewardLevel, AddExerciseMode, CreateExerciseStep, CustomExerciseType, MeasurementType, MovementSide, MovementPattern, ExerciseDifficulty, ExerciseAngle, ExerciseEquipment, ExerciseImplement, ReplacementReason, ReplacementEvent, ExerciseWithTaxonomy, CustomExerciseInput, LoggerReward, RewardSummary, FinishedExerciseSummary, FinishWorkoutDraft, SavedWorkoutData, ExerciseRestDefaults, SwipeState, ActiveRestTimer, MuscleRegion } from "./types";
@@ -13286,6 +13288,14 @@ function InsightsPage({
   const actionPlan = useMemo(() => computeActionPlan(laggingMuscles, plateaus, rotations, goalAlignment, consistency, targetPerWeek), [laggingMuscles, plateaus, rotations, goalAlignment, consistency, targetPerWeek]);
   const weekStats = useMemo(() => getThisWeekStats(savedWorkouts), [savedWorkouts]);
 
+  // Insight mode — combines data maturity, user-reported experience tone,
+  // and dynamic state (re-entry / maintenance). Every Summary card should
+  // render a variant based on this, never re-derive thresholds locally.
+  const insightMode = useMemo(
+    () => resolveInsightMode(psychProfile, savedWorkouts, new Date().toISOString().slice(0, 10)),
+    [psychProfile, savedWorkouts],
+  );
+
   // Comparison-period workouts (for delta arrows in A6–A8)
   const comparisonWorkouts = useMemo(
     () => savedWorkouts.filter((w) => isWithinComparison(w.savedAt, resolvedRange)),
@@ -13795,17 +13805,19 @@ function InsightsPage({
             ) : (
               <div className="az-content">
 
-                {/* ── Gap tier — drives headline + NBT framing ─────────────────── */}
+                {/* ── Today: headline + Next Best Target / Re-entry ─────────────
+                    All copy routed through insightCopy.ts keyed by insightMode.tone.
+                    Gap tier still drives visual severity class + CTA label. */}
                 {(() => {
+                  const { tone } = insightMode;
                   const gap = consistency.lastGapDays;
-                  const tier: "long" | "medium" | "short" | "none" =
-                    gap > 30 ? "long" : gap > 7 ? "medium" : gap > 3 ? "short" : "none";
+                  const tier = gapTier(gap);
 
                   // ── Headline ────────────────────────────────────────────────────
                   const headlineText =
-                    tier === "long"   ? `Welcome back after ${gap} days away. Start lighter — your body needs 2–3 sessions to get back to where you were.`
-                    : tier === "medium" ? `${gap} days since your last session. One good session today resets the momentum.`
-                    : tier === "short"  ? `${gap} days since your last session — a good time to get back in.`
+                    tier === "long"   ? pickCopy(TODAY_COPY.reEntryLong, tone, gap)
+                    : tier === "medium" ? pickCopy(TODAY_COPY.reEntryMedium, tone, gap)
+                    : tier === "short"  ? pickCopy(TODAY_COPY.reEntryShort, tone, gap)
                     : trainingTrend.insight;
 
                   const headlineMod = tier !== "none" ? ` az-headline-card--gap-${tier}` : "";
@@ -13821,7 +13833,9 @@ function InsightsPage({
                     ? pattern.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
                     : null;
 
-                  // ── Gap-specific re-entry note ──────────────────────────────────
+                  // ── Gap-specific re-entry note (loading-guidance, stays here
+                  //     because it's not a general copy variant — it only fires
+                  //     in re-entry state) ─────────────────────────────────────
                   const reEntryNote =
                     tier === "long"   ? "Reduce weight 20–30% on your first session back. Soreness will be high."
                     : tier === "medium" ? "A slightly lighter session today helps you bounce back faster."
@@ -13862,24 +13876,26 @@ function InsightsPage({
                         <div className="az-card az-nbt-card az-nbt-clear">
                           <p className="az-nbt-label">{nbtLabel}</p>
                           <p className="az-nbt-muscle">You're well-covered</p>
-                          <p className="az-card-sub">All major muscle groups trained recently. Keep it up.</p>
+                          <p className="az-card-sub">{pickCopy(TODAY_COPY.wellCovered, tone)}</p>
                         </div>
                       )}
                     </>
                   );
                 })()}
 
-                {/* ── Card 3: One signal — plain English, no numbers ───────────── */}
+                {/* ── Card 3: One signal — tone-aware, picked in priority order ── */}
                 {(() => {
                   // If the gap headline is already the story, don't add a third card
                   if (consistency.lastGapDays > 7) return null;
+
+                  const { tone } = insightMode;
 
                   // Plateau — most actionable warning
                   const plateau = plateaus[0];
                   if (plateau) return (
                     <div className="az-card az-signal-card az-signal-card--warn">
                       <p className="az-signal-headline">{plateau.name} has stalled.</p>
-                      <p className="az-signal-body">Try adding a little more weight or changing your rep range to break through.</p>
+                      <p className="az-signal-body">{pickCopy(SIGNAL_COPY.plateau, tone, plateau.name)}</p>
                     </div>
                   );
 
@@ -13888,7 +13904,7 @@ function InsightsPage({
                   if (improving) return (
                     <div className="az-card az-signal-card az-signal-card--good">
                       <p className="az-signal-headline">{improving.name} is responding well.</p>
-                      <p className="az-signal-body">It's progressing — keep it in your rotation.</p>
+                      <p className="az-signal-body">{pickCopy(SIGNAL_COPY.improving, tone, improving.name)}</p>
                     </div>
                   );
 
@@ -13896,28 +13912,27 @@ function InsightsPage({
                   if (prsHistory.length > 0) return (
                     <div className="az-card az-signal-card az-signal-card--good">
                       <p className="az-signal-headline">New personal record{prsHistory.length > 1 ? "s" : ""} recently.</p>
-                      <p className="az-signal-body">Your training is working — keep the same approach.</p>
+                      <p className="az-signal-body">{pickCopy(SIGNAL_COPY.newPR, tone, prsHistory.length)}</p>
                     </div>
                   );
 
                   // Second lagging muscle (different from the NBT)
                   const second = laggingMuscles[1];
-                  if (second) return (
-                    <div className="az-card az-signal-card az-signal-card--warn">
-                      <p className="az-signal-headline">Your {second.muscle} also needs attention.</p>
-                      <p className="az-signal-body">
-                        {second.lastTrainedDaysAgo != null
-                          ? `Hasn't been trained in ${second.lastTrainedDaysAgo} days.`
-                          : "Not trained recently."} Worth including in an upcoming session.
-                      </p>
-                    </div>
-                  );
+                  if (second) {
+                    const days = second.lastTrainedDaysAgo ?? 0;
+                    return (
+                      <div className="az-card az-signal-card az-signal-card--warn">
+                        <p className="az-signal-headline">Your {second.muscle} also needs attention.</p>
+                        <p className="az-signal-body">{pickCopy(SIGNAL_COPY.laggingMuscle, tone, second.muscle, days)}</p>
+                      </div>
+                    );
+                  }
 
                   // Streak — quiet positive
                   if (consistency.streak >= 4) return (
                     <div className="az-card az-signal-card az-signal-card--good">
                       <p className="az-signal-headline">You're on a {consistency.streak}-session streak.</p>
-                      <p className="az-signal-body">Consistency compounds. Keep showing up.</p>
+                      <p className="az-signal-body">{pickCopy(SIGNAL_COPY.streak, tone, consistency.streak)}</p>
                     </div>
                   );
 
