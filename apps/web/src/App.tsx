@@ -13814,15 +13814,54 @@ function InsightsPage({
 
         {tab === "summary" && (
           <section className="planner-section az-section">
-            {savedWorkouts.length === 0 ? (
-              <div className="planner-builder-stub">
-                <p className="planner-empty-title">No workouts yet</p>
-                <p className="planner-empty-sub">Complete a workout to see your insights here.</p>
+            {insightMode.maturity === "L0" ? (
+              /* ── L0 — no data yet. Replace everything with a single promise
+                    card so the tab reads as an unlock path, not a graveyard. */
+              <div className="az-content">
+                <div className="az-card az-onboarding-card">
+                  <p className="az-onboarding-label">GETTING STARTED</p>
+                  <p className="az-onboarding-body">{pickCopy(TODAY_COPY.promise, insightMode.tone)}</p>
+                  <ul className="az-onboarding-unlocks">
+                    <li><strong>3 sessions</strong> — first consistency check</li>
+                    <li><strong>5 sessions</strong> — muscle coverage insights</li>
+                    <li><strong>10 sessions</strong> — exercise progress trends</li>
+                  </ul>
+                </div>
               </div>
-            ) : !hasEnoughData ? (
-              <div className="planner-builder-stub">
-                <p className="planner-empty-title">Still learning your patterns</p>
-                <p className="planner-empty-sub">Complete {Math.max(0, 3 - savedWorkouts.length)} more workout{savedWorkouts.length < 2 ? "s" : ""} to unlock insights.</p>
+            ) : insightMode.maturity === "L1" ? (
+              /* ── L1 — habit formation (1–5 sessions). Focus on showing up,
+                    not analysis. Plateau/trend detection is noisy here. */
+              <div className="az-content">
+                <div className="az-card az-habit-card">
+                  <p className="az-onboarding-label">BUILDING THE HABIT</p>
+                  <p className="az-onboarding-body">{pickCopy(TODAY_COPY.habit, insightMode.tone, insightMode.sessionCount)}</p>
+                  <p className="az-onboarding-sub">
+                    {insightMode.sessionCount < 5
+                      ? `${5 - insightMode.sessionCount} more session${5 - insightMode.sessionCount !== 1 ? "s" : ""} unlocks muscle coverage insights.`
+                      : "Coverage insights unlocking soon."}
+                  </p>
+                </div>
+                {/* NBT still useful if we have a signal — otherwise skip */}
+                {laggingMuscles[0] && (
+                  <div className="az-card az-nbt-card">
+                    <p className="az-nbt-label">NEXT BEST TARGET</p>
+                    <p className="az-nbt-muscle">{laggingMuscles[0].muscle}</p>
+                    <p className="az-card-sub">
+                      {laggingMuscles[0].lastTrainedDaysAgo != null
+                        ? `Last trained ${laggingMuscles[0].lastTrainedDaysAgo} day${laggingMuscles[0].lastTrainedDaysAgo !== 1 ? "s" : ""} ago`
+                        : "Not trained yet in your log"}
+                    </p>
+                    {onGenerateWithMuscle && (
+                      <button
+                        type="button"
+                        className="az-nbt-cta"
+                        onClick={() => onGenerateWithMuscle(laggingMuscles[0].muscle)}
+                      >
+                        Generate session →
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="az-content">
@@ -13966,7 +14005,8 @@ function InsightsPage({
                     filtered by date range). Target from user's schedule.
                     Hidden at L0/L1 — premature to track weekly targets before
                     the habit is formed. */}
-                {insightMode.maturity !== "L0" && insightMode.maturity !== "L1" && (() => {
+                {/* L0/L1 branches returned above; here maturity is L2 or L3. */}
+                {(() => {
                   const { tone } = insightMode;
                   const done = weekStats.sessions;
                   const target = targetPerWeek;
