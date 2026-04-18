@@ -16,7 +16,7 @@ import anatomyFrontImg from "./assets/anatomy-front.png";
 import anatomyBackImg from "./assets/anatomy-back.png";
 import { allCatalogExercises, generationCatalogExercises } from "./catalog";
 import { getStoredReplacementEvents, persistReplacementEvent, getStoredExercisePreferences, persistExercisePreference, getStoredHiddenSuggestions, persistHiddenSuggestion, removeHiddenSuggestion, themeStorageKey, workoutSettingsStorageKey, customExercisesStorageKey, savedWorkoutsStorageKey, workoutPlansStorageKey, planBuilderDraftStorageKey, psychProfileStorageKey, postWorkoutPsychStorageKey, dailyReadinessStorageKey, sessionBehaviorStorageKey, derivedPsychStorageKey, repiqPlanStorageKey, getStoredSavedWorkouts, persistSavedWorkout, persistSavedWorkoutsList, overwriteSavedWorkout, getStoredPsychProfile, persistPsychProfile, getStoredRepIQPlan, persistRepIQPlan, getStoredPostWorkoutPsych, persistPostWorkoutPsych, getStoredDailyReadiness, persistDailyReadiness, getStoredSessionBehavior, persistSessionBehavior, getStoredWorkoutPlans, persistWorkoutPlans, getStoredPlanBuilderDraft, persistPlanBuilderDraft, SAMPLE_WORKOUT_PLANS, SAMPLE_PLAN_IDS, seedWorkoutHistory, getStoredDateRangePrefs, persistDateRangePrefs } from "./storage";
-import { resolveDateRange, isWithinRange, ROLLING_CHIPS, TO_DATE_CHIPS, chipLabel } from "./analytics/dateRange";
+import { resolveDateRange, isWithinRange, isWithinComparison, ROLLING_CHIPS, TO_DATE_CHIPS, chipLabel } from "./analytics/dateRange";
 import { seedDemoWorkouts } from "./demoData";
 import { DEFAULT_PSYCH_PROFILE, deriveTimeOfDay, buildSessionBehaviorSignals, createInitialSwipeState, COMPOUND_PATTERNS } from "./types";
 import type { DateRangePrefs, DateRangeMode, RollingChip, ToDateChip, DateRangeChip, FlowState, DraftSet, ExerciseDraft, DetailTab, ThemePreference, DraftSetType, AppView, MotivationalWhy, TrainingGoal, ExperienceLevel, EquipmentAccess, ScheduleCommitment, MoodRating, EnergyRating, RPERating, ThreePointScale, TimeOfDay, SessionSource, Trend, MotivationStyle, UserPsychProfile, PostWorkoutPsych, DailyReadiness, SessionBehaviorSignals, DerivedPsychProfile, SplitType, RepIQPlanExercise, RepIQPlanDay, RepIQPlanWeek, RepIQPlan, PlannedExercise, WorkoutPlan, PlanBuilderMode, PlanSessionSource, ActivePlanSession, WorkoutSettings, WorkoutMeta, RewardCategory, RewardLevel, AddExerciseMode, CreateExerciseStep, CustomExerciseType, MeasurementType, MovementSide, MovementPattern, ExerciseDifficulty, ExerciseAngle, ExerciseEquipment, ExerciseImplement, ReplacementReason, ReplacementEvent, ExerciseWithTaxonomy, CustomExerciseInput, LoggerReward, RewardSummary, FinishedExerciseSummary, FinishWorkoutDraft, SavedWorkoutData, ExerciseRestDefaults, SwipeState, ActiveRestTimer, MuscleRegion } from "./types";
@@ -13201,6 +13201,8 @@ function InsightsPage({
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [expandedInsight, setExpandedInsight] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [muscleFilter, setMuscleFilter] = useState<"all" | "upper" | "lower" | "core">("all");
+  const [showAllExercises, setShowAllExercises] = useState(false);
 
   // ── Date range selector state ─────────────────────────────────────────────
   // Controlled here; persisted per-mode to localStorage. Progress tab ignores
@@ -13259,6 +13261,132 @@ function InsightsPage({
   const prsHistory = useMemo(() => computePRsHistory(rangedWorkouts), [rangedWorkouts]);
   const actionPlan = useMemo(() => computeActionPlan(laggingMuscles, plateaus, rotations, goalAlignment, consistency, targetPerWeek), [laggingMuscles, plateaus, rotations, goalAlignment, consistency, targetPerWeek]);
   const weekStats = useMemo(() => getThisWeekStats(savedWorkouts), [savedWorkouts]);
+
+  // Comparison-period workouts (for delta arrows in A6–A8)
+  const comparisonWorkouts = useMemo(
+    () => savedWorkouts.filter((w) => isWithinComparison(w.savedAt, resolvedRange)),
+    [savedWorkouts, resolvedRange],
+  );
+
+  // ── A6: Movement balance (8 buckets) ────────────────────────────────────────
+  // Build name→movementPattern lookup from the library prop once
+  const patternByName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const ex of library) if (ex.movementPattern) m.set(ex.name, ex.movementPattern);
+    return m;
+  }, [library]);
+
+  type MovBucket = { label: string; sets: number; prevSets: number; status: "Missing" | "Low" | "Balanced" | "High" };
+  const movBuckets = useMemo((): MovBucket[] => {
+    const BUCKET_MAP: { label: string; patterns: string[] }[] = [
+      { label: "Horizontal Push", patterns: ["horizontal_push", "isolation_push"] },
+      { label: "Vertical Push",   patterns: ["vertical_push"] },
+      { label: "Horizontal Pull", patterns: ["horizontal_pull", "isolation_pull"] },
+      { label: "Vertical Pull",   patterns: ["vertical_pull"] },
+      { label: "Squat",           patterns: ["squat", "lunge"] },
+      { label: "Hinge",           patterns: ["hip_hinge"] },
+      { label: "Core",            patterns: ["core_anterior", "core_rotational"] },
+      { label: "Cardio",          patterns: ["cardio"] },
+    ];
+    // FinishedExerciseSummary uses loggedSets (count of done sets) and has no movementPattern;
+    // look up pattern from catalog via patternByName.
+    const countSets = (wks: SavedWorkoutData[], patterns: string[]) =>
+      wks.reduce((total, w) =>
+        total + w.exercises.reduce((s, ex) => {
+          const pat = patternByName.get(ex.name) ?? "";
+          return s + (patterns.includes(pat) ? ex.loggedSets : 0);
+        }, 0), 0);
+    const allSets = BUCKET_MAP.reduce((t, b) => t + countSets(rangedWorkouts, b.patterns), 0);
+    return BUCKET_MAP.map(b => {
+      const sets = countSets(rangedWorkouts, b.patterns);
+      const prevSets = countSets(comparisonWorkouts, b.patterns);
+      const share = allSets > 0 ? sets / allSets : 0;
+      const status: MovBucket["status"] =
+        sets === 0         ? "Missing"
+        : share < 0.06     ? "Low"
+        : share > 0.28     ? "High"
+        : "Balanced";
+      return { label: b.label, sets, prevSets, status };
+    });
+  }, [rangedWorkouts, comparisonWorkouts, patternByName]);
+
+  // ── A7: Muscle set counts ────────────────────────────────────────────────────
+  type MuscleSetRow = { muscle: string; sets: number; prevSets: number; region: "upper" | "lower" | "core" };
+  const muscleSetRows = useMemo((): MuscleSetRow[] => {
+    const UPPER = new Set(["Chest","Upper Chest","Shoulders","Front Delts","Side Delts","Rear Delts","Back","Lats","Middle Back","Traps","Biceps","Triceps","Forearms","Brachialis"]);
+    const LOWER = new Set(["Quads","Hamstrings","Glutes","Calves","Adductors","Abductors","Hip Flexors"]);
+    const countPerMuscle = (wks: SavedWorkoutData[]) => {
+      const m: Record<string, number> = {};
+      for (const w of wks)
+        for (const ex of w.exercises) {
+          const muscle = ex.primaryMuscle;
+          if (!muscle) continue;
+          // loggedSets is the count of done sets in FinishedExerciseSummary
+          m[muscle] = (m[muscle] ?? 0) + ex.loggedSets;
+        }
+      return m;
+    };
+    const curr = countPerMuscle(rangedWorkouts);
+    const prev = countPerMuscle(comparisonWorkouts);
+    const allMuscles = new Set([...Object.keys(curr), ...Object.keys(prev)]);
+    return [...allMuscles]
+      .map(muscle => ({
+        muscle,
+        sets: curr[muscle] ?? 0,
+        prevSets: prev[muscle] ?? 0,
+        region: LOWER.has(muscle) ? "lower" : UPPER.has(muscle) ? "upper" : "core",
+      } as MuscleSetRow))
+      .filter(r => r.sets > 0 || r.prevSets > 0)
+      .sort((a, b) => b.sets - a.sets);
+  }, [rangedWorkouts, comparisonWorkouts]);
+
+  // ── A8: Top exercises by set count ──────────────────────────────────────────
+  type TopExerciseRow = { name: string; sets: number; prevSets: number; avgWeightKg: number | null };
+  const topExercises = useMemo((): TopExerciseRow[] => {
+    const curr: Record<string, { sets: number; weights: number[] }> = {};
+    const prev: Record<string, number> = {};
+    for (const w of rangedWorkouts)
+      for (const ex of w.exercises) {
+        if (!curr[ex.name]) curr[ex.name] = { sets: 0, weights: [] };
+        curr[ex.name].sets += ex.loggedSets;
+        // FinishedExerciseSummary.sets has { weight, reps, rpe, setType }
+        for (const s of ex.sets ?? [])
+          if (s.weight > 0) curr[ex.name].weights.push(s.weight);
+      }
+    for (const w of comparisonWorkouts)
+      for (const ex of w.exercises)
+        prev[ex.name] = (prev[ex.name] ?? 0) + ex.loggedSets;
+    return Object.entries(curr)
+      .map(([name, { sets, weights }]) => ({
+        name,
+        sets,
+        prevSets: prev[name] ?? 0,
+        avgWeightKg: weights.length > 0 ? Math.round(weights.reduce((a, b) => a + b, 0) / weights.length) : null,
+      }))
+      .sort((a, b) => b.sets - a.sets)
+      .slice(0, 6);
+  }, [rangedWorkouts, comparisonWorkouts]);
+
+  // ── A9: Calendar dots (last 10 weeks) ───────────────────────────────────────
+  const calendarDots = useMemo(() => {
+    const trainedDays = new Set(savedWorkouts.map(w => w.savedAt.slice(0, 10)));
+    const today = new Date();
+    const weeks: { date: string; trained: boolean; future: boolean }[][] = [];
+    // Find start of the week 9 weeks ago (Monday)
+    const startDay = new Date(today);
+    startDay.setDate(today.getDate() - today.getDay() + 1 - 9 * 7); // Mon, 10 weeks ago
+    for (let w = 0; w < 10; w++) {
+      const week: { date: string; trained: boolean; future: boolean }[] = [];
+      for (let d = 0; d < 7; d++) {
+        const dt = new Date(startDay);
+        dt.setDate(startDay.getDate() + w * 7 + d);
+        const iso = dt.toISOString().slice(0, 10);
+        week.push({ date: iso, trained: trainedDays.has(iso), future: dt > today });
+      }
+      weeks.push(week);
+    }
+    return weeks;
+  }, [savedWorkouts]);
 
   const hasEnoughData = savedWorkouts.length >= 3;
 
@@ -13562,127 +13690,234 @@ function InsightsPage({
                 </div>
               </div>
             )}
-              <div className="az-content">
-                {/* Action plan */}
-                {actionPlan.length > 0 && (
-                  <div className="az-card">
-                    <p className="az-card-title">Recommended next actions</p>
-                    <div className="az-action-list">
-                      {actionPlan.map((a, i) => (
-                        <div key={a.id} className="az-action-item">
-                          <span className="az-action-num">{i + 1}</span>
-                          <div className="az-action-body">
-                            <p className="az-action-title">{a.title}</p>
-                            <p className="az-action-detail">{a.detail}</p>
+            <div className="az-content">
+
+              {/* ── A6: Movement balance chart ──────────────────────────────── */}
+              <div className="az-card">
+                <p className="az-card-title">Movement balance</p>
+                <div className="az-mov-chart">
+                  {(() => {
+                    const maxSets = Math.max(...movBuckets.map(b => b.sets), 1);
+                    return movBuckets.map(b => {
+                      const delta = b.sets - b.prevSets;
+                      const arrow = comparisonWorkouts.length > 0
+                        ? (delta > 0 ? "↑" : delta < 0 ? "↓" : "→")
+                        : null;
+                      return (
+                        <div key={b.label} className="az-mov-row">
+                          <span className="az-mov-lbl">{b.label}</span>
+                          <div className="az-mov-track">
+                            <div
+                              className={`az-mov-bar az-mov-bar--${b.status.toLowerCase()}`}
+                              style={{ width: `${(b.sets / maxSets) * 100}%` }}
+                            />
                           </div>
+                          <span className="az-mov-sets">{b.sets}</span>
+                          {arrow && <span className={`az-mov-arrow az-mov-arrow--${delta > 0 ? "up" : delta < 0 ? "down" : "flat"}`}>{arrow}</span>}
+                          <span className={`az-mov-status az-mov-status--${b.status.toLowerCase()}`}>{b.status}</span>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Consistency card */}
-                <div className="az-card">
-                  <p className="az-card-title">Consistency</p>
-                  <div className="az-stat-grid">
-                    <div className="az-stat">
-                      <p className="az-stat-val">{consistency.streak}</p>
-                      <p className="az-stat-lbl">Day streak</p>
-                    </div>
-                    <div className="az-stat">
-                      <p className="az-stat-val">{consistency.sessions7d}</p>
-                      <p className="az-stat-lbl">This week</p>
-                    </div>
-                    <div className="az-stat">
-                      <p className="az-stat-val">{consistency.sessions30d}</p>
-                      <p className="az-stat-lbl">Last 30 days</p>
-                    </div>
-                    <div className="az-stat">
-                      <p className="az-stat-val">{ringConsistency}%</p>
-                      <p className="az-stat-lbl">vs target</p>
-                    </div>
-                    <div className="az-stat">
-                      <p className="az-stat-val">{consistency.longestStreak}</p>
-                      <p className="az-stat-lbl">Best streak</p>
-                    </div>
-                    <div className="az-stat">
-                      <p className="az-stat-val">{consistency.avgPerWeek}</p>
-                      <p className="az-stat-lbl">Avg/week</p>
-                    </div>
-                  </div>
-                  {consistency.lastGapDays > 7 && (
-                    <p className="az-card-note az-note-warn">Last session was {consistency.lastGapDays} days ago — get back on track.</p>
-                  )}
-                  {consistency.isReturningAfterGap && consistency.lastGapDays <= 5 && (
-                    <p className="az-card-note az-note-pos">Returning after a break — great to see you back.</p>
-                  )}
+                      );
+                    });
+                  })()}
                 </div>
+                {movementBalance.imbalances.length > 0 && (
+                  <p className="az-card-note az-note-warn" style={{ marginTop: 10 }}>
+                    {movementBalance.imbalances[0]}
+                  </p>
+                )}
+              </div>
 
-                {/* Training trend */}
-                <div className="az-card">
-                  <p className="az-card-title">Training trend</p>
-                  <div className="az-trend-weeks">
-                    {trainingTrend.recentWeeks.map(w => (
-                      <div key={w.label} className={`az-trend-wk az-trend-wk--${w.zone}${w.isCurrent ? " is-current" : ""}`}>
-                        <span className="az-trend-wk-label">{w.label}</span>
-                        <span className="az-trend-wk-zone">{w.zone === "progress" ? "↑" : w.zone === "plateau" ? "↓" : w.zone === "missed" ? "–" : "→"}</span>
-                      </div>
+              {/* ── A7: Muscle set count ─────────────────────────────────────── */}
+              <div className="az-card">
+                <div className="az-card-header-row">
+                  <p className="az-card-title">Muscles</p>
+                  <div className="az-filter-chips">
+                    {(["all", "upper", "lower", "core"] as const).map(f => (
+                      <button key={f} type="button"
+                        className={`az-filter-chip${muscleFilter === f ? " is-active" : ""}`}
+                        onClick={() => setMuscleFilter(f)}
+                      >
+                        {f.charAt(0).toUpperCase() + f.slice(1)}
+                      </button>
                     ))}
                   </div>
-                  <p className="az-card-sub">{trainingTrend.insight}</p>
                 </div>
-
-                {/* Session output */}
-                <div className="az-card">
-                  <div className="az-card-header-row">
-                    <p className="az-card-title">Session output</p>
-                    {sessionSummary.volumeTrend !== "insufficient" && (
-                      <span className={`az-trend-badge az-trend-badge--${sessionSummary.volumeTrend}`}>
-                        Volume {trendArrow(sessionSummary.volumeTrend)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="az-stat-grid">
-                    <div className="az-stat">
-                      <p className="az-stat-val">{sessionSummary.totalWorkouts}</p>
-                      <p className="az-stat-lbl">Total workouts</p>
-                    </div>
-                    <div className="az-stat">
-                      <p className="az-stat-val">{sessionSummary.totalSets}</p>
-                      <p className="az-stat-lbl">Total sets</p>
-                    </div>
-                    <div className="az-stat">
-                      <p className="az-stat-val">{formatVol(sessionSummary.totalVolumeKg)}</p>
-                      <p className="az-stat-lbl">Total volume</p>
-                    </div>
-                    <div className="az-stat">
-                      <p className="az-stat-val">{sessionSummary.avgDurationMin}m</p>
-                      <p className="az-stat-lbl">Avg duration</p>
-                    </div>
-                    <div className="az-stat">
-                      <p className="az-stat-val">{sessionSummary.avgSets}</p>
-                      <p className="az-stat-lbl">Avg sets</p>
-                    </div>
-                    <div className="az-stat">
-                      <p className="az-stat-val">{sessionSummary.avgExercises}</p>
-                      <p className="az-stat-lbl">Avg exercises</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Goal progress */}
-                <div className="az-card">
-                  <div className="az-card-header-row">
-                    <p className="az-card-title">Goal progress</p>
-                    <span className="az-goal-score">{goalProgress.score}/100</span>
-                  </div>
-                  <div className="az-progress-bar-wrap">
-                    <div className="az-progress-bar" style={{ width: `${goalProgress.score}%` }} />
-                  </div>
-                  <p className="az-goal-label">{goalProgress.label}</p>
-                  <p className="az-card-sub">{goalProgress.insight}</p>
+                <div className="az-muscle-rows">
+                  {muscleSetRows
+                    .filter(r => muscleFilter === "all" || r.region === muscleFilter)
+                    .map(r => {
+                      const delta = r.sets - r.prevSets;
+                      const arrow = comparisonWorkouts.length > 0
+                        ? (delta > 0 ? "↑" : delta < 0 ? "↓" : "→")
+                        : null;
+                      return (
+                        <div key={r.muscle} className={`az-muscle-row${r.sets === 0 ? " az-muscle-row--zero" : ""}`}>
+                          <span className="az-muscle-row-name">{r.muscle}</span>
+                          <span className="az-muscle-row-sets">{r.sets} sets</span>
+                          {arrow && <span className={`az-muscle-arrow az-mov-arrow--${delta > 0 ? "up" : delta < 0 ? "down" : "flat"}`}>{arrow}</span>}
+                        </div>
+                      );
+                    })}
+                  {muscleSetRows.filter(r => muscleFilter === "all" || r.region === muscleFilter).length === 0 && (
+                    <p className="az-card-sub">No data for this filter in the selected period.</p>
+                  )}
                 </div>
               </div>
+
+              {/* ── A8: Main exercises ───────────────────────────────────────── */}
+              <div className="az-card">
+                <p className="az-card-title">Main exercises</p>
+                <div className="az-ex-rows">
+                  {(showAllExercises ? topExercises : topExercises.slice(0, 6)).map(ex => {
+                    const delta = ex.sets - ex.prevSets;
+                    const arrow = comparisonWorkouts.length > 0
+                      ? (delta > 0 ? "↑" : delta < 0 ? "↓" : "→")
+                      : null;
+                    return (
+                      <div key={ex.name} className="az-ex-row">
+                        <div className="az-ex-row-left">
+                          <span className="az-ex-row-name">{ex.name}</span>
+                          {ex.avgWeightKg != null && (
+                            <span className="az-ex-row-weight">{ex.avgWeightKg} kg avg</span>
+                          )}
+                        </div>
+                        <div className="az-ex-row-right">
+                          <span className="az-ex-row-sets">{ex.sets} sets</span>
+                          {arrow && <span className={`az-mov-arrow az-mov-arrow--${delta > 0 ? "up" : delta < 0 ? "down" : "flat"}`}>{arrow}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {topExercises.length === 0 && (
+                    <p className="az-card-sub">No exercises logged in this period.</p>
+                  )}
+                </div>
+                {topExercises.length > 6 && (
+                  <button type="button" className="az-expand-btn"
+                    onClick={() => setShowAllExercises(v => !v)}>
+                    {showAllExercises ? "Show less" : `See all ${topExercises.length}`}
+                  </button>
+                )}
+              </div>
+
+              {/* ── A9: Consistency breakdown ────────────────────────────────── */}
+              <div className="az-card">
+                <p className="az-card-title">Consistency</p>
+                <div className="az-stat-grid" style={{ marginBottom: 14 }}>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{rangedWorkouts.length}</p>
+                    <p className="az-stat-lbl">Sessions</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{consistency.avgPerWeek}</p>
+                    <p className="az-stat-lbl">Avg / week</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{ringConsistency}%</p>
+                    <p className="az-stat-lbl">vs target</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{consistency.streak}</p>
+                    <p className="az-stat-lbl">Streak</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{consistency.longestStreak}</p>
+                    <p className="az-stat-lbl">Best streak</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{consistency.lastGapDays < 999 ? `${consistency.lastGapDays}d` : "—"}</p>
+                    <p className="az-stat-lbl">Last gap</p>
+                  </div>
+                </div>
+                {/* Calendar dot grid — 10 weeks */}
+                <div className="az-cal-grid">
+                  {calendarDots.map((week, wi) => (
+                    <div key={wi} className="az-cal-week">
+                      {week.map(day => (
+                        <span
+                          key={day.date}
+                          className={`az-cal-dot${day.future ? " az-cal-dot--future" : day.trained ? " az-cal-dot--trained" : " az-cal-dot--rest"}`}
+                          title={day.date}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                <div className="az-cal-legend">
+                  <span><span className="az-cal-dot az-cal-dot--trained" />Trained</span>
+                  <span><span className="az-cal-dot az-cal-dot--rest" />Rest</span>
+                </div>
+                {consistency.lastGapDays > 7 && (
+                  <p className="az-card-note az-note-warn" style={{ marginTop: 8 }}>Last session was {consistency.lastGapDays} days ago.</p>
+                )}
+              </div>
+
+              {/* ── Training trend ───────────────────────────────────────────── */}
+              <div className="az-card">
+                <p className="az-card-title">Training trend</p>
+                <div className="az-trend-weeks">
+                  {trainingTrend.recentWeeks.map(w => (
+                    <div key={w.label} className={`az-trend-wk az-trend-wk--${w.zone}${w.isCurrent ? " is-current" : ""}`}>
+                      <span className="az-trend-wk-label">{w.label}</span>
+                      <span className="az-trend-wk-zone">{w.zone === "progress" ? "↑" : w.zone === "plateau" ? "↓" : w.zone === "missed" ? "–" : "→"}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="az-card-sub">{trainingTrend.insight}</p>
+              </div>
+
+              {/* ── Session output ───────────────────────────────────────────── */}
+              <div className="az-card">
+                <div className="az-card-header-row">
+                  <p className="az-card-title">Session output</p>
+                  {sessionSummary.volumeTrend !== "insufficient" && (
+                    <span className={`az-trend-badge az-trend-badge--${sessionSummary.volumeTrend}`}>
+                      Volume {trendArrow(sessionSummary.volumeTrend)}
+                    </span>
+                  )}
+                </div>
+                <div className="az-stat-grid">
+                  <div className="az-stat">
+                    <p className="az-stat-val">{sessionSummary.totalWorkouts}</p>
+                    <p className="az-stat-lbl">Total workouts</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{sessionSummary.totalSets}</p>
+                    <p className="az-stat-lbl">Total sets</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{formatVol(sessionSummary.totalVolumeKg)}</p>
+                    <p className="az-stat-lbl">Total volume</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{sessionSummary.avgDurationMin}m</p>
+                    <p className="az-stat-lbl">Avg duration</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{sessionSummary.avgSets}</p>
+                    <p className="az-stat-lbl">Avg sets</p>
+                  </div>
+                  <div className="az-stat">
+                    <p className="az-stat-val">{sessionSummary.avgExercises}</p>
+                    <p className="az-stat-lbl">Avg exercises</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Goal progress ─────────────────────────────────────────────── */}
+              <div className="az-card">
+                <div className="az-card-header-row">
+                  <p className="az-card-title">Goal progress</p>
+                  <span className="az-goal-score">{goalProgress.score}/100</span>
+                </div>
+                <div className="az-progress-bar-wrap">
+                  <div className="az-progress-bar" style={{ width: `${goalProgress.score}%` }} />
+                </div>
+                <p className="az-goal-label">{goalProgress.label}</p>
+                <p className="az-card-sub">{goalProgress.insight}</p>
+              </div>
+
+            </div>
           </section>
         )}
 

@@ -14753,6 +14753,194 @@ ol {
 :root[data-theme="dark"] .az-score-chip--amber { background: rgba(245,158,11,0.08); }
 :root[data-theme="dark"] .az-score-chip--red   { background: rgba(239,68,68,0.08);  }
 
+/* ── A6: Movement balance chart ──────────────────────────────────────────── */
+.az-mov-chart { display: flex; flex-direction: column; gap: 10px; }
+.az-mov-row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto auto auto;
+  align-items: center;
+  gap: 8px;
+}
+.az-mov-lbl {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.az-mov-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line);
+  overflow: hidden;
+}
+.az-mov-bar {
+  height: 100%;
+  border-radius: 4px;
+  min-width: 2px;
+  transition: width 0.3s ease;
+}
+.az-mov-bar--missing  { background: var(--line); }
+.az-mov-bar--low      { background: #f59e0b; }
+.az-mov-bar--balanced { background: var(--accent); }
+.az-mov-bar--high     { background: #ef4444; }
+.az-mov-sets {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+.az-mov-status {
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-align: center;
+  white-space: nowrap;
+}
+.az-mov-status--missing  { background: rgba(107,114,128,0.12); color: #6b7280; }
+.az-mov-status--low      { background: rgba(245,158,11,0.12);  color: #d97706; }
+.az-mov-status--balanced { background: rgba(34,197,94,0.12);   color: #16a34a; }
+.az-mov-status--high     { background: rgba(239,68,68,0.12);   color: #dc2626; }
+.az-mov-arrow {
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-left: 2px;
+}
+.az-mov-arrow--up   { color: #22c55e; }
+.az-mov-arrow--down { color: #ef4444; }
+.az-mov-arrow--flat { color: var(--text-muted); }
+
+/* ── A7: Muscle set count list ───────────────────────────────────────────── */
+.az-filter-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.az-filter-chip {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.az-filter-chip.is-active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.az-muscle-rows { display: flex; flex-direction: column; gap: 6px; }
+.az-muscle-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.az-muscle-row:last-child { border-bottom: none; }
+.az-muscle-row--zero { opacity: 0.45; }
+.az-muscle-row-name {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text);
+}
+.az-muscle-row-sets {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+.az-muscle-arrow {
+  font-size: 0.7rem;
+  font-weight: 600;
+  width: 20px;
+  text-align: center;
+}
+
+/* ── A8: Top exercises ───────────────────────────────────────────────────── */
+.az-ex-rows { display: flex; flex-direction: column; }
+.az-ex-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.az-ex-row:last-child { border-bottom: none; }
+.az-ex-row-left  { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.az-ex-row-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.az-ex-row-name {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.az-ex-row-weight {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.az-ex-row-sets {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* ── A9: Consistency calendar ────────────────────────────────────────────── */
+.az-cal-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+.az-cal-week {
+  display: flex;
+  gap: 4px;
+}
+.az-cal-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.az-cal-dot--trained { background: var(--accent); }
+.az-cal-dot--rest    { background: var(--line); }
+.az-cal-dot--future  { background: transparent; border: 1px dashed var(--line); }
+.az-cal-legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+}
+.az-cal-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.az-cal-legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+/* dark overrides for A6–A9 */
+:root[data-theme="dark"] .az-mov-status--missing  { background: rgba(107,114,128,0.18); }
+:root[data-theme="dark"] .az-mov-status--low      { background: rgba(245,158,11,0.18);  }
+:root[data-theme="dark"] .az-mov-status--balanced { background: rgba(34,197,94,0.18);   }
+:root[data-theme="dark"] .az-mov-status--high     { background: rgba(239,68,68,0.18);   }
+
 /* ── History Page ─────────────────────────────────────────────────────────── */
 .history-page {
   display: flex;
