@@ -15149,42 +15149,51 @@ ol {
 }
 
 /* ── A9: Consistency calendar ────────────────────────────────────────────── */
-.az-cal-grid {
+/* ── Consistency: week bar chart (replaces dot grid) ─────────────────────── */
+.az-week-bars {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 8px;
-}
-.az-cal-week {
-  display: flex;
-  gap: 4px;
-}
-.az-cal-dot {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-.az-cal-dot--trained { background: var(--accent); }
-.az-cal-dot--rest    { background: var(--line); }
-.az-cal-dot--future  { background: transparent; border: 1px dashed var(--line); }
-.az-cal-legend {
-  display: flex;
-  gap: 14px;
-  margin-top: 8px;
-}
-.az-cal-legend-item {
-  display: flex;
-  align-items: center;
   gap: 5px;
-  font-size: 0.72rem;
+  margin-top: 12px;
+}
+.az-week-bar-row {
+  display: grid;
+  grid-template-columns: 52px 1fr 32px;
+  align-items: center;
+  gap: 8px;
+}
+.az-week-bar-row.is-current .az-week-bar-label {
+  color: var(--text);
+  font-weight: 600;
+}
+.az-week-bar-label {
+  font-size: 0.68rem;
   color: var(--text-muted);
+  text-align: right;
+  white-space: nowrap;
 }
-.az-cal-legend-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
+.az-week-bar-track {
+  height: 8px;
+  background: var(--line);
+  border-radius: 4px;
+  overflow: hidden;
 }
+.az-week-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+  opacity: 0.55;
+  transition: width 0.3s ease;
+}
+.az-week-bar-fill--met     { background: #16a34a; opacity: 1; }
+.az-week-bar-fill--current { background: var(--accent); opacity: 0.75; }
+.az-week-bar-count {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+.az-week-bar-count--met { color: #16a34a; font-weight: 600; }
 
 /* dark overrides for A6–A9 */
 :root[data-theme="dark"] .az-mov-status--missing  { background: rgba(107,114,128,0.18); }
