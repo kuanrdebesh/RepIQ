@@ -14013,10 +14013,10 @@ function InsightsPage({
                 )}
               </div>
 
-              {/* ── Goal progress ─────────────────────────────────────────────── */}
+              {/* ── Training score ────────────────────────────────────────────── */}
               <div className="az-card az-card--top">
                 <div className="az-card-header-row">
-                  <p className="az-card-title">Goal progress</p>
+                  <p className="az-card-title">Training score</p>
                   <span className="az-goal-score">{goalProgress.score}/100</span>
                 </div>
                 <div className="az-progress-bar-wrap">
