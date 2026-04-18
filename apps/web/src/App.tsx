@@ -14377,7 +14377,8 @@ function InsightsPage({
             {/* ── A13: Goals sub-tab ───────────────────────────────────────── */}
             {progressSubTab === "goals" && (
               <div className="az-progress-content">
-                {/* Training Score */}
+                {/* Training Score — how well your training aligns with your goal */}
+                <p className="az-progress-subtab-hint">How well your training aligns with your stated goal</p>
                 <div className="az-card az-card--top">
                   <div className="az-card-header-row">
                     <p className="az-card-title">Training score</p>
@@ -14424,6 +14425,7 @@ function InsightsPage({
                   comparisonLabel={resolvedRange.comparisonLabel}
                 />
               <div className="az-progress-content">
+                <p className="az-progress-subtab-hint">Your PRs and exercise-by-exercise progress trends</p>
 
                 {/* A11 — PR timeline */}
                 <div className="az-card az-card--top">
