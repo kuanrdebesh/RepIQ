@@ -13768,7 +13768,7 @@ function InsightsPage({
           </div>
         </div>
 
-        {tab !== "progress" && (
+        {tab === "stats" && (
           <DateRangeSelector
             mode={dateRangePrefs.lastMode}
             rollingChip={dateRangePrefs.rollingChip}
@@ -13795,47 +13795,77 @@ function InsightsPage({
             ) : (
               <div className="az-content">
 
-                {/* ── A2: Headline card ─────────────────────────────────────────── */}
-                <div className="az-card az-headline-card">
-                  <p className="az-headline-text">{trainingTrend.insight}</p>
-                </div>
-
-                {/* ── A3: Next Best Target card ─────────────────────────────────── */}
+                {/* ── Gap tier — drives headline + NBT framing ─────────────────── */}
                 {(() => {
+                  const gap = consistency.lastGapDays;
+                  const tier: "long" | "medium" | "short" | "none" =
+                    gap > 30 ? "long" : gap > 7 ? "medium" : gap > 3 ? "short" : "none";
+
+                  // ── Headline ────────────────────────────────────────────────────
+                  const headlineText =
+                    tier === "long"   ? `Welcome back after ${gap} days away. Start lighter — your body needs 2–3 sessions to get back to where you were.`
+                    : tier === "medium" ? `${gap} days since your last session. One good session today resets the momentum.`
+                    : tier === "short"  ? `${gap} days since your last session — a good time to get back in.`
+                    : trainingTrend.insight;
+
+                  const headlineMod = tier !== "none" ? ` az-headline-card--gap-${tier}` : "";
+
+                  // ── NBT label + context ─────────────────────────────────────────
+                  const nbtLabel =
+                    tier === "long" || tier === "medium" ? "RE-ENTRY POINT" : "NEXT BEST TARGET";
                   const top = laggingMuscles[0];
-                  if (!top) {
-                    return (
-                      <div className="az-card az-nbt-card az-nbt-clear">
-                        <p className="az-nbt-label">NEXT BEST TARGET</p>
-                        <p className="az-nbt-muscle">You're well-covered</p>
-                        <p className="az-card-sub">All major muscle groups have been trained recently. Keep it up.</p>
-                      </div>
-                    );
-                  }
-                  const pattern = library.find(e => e.primaryMuscle === top.muscle)?.movementPattern;
+                  const pattern = top
+                    ? library.find(e => e.primaryMuscle === top.muscle)?.movementPattern
+                    : null;
                   const patternLabel = pattern
                     ? pattern.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
                     : null;
+
+                  // ── Gap-specific re-entry note ──────────────────────────────────
+                  const reEntryNote =
+                    tier === "long"   ? "Reduce weight 20–30% on your first session back. Soreness will be high."
+                    : tier === "medium" ? "A slightly lighter session today helps you bounce back faster."
+                    : null;
+
                   return (
-                    <div className="az-card az-nbt-card">
-                      <p className="az-nbt-label">NEXT BEST TARGET</p>
-                      <p className="az-nbt-muscle">{top.muscle}</p>
-                      <p className="az-card-sub">
-                        {top.lastTrainedDaysAgo != null
-                          ? `Last trained ${top.lastTrainedDaysAgo} day${top.lastTrainedDaysAgo !== 1 ? "s" : ""} ago`
-                          : "Not trained recently"}
-                        {patternLabel ? ` · ${patternLabel}` : ""}
-                      </p>
-                      {onGenerateWithMuscle && (
-                        <button
-                          type="button"
-                          className="az-nbt-cta"
-                          onClick={() => onGenerateWithMuscle(top.muscle)}
-                        >
-                          Generate session →
-                        </button>
+                    <>
+                      {/* A2: Headline */}
+                      <div className={`az-card az-headline-card${headlineMod}`}>
+                        <p className="az-headline-text">{headlineText}</p>
+                      </div>
+
+                      {/* A3: Next Best Target / Re-entry */}
+                      {top ? (
+                        <div className="az-card az-nbt-card">
+                          <p className="az-nbt-label">{nbtLabel}</p>
+                          <p className="az-nbt-muscle">{top.muscle}</p>
+                          <p className="az-card-sub">
+                            {top.lastTrainedDaysAgo != null
+                              ? `Last trained ${top.lastTrainedDaysAgo} day${top.lastTrainedDaysAgo !== 1 ? "s" : ""} ago`
+                              : "Not trained recently"}
+                            {patternLabel ? ` · ${patternLabel}` : ""}
+                          </p>
+                          {reEntryNote && (
+                            <p className="az-nbt-reentry-note">{reEntryNote}</p>
+                          )}
+                          {onGenerateWithMuscle && (
+                            <button
+                              type="button"
+                              className="az-nbt-cta"
+                              onClick={() => onGenerateWithMuscle(top.muscle)}
+                            >
+                              {tier === "long" || tier === "medium" ? "Plan re-entry session →" : "Generate session →"}
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="az-card az-nbt-card az-nbt-clear">
+                          <p className="az-nbt-label">{nbtLabel}</p>
+                          <p className="az-nbt-muscle">You're well-covered</p>
+                          <p className="az-card-sub">All major muscle groups trained recently. Keep it up.</p>
+                        </div>
                       )}
-                    </div>
+                    </>
                   );
                 })()}
 
@@ -13879,7 +13909,9 @@ function InsightsPage({
                 })()}
 
                 {/* ── A5: Max 2 takeaway cards (red > amber > green) ───────────── */}
+                {/* Suppress the generic "gap" card when the headline already covers it */}
                 {[...insightFeed]
+                  .filter(card => consistency.lastGapDays > 3 ? card.id !== "gap" : true)
                   .sort((a, b) => {
                     const order = { red: 0, amber: 1, green: 2, info: 3 } as const;
                     return order[a.severity] - order[b.severity];
