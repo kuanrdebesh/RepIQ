@@ -14235,6 +14235,16 @@ function InsightsPage({
                             <span className="az-share-group-sep">· target {idealSum}%</span>
                             <span className={`az-chevron${isOpen ? " az-chevron--up" : ""}`} />
                           </button>
+                          {!isOpen && (
+                            <div className="az-share-group-preview">
+                              <div className="az-share-track">
+                                <div className="az-share-ideal-tick"
+                                  style={{ left: `${Math.min(idealSum * 2, 98)}%` }} />
+                                <div className={`az-share-bar az-share-bar--${st}`}
+                                  style={{ width: `${Math.min(actualSum * 2, 100)}%` }} />
+                              </div>
+                            </div>
+                          )}
                           {isOpen && (
                             <div className="az-share-detail">
                               {rows.map(row => {
