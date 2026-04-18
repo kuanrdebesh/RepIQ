@@ -147,9 +147,9 @@ export const WEEK_COPY = {
 
   behind: {
     beginner: (done: number, target: number, daysLeft: number) =>
-      `${done} of ${target} sessions this week. ${daysLeft} days left — still room to hit target.`,
+      `${done} of ${target} sessions this week. ${daysLeft} day${daysLeft === 1 ? "" : "s"} left — still room to hit target.`,
     intermediate: (done: number, target: number, daysLeft: number) =>
-      `${done}/${target} this week. ${daysLeft} days left.`,
+      `${done}/${target} this week. ${daysLeft} day${daysLeft === 1 ? "" : "s"} left.`,
     advanced: (done: number, target: number, daysLeft: number) =>
       `Week: ${done}/${target}, ${daysLeft}d left.`
   } satisfies ToneCopy<[number, number, number]>,

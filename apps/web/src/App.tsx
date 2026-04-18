@@ -18,7 +18,7 @@ import { allCatalogExercises, generationCatalogExercises } from "./catalog";
 import { getStoredReplacementEvents, persistReplacementEvent, getStoredExercisePreferences, persistExercisePreference, getStoredHiddenSuggestions, persistHiddenSuggestion, removeHiddenSuggestion, themeStorageKey, workoutSettingsStorageKey, customExercisesStorageKey, savedWorkoutsStorageKey, workoutPlansStorageKey, planBuilderDraftStorageKey, psychProfileStorageKey, postWorkoutPsychStorageKey, dailyReadinessStorageKey, sessionBehaviorStorageKey, derivedPsychStorageKey, repiqPlanStorageKey, getStoredSavedWorkouts, persistSavedWorkout, persistSavedWorkoutsList, overwriteSavedWorkout, getStoredPsychProfile, persistPsychProfile, getStoredRepIQPlan, persistRepIQPlan, getStoredPostWorkoutPsych, persistPostWorkoutPsych, getStoredDailyReadiness, persistDailyReadiness, getStoredSessionBehavior, persistSessionBehavior, getStoredWorkoutPlans, persistWorkoutPlans, getStoredPlanBuilderDraft, persistPlanBuilderDraft, SAMPLE_WORKOUT_PLANS, SAMPLE_PLAN_IDS, seedWorkoutHistory, getStoredDateRangePrefs, persistDateRangePrefs } from "./storage";
 import { resolveDateRange, isWithinRange, isWithinComparison, ROLLING_CHIPS, TO_DATE_CHIPS, chipLabel } from "./analytics/dateRange";
 import { resolveInsightMode, gapTier } from "./analytics/insightMode";
-import { TODAY_COPY, SIGNAL_COPY, pickCopy } from "./analytics/insightCopy";
+import { TODAY_COPY, SIGNAL_COPY, WEEK_COPY, pickCopy } from "./analytics/insightCopy";
 import { seedDemoWorkouts } from "./demoData";
 import { DEFAULT_PSYCH_PROFILE, deriveTimeOfDay, buildSessionBehaviorSignals, createInitialSwipeState, COMPOUND_PATTERNS } from "./types";
 import type { DateRangePrefs, DateRangeMode, RollingChip, ToDateChip, DateRangeChip, FlowState, DraftSet, ExerciseDraft, DetailTab, ThemePreference, DraftSetType, AppView, MotivationalWhy, TrainingGoal, ExperienceLevel, EquipmentAccess, ScheduleCommitment, MoodRating, EnergyRating, RPERating, ThreePointScale, TimeOfDay, SessionSource, Trend, MotivationStyle, UserPsychProfile, PostWorkoutPsych, DailyReadiness, SessionBehaviorSignals, DerivedPsychProfile, SplitType, RepIQPlanExercise, RepIQPlanDay, RepIQPlanWeek, RepIQPlan, PlannedExercise, WorkoutPlan, PlanBuilderMode, PlanSessionSource, ActivePlanSession, WorkoutSettings, WorkoutMeta, RewardCategory, RewardLevel, AddExerciseMode, CreateExerciseStep, CustomExerciseType, MeasurementType, MovementSide, MovementPattern, ExerciseDifficulty, ExerciseAngle, ExerciseEquipment, ExerciseImplement, ReplacementReason, ReplacementEvent, ExerciseWithTaxonomy, CustomExerciseInput, LoggerReward, RewardSummary, FinishedExerciseSummary, FinishWorkoutDraft, SavedWorkoutData, ExerciseRestDefaults, SwipeState, ActiveRestTimer, MuscleRegion } from "./types";
@@ -13937,6 +13937,38 @@ function InsightsPage({
                   );
 
                   return null;
+                })()}
+
+                {/* ── This Week card — target progress with days remaining ─────
+                    Uses weekStats (Monday-start, current calendar week, never
+                    filtered by date range). Target from user's schedule.
+                    Hidden at L0/L1 — premature to track weekly targets before
+                    the habit is formed. */}
+                {insightMode.maturity !== "L0" && insightMode.maturity !== "L1" && (() => {
+                  const { tone } = insightMode;
+                  const done = weekStats.sessions;
+                  const target = targetPerWeek;
+                  const dow = new Date().getDay(); // 0=Sun
+                  const daysLeft = dow === 0 ? 0 : 7 - dow;
+
+                  const variant: "onTrack" | "behind" | "exceeded" =
+                    done > target ? "exceeded"
+                    : done >= Math.ceil((target * (7 - daysLeft)) / 7) ? "onTrack"
+                    : "behind";
+
+                  const body =
+                    variant === "exceeded" ? pickCopy(WEEK_COPY.exceeded, tone, done, target)
+                    : variant === "onTrack"  ? pickCopy(WEEK_COPY.onTrack, tone, done, target)
+                    : pickCopy(WEEK_COPY.behind, tone, done, target, daysLeft);
+
+                  const severity: "good" | "warn" = variant === "behind" ? "warn" : "good";
+
+                  return (
+                    <div className={`az-card az-horizon-card az-horizon-card--${severity}`}>
+                      <p className="az-horizon-label">THIS WEEK</p>
+                      <p className="az-horizon-body">{body}</p>
+                    </div>
+                  );
                 })()}
 
               </div>

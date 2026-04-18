@@ -14723,6 +14723,35 @@ ol {
   margin: 0;
 }
 
+/* ── Summary tab — time-horizon cards (This Week / This Month) ──────────── */
+.az-horizon-card {
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  padding: 12px 16px;
+  background: var(--paper);
+}
+.az-horizon-card--good {
+  border-color: color-mix(in srgb, #22c55e 25%, var(--line));
+  background: color-mix(in srgb, #22c55e 4%, var(--paper));
+}
+.az-horizon-card--warn {
+  border-color: color-mix(in srgb, #f59e0b 25%, var(--line));
+  background: color-mix(in srgb, #f59e0b 5%, var(--paper));
+}
+.az-horizon-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 0 0 4px;
+}
+.az-horizon-body {
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.4;
+  margin: 0;
+}
+
 /* ── Summary tab — A4 health score chips ─────────────────────────────────── */
 .az-health-scores {
   display: grid;
